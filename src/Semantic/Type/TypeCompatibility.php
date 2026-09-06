@@ -15,7 +15,7 @@ final class TypeCompatibility
         return $this->compare($declared->semanticType, $actual->semanticType, $symbols)->isAccepted();
     }
 
-    public function compare(Type $declared, Type $actual, ?SymbolTable $symbols = null): TypeCompatibilityResult
+    public function compare(Type $declared, Type $actual, ?SymbolTable $symbols = null, bool $arrayLiteral = false): TypeCompatibilityResult
     {
         if ($declared->isUnknown || $actual->isUnknown) {
             return TypeCompatibilityResult::Unknown;
@@ -30,7 +30,7 @@ final class TypeCompatibility
             $result = TypeCompatibilityResult::Compatible;
 
             foreach ($actual->members as $member) {
-                $memberResult = $this->compare($declared, $member, $symbols);
+                $memberResult = $this->compare($declared, $member, $symbols, $arrayLiteral);
 
                 if ($memberResult === TypeCompatibilityResult::Incompatible) {
                     return $memberResult;
@@ -48,7 +48,7 @@ final class TypeCompatibility
             $unknown = false;
 
             foreach ($declared->members as $member) {
-                $memberResult = $this->compare($member, $actual, $symbols);
+                $memberResult = $this->compare($member, $actual, $symbols, $arrayLiteral);
 
                 if ($memberResult === TypeCompatibilityResult::Compatible) {
                     return $memberResult;
@@ -125,6 +125,24 @@ final class TypeCompatibility
         }
 
         if ($declared instanceof TypedArrayType && $actual instanceof TypedArrayType) {
+            // A fresh literal can adopt the target element contract. Existing arrays
+            // (including nested array values) retain their invariant contracts.
+            if ($arrayLiteral) {
+                if ($declared->isList && !$actual->isList) {
+                    return TypeCompatibilityResult::Incompatible;
+                }
+                $results = [
+                    $this->compare($declared->keyType, $actual->keyType, $symbols),
+                    $this->compare($declared->valueType, $actual->valueType, $symbols),
+                ];
+
+                return in_array(TypeCompatibilityResult::Incompatible, $results, true)
+                    ? TypeCompatibilityResult::Incompatible
+                    : (in_array(TypeCompatibilityResult::Unknown, $results, true)
+                        ? TypeCompatibilityResult::Unknown
+                        : TypeCompatibilityResult::Compatible);
+            }
+
             return $this->fromBoolean($declared->canonical === $actual->canonical);
         }
 
@@ -153,6 +171,10 @@ final class TypeCompatibility
         }
 
         if ($declared->canonical === 'bool' && in_array($actual->canonical, ['true', 'false'], true)) {
+            return TypeCompatibilityResult::Compatible;
+        }
+
+        if ($declared->canonical === 'callable' && $actual->canonical === 'closure') {
             return TypeCompatibilityResult::Compatible;
         }
 

@@ -48,6 +48,7 @@ use Atatusoft\Ppphp\Versioning\ReleaseMetadataLoader;
 use Symfony\Component\Console\Application as SymfonyApplication;
 use Symfony\Component\Console\Exception\ExceptionInterface as ConsoleException;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class Application extends SymfonyApplication
@@ -163,13 +164,14 @@ final class Application extends SymfonyApplication
         try {
             return parent::doRun($input, $output);
         } catch (ConsoleException $exception) {
+            [$message, $help] = $this->describeInvalidInvocation($input, $exception);
             return $this->renderFailure(
                 $input,
                 $output,
                 new Diagnostic(
                     DiagnosticCode::InvalidInvocation,
-                    $exception->getMessage(),
-                    help: 'Review the command help and pass only supported arguments and options.',
+                    $message,
+                    help: $help,
                 ),
                 ExitCode::InvalidProject,
             );
@@ -190,6 +192,36 @@ final class Application extends SymfonyApplication
                 ExitCode::InternalCompilerFailure,
             );
         }
+    }
+
+    /** @return array{string, string} */
+    private function describeInvalidInvocation(InputInterface $input, ConsoleException $exception): array
+    {
+        $fallback = [$exception->getMessage(), 'Review the command help and pass only supported arguments and options.'];
+        $name = $this->getCommandName($input);
+        if (!in_array($name, ['check', 'build'], true)) {
+            return $fallback;
+        }
+
+        // Rebind a copy to distinguish excess paths from malformed options.
+        // This is diagnostic-only; command execution still accepts one path.
+        $definition = clone $this->find($name)->getDefinition();
+        $definition->addArgument(new InputArgument('extraPaths', InputArgument::IS_ARRAY));
+        $probe = clone $input;
+        try {
+            $probe->bind($definition);
+            $probe->validate();
+        } catch (ConsoleException) {
+            return $fallback;
+        }
+        if ($probe->getArgument('extraPaths') === []) {
+            return $fallback;
+        }
+
+        return [
+            $name . ' accepts at most one path.',
+            'Please run it once per path or ' . $name . ' the containing directory.',
+        ];
     }
 
     private function renderFailure(

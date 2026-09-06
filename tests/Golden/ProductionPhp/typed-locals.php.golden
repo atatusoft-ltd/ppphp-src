@@ -1,0 +1,27 @@
+<?php
+declare(strict_types=1);
+class Person {}
+final class Member extends Person {}
+/** @var string $name */ $name = 'Maya';
+/** @var string $summary */ $summary = $name . ': done';
+/** @var int $count */ $count = 1 + 2;
+/** @var float $ratio */ $ratio = (float) $count / 2.0;
+/** @var bool $ready */ $ready = (bool) $count;
+/** @var list<int> $counts */ $counts = [1, 2];
+/** @var Person $person */ $person = new Member();
+/** @var object $object */ $object = new Person();
+function describe(string $name): string
+{
+    /** @var string $summary */ $summary = $name . ': done';
+    return $summary;
+}
+/** @var array<string, int> $scores */ $scores = ['Maya' => 5];
+/**
+ * @var string $key
+ * @var int $score
+ */
+foreach ($scores as  $key =>  $score) {
+    /** @var string $line */ $line = $key . ': ' . $score;
+    echo $line;
+}
+echo '|' . describe($name) . '|' . $summary;

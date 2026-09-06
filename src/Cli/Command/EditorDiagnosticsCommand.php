@@ -33,8 +33,8 @@ final class EditorDiagnosticsCommand extends ProjectCommand
 
     protected function configure(): void
     {
-        $this->setDescription('Diagnose an unsaved editor document with compiler-owned analysis.')
-            ->setHelp('Reads one bounded JSON request from stdin and returns JSON. Does not save buffers or run supplemental analysis.');
+        $this->setDescription('Check an unsaved editor document for ++PHP errors.')
+            ->setHelp('Reads one bounded JSON request from stdin and returns JSON. Does not save buffers or run the additional PHP analysis used by check and build.');
         $this->addProjectOptions();
         $this->getDefinition()->getOption('format')->setDefault('json');
     }

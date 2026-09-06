@@ -197,7 +197,7 @@ final class CheckBindingsPass implements SemanticPass
         if ($node instanceof Stmt\Global_ || $node instanceof Stmt\Static_) {
             $this->addDiagnostic(
                 DiagnosticCode::UnsupportedLocalBindingPosition,
-                'The Stage 5 binding model does not support global or static local declarations.',
+                'Global and static local declarations are not supported in ++PHP.',
                 $this->createNodeSpan($node),
             );
 
@@ -444,7 +444,7 @@ final class CheckBindingsPass implements SemanticPass
         if ($foreach->byRef) {
             $this->addDiagnostic(
                 DiagnosticCode::UnsupportedLocalBindingPosition,
-                'By-reference foreach targets are not supported in Stage 5.',
+                'By-reference foreach targets are not supported in ++PHP.',
                 $this->createNodeSpan($foreach->valueVar),
             );
         }
@@ -693,7 +693,7 @@ final class CheckBindingsPass implements SemanticPass
 
         $this->addDiagnostic(
             DiagnosticCode::UnsupportedLocalBindingPosition,
-            'This foreach target is not supported by the Stage 5 binding model.',
+            'This foreach target is not supported; use a variable or destructuring assignment.',
             $this->createNodeSpan($target),
         );
     }
@@ -1591,11 +1591,8 @@ final class CheckBindingsPass implements SemanticPass
             return true;
         }
 
-        if ($expected instanceof AtomicType
-            && $expected->canonical === 'bool'
-            && $actual instanceof AtomicType
-            && in_array($actual->canonical, ['true', 'false'], true)) {
-            return true;
+        if ($expected instanceof AtomicType && in_array($expected->canonical, ['bool', 'callable'], true)) {
+            return $this->compatibility->compare($expected, $actual, $this->context->symbols)->isAccepted();
         }
 
         if ($expected instanceof GenericType && $actual instanceof AtomicType) {
@@ -1626,7 +1623,7 @@ final class CheckBindingsPass implements SemanticPass
 
         $this->addDiagnostic(
             DiagnosticCode::UnsupportedLocalBindingPosition,
-            'Explicit reference creation is not supported in Stage 5.',
+            'Explicit reference creation is not supported in ++PHP.',
             $this->createNodeSpan($assignment),
         );
 

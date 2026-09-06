@@ -263,7 +263,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
         if ($location->site === WhenExpressionSite::Unsupported) {
             $this->addDiagnostic(
                 DiagnosticCode::WhenPositionNotSupported,
-                'This `when` expression is not in a supported Stage 9 value position.',
+                'This `when` expression is not in a supported value position.',
                 $when->span,
             );
         }

@@ -32,7 +32,7 @@ final readonly class EditorDiagnosticsAnalyzer
 
             if ($source === null || (is_file($source->path) && !$project->sources->owns($source->path))) {
                 if ($index === 0) {
-                    throw new EditorDocumentNotOwned('The target is not a safe project-owned PHP or ++PHP source file.');
+                    throw new EditorDocumentNotOwned('The target is not a safe PHP or ++PHP source file within the configured source roots.');
                 }
 
                 // Editors may have vendor/output/stub documents open. They cannot supply source overlays.

@@ -50,6 +50,27 @@ $attempts = 'four';  // P2009
 
 The binding pass checks types it can resolve definitively: literals, broad arrays, closures, casts, exact new expressions, known local reads, and simple unary and arithmetic expressions. Project analysis checks resolved cross-file calls, hierarchy relationships, PHPDoc, members, returns, and nullability while retaining unknown results conservatively.
 
+A declaration may be broader than its initial value: `string $summary = $name . ': done';`
+and `Animal $animal = new Dog();` are valid when `Dog` extends `Animal`.
+Generated PHPDoc does not turn these declarations into narrower-type assertions.
+
+Closure literals and arrow functions are `Closure` values and can be stored in
+either `Closure` or `callable` locals:
+
+~~~php
+readonly string $prefix = 'Order';
+Closure $label = function (int $number) use ($prefix): string {
+    return $prefix . ' #' . $number;
+};
+callable $shortLabel = fn (int $number): string => $prefix . ' #' . $number;
+~~~
+
+Their generated PHPDoc preserves parameter names, types, reference/variadic and
+optional markers, and return types so PHP tools can check subsequent calls.
+Fresh array literals containing closures also satisfy `array<callable>` contracts.
+Existing typed arrays remain invariant: an `array<Closure>` variable does not
+become `array<callable>` merely because each current element is callable.
+
 ## Scope And Existing Bindings
 
 Each source file has one executable variable scope shared by global and namespace statement lists. Functions and methods each have one local scope. Closures and arrow functions have separate scopes. An if, loop, try, namespace, or other ordinary nested block does not create a shadowing scope, so a second declaration with the same name is P2004.

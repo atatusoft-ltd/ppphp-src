@@ -945,7 +945,7 @@ final class ComposerDependencyDeclarationLoader
         $diagnostics->add(new Diagnostic(
             $unsafe ? DiagnosticCode::DependencySourcePathUnsafe : DiagnosticCode::DependencyDeclarationContextUnavailable,
             sprintf(
-                'Dependency declaration context for "%s" is %s while resolving %s.',
+                'Package source for "%s" is %s while resolving %s.',
                 $this->packageIdentity($package),
                 $unsafe ? 'outside the trusted package roots' : 'unavailable',
                 $missingReference['name'],
@@ -1101,7 +1101,7 @@ final class ComposerDependencyDeclarationLoader
     {
         $diagnostics->add(new Diagnostic(
             DiagnosticCode::ComposerDependencyIndexLimitExceeded,
-            'The portable Composer dependency declaration context exceeds its resource limit.',
+            'The Composer dependency index exceeds its size or file-count limit.',
             help: 'Reduce the dependency declaration surface or supply narrower Composer autoload metadata.',
         ));
     }

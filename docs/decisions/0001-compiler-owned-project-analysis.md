@@ -18,6 +18,16 @@ Treat analysis workspace materialization and PHPStan invocation as a separate su
 
 Treat the typed capability catalog and differential fixtures as evidence. PHPStan is an oracle for mature PHP behavior, not the ++PHP specification. Disagreements are classified as compiler gaps, backend gaps, language-policy differences, optional lint, or fixture errors and are reviewed rather than blindly copied.
 
+Generated local `@var` tags express ++PHP storage declarations, not assertions
+that narrow PHPStan's inferred initializer type. The adapter therefore discards
+only `varTag.nativeType` and `varTag.type` findings on unambiguous generated
+declaration lines whose initializer compatibility the compiler has established.
+Source-map provenance distinguishes these tags from authored PHPDoc. Unknown
+compatibility, authored assertions (including ambiguous same-line findings),
+other findings, and ordinary PHP retain their checks. This is a language-policy
+difference, not a rule-level change or a user-configurable ignore. Closure
+literals retain their nominal `Closure` identity and parameter/return metadata.
+
 For ordinary PHP, adopt Model B as the target contract and Model C as the migration vehicle: compiler-owned analysis must be complete for strict ++PHP and for ordinary-PHP declarations/contracts crossing the language boundary; deep ordinary-PHP body analysis remains supplemental until its required subset is deliberately promoted. A `compilerCore` result is never presented as full while required catalog gaps remain.
 
 ## Alternatives Considered

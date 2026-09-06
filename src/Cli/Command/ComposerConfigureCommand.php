@@ -32,7 +32,7 @@ final class ComposerConfigureCommand extends ProjectCommand
     {
         $this
             ->setDescription('Project root Composer autoload mappings to generated PHP output.')
-            ->setHelp('Validates project-owned Composer mappings and updates composer.json to load generated PHP. Use --dry-run to inspect the result without writing the file.')
+            ->setHelp('Validates this project\'s Composer mappings and updates composer.json to load generated PHP. Use --dry-run to inspect the result without writing the file.')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show whether composer.json would change without writing it.');
         $this->addProjectOptions();
     }
