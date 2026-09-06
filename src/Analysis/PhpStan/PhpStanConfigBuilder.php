@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Analysis\PhpStan;
 
 use Atatusoft\Ppphp\Analysis\AnalysisProject;
+use Atatusoft\Ppphp\Analysis\PhpStan\Exceptions\PhpStanExecutionException;
+use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
 use Atatusoft\Ppphp\Support\Path;
 
 final class PhpStanConfigBuilder
@@ -38,8 +40,12 @@ final class PhpStanConfigBuilder
         $this->appendList($lines, 'stubFiles', $project->stubFiles);
         $contents = implode("\n", $lines) . "\n";
 
-        if (file_put_contents($configurationPath, $contents) === false) {
-            throw new \RuntimeException('The generated static-analysis configuration could not be written.');
+        if (@file_put_contents($configurationPath, $contents) === false) {
+            throw new PhpStanExecutionException(
+                'A file needed for analysis could not be written.',
+                diagnosticCode: DiagnosticCode::AnalysisWorkspacePreparationFailed,
+                help: 'Check free disk space and write permissions on the project cache directory.',
+            );
         }
 
         return $configurationPath;

@@ -922,6 +922,7 @@ final readonly class CompilerCache
                 DiagnosticCode::StaticAnalysisBackendFailed,
                 DiagnosticCode::StaticAnalysisResultInvalid,
                 DiagnosticCode::AnalysisWorkspacePreparationFailed,
+                DiagnosticCode::InternalCompilerError,
             ], true)) {
                 return false;
             }

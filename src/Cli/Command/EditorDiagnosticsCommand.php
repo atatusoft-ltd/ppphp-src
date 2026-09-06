@@ -69,13 +69,13 @@ final class EditorDiagnosticsCommand extends ProjectCommand
         $configuration = $this->configLoader->load($this->resolveWorkingDirectory($input), $this->resolveConfigurationPath($input), true);
 
         if (!$configuration->isSuccessful || $configuration->configuration === null) {
-            return $this->renderError($output, 'invalid-project', 'The ++PHP project configuration is invalid.');
+            return $this->renderError($output, 'invalid-project', $this->describeProjectFailure($configuration->diagnostics));
         }
 
         $loaded = $this->projectLoader->load($configuration->configuration);
 
         if (!$loaded->isSuccessful || $loaded->project === null) {
-            return $this->renderError($output, 'invalid-project', 'The ++PHP project could not be loaded.');
+            return $this->renderError($output, 'invalid-project', $this->describeProjectFailure($loaded->diagnostics));
         }
 
         try {

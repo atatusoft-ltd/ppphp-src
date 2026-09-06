@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Analysis;
 
 use Atatusoft\Ppphp\Analysis\Declaration\DeclarationOrigin;
+use Atatusoft\Ppphp\Analysis\Exceptions\AnalysisWorkspaceException;
 use Atatusoft\Ppphp\Diagnostics\Diagnostic;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
 use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
@@ -133,11 +134,18 @@ final readonly class AnalysisWorkspacePreparer
                 $project->configuration->targetPhpVersion,
             );
             $this->writeMaps($analysisProject);
-        } catch (\Throwable $exception) {
+        } catch (AnalysisWorkspaceException $exception) {
             $diagnostics->add(new Diagnostic(
                 DiagnosticCode::AnalysisWorkspacePreparationFailed,
-                'The compiler could not prepare its isolated static-analysis workspace.',
-                help: 'Check that the configured cache path is writable and is not a symbolic link.',
+                $exception->getMessage(),
+                help: $exception->help,
+                debug: ['exception' => $exception::class, 'message' => $exception->getMessage(), 'cause' => $exception->getPrevious()?->getMessage()],
+            ));
+            $analysisProject = null;
+        } catch (\Throwable $exception) {
+            $diagnostics->add(new Diagnostic(
+                DiagnosticCode::InternalCompilerError,
+                'The compiler encountered an unexpected error while preparing your code for analysis.',
                 debug: ['exception' => $exception::class, 'message' => $exception->getMessage()],
             ));
             $analysisProject = null;
@@ -201,26 +209,26 @@ final readonly class AnalysisWorkspacePreparer
             || !Path::contains($project->configuration->projectRoot, $workspace)
             || Path::buildComparisonKey($workspace) === Path::buildComparisonKey($project->configuration->cachePath)
         ) {
-            throw new \RuntimeException('The analysis workspace is outside the configured cache root.');
+            throw new AnalysisWorkspaceException('The analysis directory is outside the project cache.', 'Configure a cache directory inside the project.');
         }
     }
 
     private function resetDirectory(string $path): void
     {
         if (is_link($path)) {
-            throw new \RuntimeException('The analysis workspace cannot be a symbolic link.');
+            throw new AnalysisWorkspaceException('A cache directory needed for analysis is a symbolic link.', 'Use real directories for compiler cache files.');
         }
 
         if (is_dir($path)) {
-            foreach (new \DirectoryIterator($path) as $entry) {
+            foreach ($this->openDirectory($path) as $entry) {
                 if (!$entry->isDot()) {
                     $this->removePath($entry->getPathname());
                 }
             }
         } elseif (file_exists($path)) {
-            throw new \RuntimeException('The analysis workspace path is not a directory.');
+            throw new AnalysisWorkspaceException('A cache directory needed for analysis is occupied by a file.', 'Move that file or configure a different cache directory.');
         } elseif (!mkdir($path, 0777, true) && !is_dir($path)) {
-            throw new \RuntimeException('The analysis workspace could not be created.');
+            throw new AnalysisWorkspaceException('The analysis directory could not be created.', 'Check free disk space and write permissions on the project cache directory.');
         }
     }
 
@@ -228,7 +236,7 @@ final readonly class AnalysisWorkspacePreparer
     {
         if (is_link($path) || is_file($path)) {
             if (!unlink($path)) {
-                throw new \RuntimeException('An existing analysis artifact could not be removed.');
+                throw new AnalysisWorkspaceException('An old analysis file could not be removed.', 'Check ownership and write permissions on the project cache directory.');
             }
 
             return;
@@ -238,14 +246,14 @@ final readonly class AnalysisWorkspacePreparer
             return;
         }
 
-        foreach (new \DirectoryIterator($path) as $entry) {
+        foreach ($this->openDirectory($path) as $entry) {
             if (!$entry->isDot()) {
                 $this->removePath($entry->getPathname());
             }
         }
 
         if (!rmdir($path)) {
-            throw new \RuntimeException('An existing analysis directory could not be removed.');
+            throw new AnalysisWorkspaceException('An old analysis directory could not be removed.', 'Check ownership and write permissions on the project cache directory.');
         }
     }
 
@@ -257,6 +265,19 @@ final readonly class AnalysisWorkspacePreparer
             : $source->relativePath;
 
         return Path::join($workspace, $selected ? 'selected' : 'context', $rootId, $relative);
+    }
+
+    private function openDirectory(string $path): \DirectoryIterator
+    {
+        try {
+            return new \DirectoryIterator($path);
+        } catch (\UnexpectedValueException $exception) {
+            throw new AnalysisWorkspaceException(
+                'A cache directory needed for analysis could not be opened.',
+                'Check that the project cache directories still exist and allow reading and traversal.',
+                $exception,
+            );
+        }
     }
 
     /** @return list<string> */
@@ -271,7 +292,7 @@ final readonly class AnalysisWorkspacePreparer
             $contents = file_get_contents($stub->path);
 
             if ($contents === false) {
-                throw new \RuntimeException('A configured stub could not be read.');
+                throw new AnalysisWorkspaceException(sprintf('The configured stub "%s" could not be read.', Path::resolveRelativeTo($stub->path, $project->configuration->projectRoot)), 'Check that the configured stub still exists and is readable.');
             }
 
             $this->writeFile($target, $contents);
@@ -385,11 +406,11 @@ final readonly class AnalysisWorkspacePreparer
         $directory = dirname($path);
 
         if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
-            throw new \RuntimeException(sprintf('Directory "%s" could not be created.', $directory));
+            throw new AnalysisWorkspaceException('A directory needed for analysis could not be created.', 'Check free disk space and write permissions on the project cache directory.');
         }
 
         if (file_put_contents($path, $contents) === false) {
-            throw new \RuntimeException(sprintf('File "%s" could not be written.', $path));
+            throw new AnalysisWorkspaceException('An analysis file could not be written.', 'Check free disk space and write permissions on the project cache directory.');
         }
     }
 

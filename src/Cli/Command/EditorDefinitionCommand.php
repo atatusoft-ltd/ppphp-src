@@ -74,13 +74,13 @@ final class EditorDefinitionCommand extends ProjectCommand
         );
 
         if (!$configResult->isSuccessful || $configResult->configuration === null) {
-            return $this->renderError('invalid-project', 'The ++PHP project configuration is invalid.', $format, $output);
+            return $this->renderError('invalid-project', $this->describeProjectFailure($configResult->diagnostics), $format, $output);
         }
 
         $projectResult = $this->projectLoader->load($configResult->configuration);
 
         if (!$projectResult->isSuccessful || $projectResult->project === null) {
-            return $this->renderError('invalid-project', 'The ++PHP project could not be loaded.', $format, $output);
+            return $this->renderError('invalid-project', $this->describeProjectFailure($projectResult->diagnostics), $format, $output);
         }
 
         $project = $projectResult->project;
@@ -116,7 +116,7 @@ final class EditorDefinitionCommand extends ProjectCommand
             $analysis = $this->semanticAnalyzer->analyze($editorParseResult);
             $definition = $this->definitionResolver->resolve($parsedFile, $analysis, $request->offset);
         } catch (\Throwable) {
-            $definition = null;
+            return $this->renderError('internal-error', 'The compiler encountered an unexpected error while resolving the definition. Report this compiler error with a reproducing example.', $format, $output);
         }
 
         return $this->renderDefinition($definition, $format, $output);

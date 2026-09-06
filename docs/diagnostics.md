@@ -8,6 +8,10 @@ Diagnostics are validated against the catalog, sanitized, deduplicated by code, 
 
 Semantic type identity and presentation remain separate. Compatibility and lookup may use a normalized canonical identity, while diagnostic messages retain the resolved spelling of class, interface, trait, enum, and type-parameter names. Canonical normalization is never exposed as a remediation spelling.
 
+Diagnostic producers preserve the most specific known cause. Translation uses structured error identifiers, not type names or words found in a message. Sanitization escapes unsafe bytes and redacts internal paths; it does not rewrite identifiers or quoted values. Known environmental failures carry condition-specific help. Unexpected compiler failures remain internal errors, without invented permissions or source-editing advice. Editor request failures retain the underlying project diagnostic code, message, location when available, and help.
+
+Every `.ppphp` file needs a PHP opening tag. A missing tag produces `P1011` with an insertion location and instructions to add `<?php`, before analysis or output preparation. Ordinary `.php` files retain PHP's inline-text behavior. Project-wide diagnostics have no source location; editor integrations must not attach them to the first token of an unrelated document.
+
 The stable sort order is severity (`Error`, `Warning`, `Note`), source presence and project-relative display path, byte range, code, identity, and message. Source offsets are zero-based bytes. Lines and columns are one-based, and columns count Unicode code points.
 
 ## Console output
@@ -39,7 +43,11 @@ Browser protocol version 2 embeds this unchanged version 1 diagnostic envelope. 
 
 Normal output is compiler-oriented and does not expose backend names, backend identifiers, analysis workspace paths, generated analysis paths, temporary configuration paths, raw subprocess commands, cache keys, or transaction paths. Cache corruption and incompatibility are silent safe misses rather than user diagnostics. `--debug` adds normalized JSON-safe values and an explicit origin (`compiler`, `php-parser`, `phpstan`, or `subprocess`). Debug output can contain implementation details and should be reviewed before sharing publicly.
 
+This boundary does not hide safe, actionable causes. For example, a symbolic link, a file occupying a needed directory, or an unreadable cache directory is explained in normal output without exposing its internal absolute path. Moving the cause into debug-only output would leave the user with the same misleading wrapper error. Expected directory-access failures remain environmental errors, not compiler bugs.
+
 `P7009` reports a conflicting shared/exclusive project operation without waiting. `P7014` means a durable build journal, marker, candidate, or backup could not be proven safe to recover; the compiler fails before guessed mutation and preserves ambiguous evidence for inspection.
+
+`P7015` means PHP output validation could not complete or failed without a reported source location. Timeouts and execution failures keep their specific messages and never acquire an invented source span. A located PHP lint rejection retains `P7003` and its original-source mapping.
 
 ## Catalog
 
@@ -83,6 +91,7 @@ The table below is generated from `DiagnosticCatalog`. Reserved codes preserve s
 | `P1008` | `syntax` | `active` | `error` | Invalid Extension Syntax |
 | `P1009` | `syntax` | `active` | `error` | Unsupported Extension Syntax |
 | `P1010` | `syntax` | `active` | `error` | Extension Normalization Failed |
+| `P1011` | `syntax` | `active` | `error` | Missing PHP Opening Tag |
 | `P2001` | `type` | `reserved` | `error` | Typed Local Syntax Not Active |
 | `P2002` | `type` | `active` | `error` | Assignment Cannot Declare Variable |
 | `P2003` | `type` | `active` | `error` | Local Variable Is Not Declared |
@@ -205,5 +214,6 @@ The table below is generated from `DiagnosticCatalog`. Reserved codes preserve s
 | `P7012` | `emission` | `active` | `error` | Build Output Has Been Modified |
 | `P7013` | `emission` | `active` | `warning` | Previous Build Backup Could Not Be Removed |
 | `P7014` | `emission` | `active` | `error` | Build Transaction Could Not Be Recovered |
+| `P7015` | `emission` | `active` | `error` | PHP Output Validation Failed |
 | `P9001` | `internal` | `active` | `error` | Internal Compiler Error |
 <!-- diagnostic-catalog:end -->

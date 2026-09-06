@@ -162,16 +162,25 @@ test('the processor sorts deterministically without collapsing distinct same-lin
 test('the processor validates and sanitizes normal user-facing content', function (): void {
     $diagnostic = new Diagnostic(
         DiagnosticCode::StaticAnalysisError,
-        "PHPStan reported .ppphp-cache/analysis/selected/0123456789abcdef/Main.php\e",
-        help: 'Inspect the normalized PHP in the analysis workspace.',
+        "An error occurred in .ppphp-cache/analysis/selected/0123456789abcdef/Main.php\e",
+        help: 'Run with --debug for details.',
         origin: DiagnosticOrigin::PhpStan,
     );
     $processed = (new DiagnosticProcessor())->process(new DiagnosticBag([$diagnostic]))->toArray();
 
     expect($processed)->toHaveCount(1)
-        ->and($processed[0]->message)->not->toContain('PHPStan', '.ppphp-cache/analysis', "\e")
-        ->and($processed[0]->message)->toContain('static analysis', 'compiler workspace', '\\x1B')
-        ->and($processed[0]->help)->toBe('Inspect the generated PHP in the compiler workspace.');
+        ->and($processed[0]->message)->not->toContain('.ppphp-cache/analysis', "\e")
+        ->and($processed[0]->message)->toContain('compiler workspace', '\\x1B')
+        ->and($processed[0]->help)->toBe('Run with --debug for details.');
+});
+
+test('sanitization preserves identifiers and literal words instead of rewriting diagnostic evidence', function (): void {
+    $message = 'App\\PHPStanClient accepts App\\PhpParser, not the literal "normalized PHP".';
+    $diagnostic = new Diagnostic(DiagnosticCode::ArgumentTypeDoesNotMatch, $message, help: 'Pass App\\PHPStanClient.');
+    $processed = (new DiagnosticProcessor())->process(new DiagnosticBag([$diagnostic]))->errors[0];
+
+    expect($processed->message)->toBe($message)
+        ->and($processed->help)->toBe('Pass App\\PHPStanClient.');
 });
 
 test('compiler-owned findings suppress only the corresponding backend fallback', function (): void {

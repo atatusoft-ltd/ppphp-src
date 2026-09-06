@@ -43,8 +43,9 @@ final readonly class PhpStanProjectAnalyzer implements ProjectAnalyzer
             $this->addInfrastructureDiagnostic(
                 $diagnostics,
                 DiagnosticCode::StaticAnalysisBackendFailed,
-                'The compiler-pinned static-analysis backend is not installed.',
+                'The static analyzer required by the compiler is not installed.',
                 ['executable' => $executable],
+                'Reinstall the compiler and its locked dependencies.',
             );
 
             return new AnalysisResult($diagnostics);
@@ -56,17 +57,18 @@ final readonly class PhpStanProjectAnalyzer implements ProjectAnalyzer
         } catch (PhpStanExecutionException $exception) {
             $this->addInfrastructureDiagnostic(
                 $diagnostics,
-                DiagnosticCode::StaticAnalysisBackendFailed,
-                'The compiler could not start its isolated static-analysis process.',
+                $exception->diagnosticCode,
+                $exception->getMessage(),
                 ['exception' => $exception::class, 'message' => $exception->getMessage()],
+                $exception->help,
             );
 
             return new AnalysisResult($diagnostics);
         } catch (\Throwable $exception) {
             $this->addInfrastructureDiagnostic(
                 $diagnostics,
-                DiagnosticCode::StaticAnalysisBackendFailed,
-                'The compiler could not start its isolated static-analysis process.',
+                DiagnosticCode::InternalCompilerError,
+                'The compiler encountered an unexpected error while starting static analysis.',
                 ['exception' => $exception::class, 'message' => $exception->getMessage()],
             );
 
@@ -91,25 +93,25 @@ final readonly class PhpStanProjectAnalyzer implements ProjectAnalyzer
 
         try {
             if ($process->timedOut) {
-                throw new PhpStanExecutionException('The static-analysis backend exceeded its time limit.');
+                throw new PhpStanExecutionException('Static analysis exceeded its time limit.', help: 'Try checking a smaller selection of files. Run with --debug if the timeout persists.');
             }
 
             if ($process->outputLimitExceeded) {
-                throw new PhpStanExecutionException('The static-analysis backend exceeded its output limit.');
+                throw new PhpStanExecutionException('Static analysis exceeded its output limit.', help: 'Try checking a smaller selection of files. Run with --debug if the output limit is still exceeded.');
             }
 
             if ($process->executionFailure !== null) {
-                throw new PhpStanExecutionException('The static-analysis backend process failed to complete.');
+                throw new PhpStanExecutionException('The static-analysis process failed to complete.');
             }
 
             if (!in_array($process->exitCode, [0, 1], true)) {
-                throw new PhpStanExecutionException(sprintf('The static-analysis backend exited with status %d.', $process->exitCode));
+                throw new PhpStanExecutionException(sprintf('Static analysis stopped with exit status %d.', $process->exitCode));
             }
 
             $parsed = $this->parser->parse($process->stdout);
 
             if ($parsed->globalErrors !== []) {
-                throw new PhpStanExecutionException('The static-analysis backend reported a global execution error.');
+                throw new PhpStanExecutionException('Static analysis reported a project-level execution error.');
             }
 
             foreach ($parsed->findings as $finding) {
@@ -127,23 +129,20 @@ final readonly class PhpStanProjectAnalyzer implements ProjectAnalyzer
                 'command' => $process->command,
             ]);
         } catch (PhpStanExecutionException $exception) {
-            $code = str_contains(strtolower($exception->getMessage()), 'json')
-                || str_contains(strtolower($exception->getMessage()), 'result')
-                ? DiagnosticCode::StaticAnalysisResultInvalid
-                : DiagnosticCode::StaticAnalysisBackendFailed;
             $this->addInfrastructureDiagnostic(
                 $diagnostics,
-                $code,
-                'The compiler could not complete isolated static analysis.',
-                ['exception' => $exception::class, 'message' => $exception->getMessage()],
+                $exception->diagnosticCode,
+                $exception->getMessage(),
+                ['exception' => $exception::class, 'message' => $exception->getMessage(), 'stderr' => $process->stderr, 'executionFailure' => $process->executionFailure, 'globalErrors' => $parsed->globalErrors ?? []],
+                $exception->help,
             );
 
             return new AnalysisResult($diagnostics);
         } catch (\Throwable $exception) {
             $this->addInfrastructureDiagnostic(
                 $diagnostics,
-                DiagnosticCode::StaticAnalysisBackendFailed,
-                'The compiler could not complete isolated static analysis.',
+                DiagnosticCode::InternalCompilerError,
+                'The compiler encountered an unexpected error while reading analysis results.',
                 ['exception' => $exception::class, 'message' => $exception->getMessage()],
             );
 
@@ -157,11 +156,12 @@ final readonly class PhpStanProjectAnalyzer implements ProjectAnalyzer
         DiagnosticCode $code,
         string $message,
         array $debug,
+        string $help = 'Run the command again with --debug and include the details when reporting the analysis failure.',
     ): void {
         $diagnostics->add(new Diagnostic(
             $code,
             $message,
-            help: 'Run the command again with --debug for analysis details.',
+            help: $help,
             debug: $debug,
             origin: DiagnosticOrigin::Subprocess,
         ));

@@ -41,6 +41,7 @@ enum DiagnosticCode: string
     case InvalidExtensionSyntax = 'P1008';
     case UnsupportedExtensionSyntax = 'P1009';
     case ExtensionNormalizationFailed = 'P1010';
+    case MissingPhpOpeningTag = 'P1011';
     case TypedLocalSyntaxNotActive = 'P2001';
     case AssignmentCannotDeclareVariable = 'P2002';
     case LocalVariableNotDeclared = 'P2003';
@@ -163,5 +164,6 @@ enum DiagnosticCode: string
     case BuildOutputHasBeenModified = 'P7012';
     case PreviousBuildBackupCouldNotBeRemoved = 'P7013';
     case BuildTransactionCouldNotBeRecovered = 'P7014';
+    case PhpOutputValidationFailed = 'P7015';
     case InternalCompilerError = 'P9001';
 }

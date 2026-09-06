@@ -140,5 +140,17 @@ test('prepare analysis stops before PHPStan on syntax and compiler-owned semanti
         ->and(array_column($prepared->diagnostics['diagnostics'], 'code'))->toContain($code);
 })->with([
     'syntax' => ["<?php\nfunction broken(\n", 'P1001'],
+    'missing opening tag' => ['final class Box<T> {}', 'P1011'],
     'semantic' => ["<?php\n\$value = 1;\n", 'P2002'],
 ]);
+
+test('browser preparation preserves the missing analyzer cause and recovery advice', function (): void {
+    $root = $this->createTemporaryDirectory();
+    writeBrowserAnalysisProject($root, '<?php final class Box<T> {}');
+    $protocol = new BrowserAnalysisProtocol(phpStan: new \Atatusoft\Ppphp\Analysis\PhpStan\PhpStanProjectAnalyzer($root . '/missing-compiler'));
+    $prepared = $protocol->prepare(new PrepareAnalysisRequest('missing-analyzer', 'check', null), $root);
+    expect($prepared->status)->toBe('diagnostics')
+        ->and($prepared->diagnostics['diagnostics'][0]['message'])->toContain('not installed')
+        ->and($prepared->diagnostics['diagnostics'][0]['help'])->toContain('Reinstall')
+        ->and($prepared->diagnostics['diagnostics'][0]['location'])->toBeNull();
+});

@@ -16,6 +16,8 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 
 ### Fixed
 
+- Missing PHP opening tags now point to the needed `<?php` insertion, instead of suggesting cache-permissions changes. Diagnostics preserve user identifiers, report the actual argument or return-type mismatch, and retain specific project and analysis-failure reasons in editor requests.
+
 - Semantic type names in diagnostics retain their resolved spelling while normalized canonical identities remain internal to type comparison and lookup.
 - Flow-sensitive local assignments honor earlier null guards instead of reporting false nullable-type errors.
 

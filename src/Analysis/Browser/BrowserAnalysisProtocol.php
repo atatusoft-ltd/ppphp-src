@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Analysis\Browser;
 
 use Atatusoft\Ppphp\Analysis\PhpStan\PhpStanProjectAnalyzer;
+use Atatusoft\Ppphp\Analysis\PhpStan\Exceptions\PhpStanExecutionException;
 use Atatusoft\Ppphp\Compiler\Compiler;
 use Atatusoft\Ppphp\Config\ProjectConfigLoader;
 use Atatusoft\Ppphp\Diagnostics\Diagnostic;
@@ -82,12 +83,19 @@ final readonly class BrowserAnalysisProtocol
                 $plan->resultPath,
                 $preparation->analysisProject->workspaceRoot,
             );
+        } catch (PhpStanExecutionException $exception) {
+            return $this->createDiagnosticResult($request, new DiagnosticBag([new Diagnostic(
+                $exception->diagnosticCode,
+                $exception->getMessage(),
+                help: $exception->help,
+                debug: ['exception' => $exception::class, 'message' => $exception->getMessage(), 'cause' => $exception->getPrevious()?->getMessage()],
+                origin: DiagnosticOrigin::Subprocess,
+            )]));
         } catch (\Throwable $exception) {
             $diagnostics = new DiagnosticBag();
             $diagnostics->add(new Diagnostic(
-                DiagnosticCode::StaticAnalysisBackendFailed,
-                'The compiler could not prepare the browser static-analysis command.',
-                help: 'Run the command again with --debug for analysis details.',
+                DiagnosticCode::InternalCompilerError,
+                'The compiler encountered an unexpected error while preparing analysis.',
                 debug: ['exception' => $exception::class, 'message' => $exception->getMessage()],
                 origin: DiagnosticOrigin::Subprocess,
             ));
@@ -137,7 +145,7 @@ final readonly class BrowserAnalysisProtocol
             $contents = file_get_contents($source->path);
 
             if ($contents === false) {
-                throw new \RuntimeException('A project source changed while Prepare Analysis was running.');
+                throw new PhpStanExecutionException('A project source changed while analysis was being prepared.', diagnosticCode: DiagnosticCode::AnalysisWorkspacePreparationFailed, help: 'Run the command again after saving your changes.');
             }
 
             $sources[] = [
@@ -160,7 +168,7 @@ final readonly class BrowserAnalysisProtocol
         $configurationContents = file_get_contents($phpStanConfigurationPath);
 
         if ($configurationContents === false) {
-            throw new \RuntimeException('The prepared PHPStan configuration could not be read.');
+            throw new PhpStanExecutionException('A file needed for analysis could not be read.', diagnosticCode: DiagnosticCode::AnalysisWorkspacePreparationFailed, help: 'Check that the project cache files still exist and are readable.');
         }
 
         $payload = [
@@ -257,7 +265,7 @@ final readonly class BrowserAnalysisProtocol
     {
         if (!is_file($path)) {
             if ($required) {
-                throw new \RuntimeException('A project configuration input changed while Prepare Analysis was running.');
+                throw new PhpStanExecutionException('Project configuration changed while analysis was being prepared.', diagnosticCode: DiagnosticCode::AnalysisWorkspacePreparationFailed, help: 'Run the command again after saving your configuration changes.');
             }
 
             return null;
@@ -266,7 +274,7 @@ final readonly class BrowserAnalysisProtocol
         $contents = file_get_contents($path);
 
         if ($contents === false) {
-            throw new \RuntimeException('A project configuration input could not be read.');
+            throw new PhpStanExecutionException('A project configuration input could not be read.', diagnosticCode: DiagnosticCode::AnalysisWorkspacePreparationFailed, help: 'Check that the project configuration files still exist and are readable.');
         }
 
         return ProtocolJson::hash($contents);
@@ -285,7 +293,18 @@ final readonly class BrowserAnalysisProtocol
     /** @param list<array{path: string, bytes: int, hash: string}> $manifest */
     private function appendWorkspaceFiles(string $workspaceRoot, string $directory, array &$manifest): void
     {
-        foreach (new \DirectoryIterator($directory) as $entry) {
+        try {
+            $entries = new \DirectoryIterator($directory);
+        } catch (\UnexpectedValueException $exception) {
+            throw new PhpStanExecutionException(
+                'A cache directory needed for analysis could not be opened.',
+                previous: $exception,
+                diagnosticCode: DiagnosticCode::AnalysisWorkspacePreparationFailed,
+                help: 'Check that the project cache directories still exist and allow reading and traversal.',
+            );
+        }
+
+        foreach ($entries as $entry) {
             if ($entry->isDot() || $entry->isLink()) {
                 continue;
             }
@@ -304,7 +323,7 @@ final readonly class BrowserAnalysisProtocol
             $contents = file_get_contents($path);
 
             if ($contents === false) {
-                throw new \RuntimeException('A prepared analysis workspace file could not be read.');
+                throw new PhpStanExecutionException('A file needed for analysis could not be read.', diagnosticCode: DiagnosticCode::AnalysisWorkspacePreparationFailed, help: 'Check that the project cache files still exist and are readable.');
             }
 
             $manifest[] = [

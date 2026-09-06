@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Frontend;
 
+use Atatusoft\Ppphp\Diagnostics\Diagnostic;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
+use Atatusoft\Ppphp\Diagnostics\DiagnosticLabel;
 use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
 use Atatusoft\Ppphp\Frontend\Enumerations\ParseMode;
 use Atatusoft\Ppphp\Frontend\Extensions\ExtensionSyntaxParser;
 use Atatusoft\Ppphp\Frontend\Interfaces\Parser;
 use Atatusoft\Ppphp\Frontend\Token\Lexer;
+use Atatusoft\Ppphp\Frontend\Token\Enumerations\TokenKind;
 use Atatusoft\Ppphp\Source\SourceFile;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
@@ -31,6 +34,14 @@ final readonly class PpphpParser implements Parser
         }
 
         $tokens = $this->lexer->tokenize($sourceFile);
+        if (!array_any($tokens->tokens, static fn ($token): bool => $token->kind === TokenKind::OpenTag)) {
+            return new ParseResult(null, new DiagnosticBag([new Diagnostic(
+                DiagnosticCode::MissingPhpOpeningTag,
+                'This ++PHP file is missing a PHP opening tag.',
+                new DiagnosticLabel($sourceFile->createSpan(0, 0), 'Add <?php here.'),
+                help: 'Start this ++PHP file with <?php, followed by a newline.',
+            )]));
+        }
         $extensionResult = $this->extensionSyntaxParser->parse($sourceFile, $tokens);
 
         foreach ($extensionResult->diagnostics as $diagnostic) {

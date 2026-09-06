@@ -82,9 +82,13 @@ test('lint timeout and execution failures become structured diagnostics', functi
     $diagnostics = (new PhpLintValidator(runner: stageTenLintRunner($result)))
         ->validate(stageTenLintArtifact(), '/hidden/candidate.php');
 
-    expect($diagnostics->errors[0]->code)->toBe(DiagnosticCode::GeneratedPhpIsInvalid)
-        ->and($diagnostics->errors[0]->message)->toBe($message);
+    expect($diagnostics->errors[0]->code)->toBe(DiagnosticCode::PhpOutputValidationFailed)
+        ->and($diagnostics->errors[0]->message)->toBe($message)
+        ->and($diagnostics->errors[0]->primary)->toBeNull()
+        ->and($diagnostics->errors[0]->help)->toContain('--debug')
+        ->and((new ConsoleRenderer())->render($diagnostics))->not->toContain('/hidden/candidate.php', 'src/One.ppphp');
 })->with([
     'timeout' => [new PhpLintResult(null, timedOut: true, executionFailure: 'timeout'), 'PHP lint validation timed out.'],
     'execution failure' => [new PhpLintResult(null, executionFailure: 'PHP executable unavailable'), 'PHP lint validation could not be executed.'],
+    'unlocated failure' => [new PhpLintResult(2, stderr: 'unknown failure'), 'The candidate PHP output did not pass php -l.'],
 ]);
