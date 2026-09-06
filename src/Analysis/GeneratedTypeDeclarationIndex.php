@@ -30,7 +30,7 @@ final class GeneratedTypeDeclarationIndex
                 $binding->type->semanticType,
                 $initializerType ?? $binding->initializerType->semanticType,
                 $analysis->symbols,
-                $binding->initializerExpression instanceof \PhpParser\Node\Expr\Array_,
+                $model->whenExpressions->resolveArrayFreshness($initializer),
             ) === TypeCompatibilityResult::Compatible) {
                 $origins[$offset] = true;
             } else {
@@ -38,9 +38,9 @@ final class GeneratedTypeDeclarationIndex
             }
         }
         foreach ($model?->whenExpressions->expressions ?? [] as $when) {
-            if (!$when->resultType->unknown) {
-                $origins[$when->syntax->span->start->offset] = true;
-            }
+            // The emitter marks only known result contracts and fixed-type
+            // control state. Unknown result annotations remain unmarked.
+            $origins[$when->syntax->span->start->offset] = true;
         }
         $origins = array_diff_key($origins, $unverified);
         if ($origins === []) {

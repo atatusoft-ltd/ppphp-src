@@ -37,6 +37,12 @@ consumer annotations, only when the result type is known. Unknown or authored
 assertions keep the combined comment ineligible. Result temporaries have no null
 seed: every valid completing branch assigns a result, and terminating branches
 do not reach the consumer.
+Fresh-array compatibility follows the effective result paths through `when`,
+including nested results and `finally` overrides; any existing-array result
+retains invariance. The shared freshness query is used by context, call, return,
+property-write, and generated-declaration checks. Finally handling records a
+protected result before dispatching completion, with fixed `bool` and
+`Throwable|null` control declarations using the same provenance policy.
 
 For ordinary PHP, adopt Model B as the target contract and Model C as the migration vehicle: compiler-owned analysis must be complete for strict ++PHP and for ordinary-PHP declarations/contracts crossing the language boundary; deep ordinary-PHP body analysis remains supplemental until its required subset is deliberately promoted. A `compilerCore` result is never presented as full while required catalog gaps remain.
 

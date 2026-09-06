@@ -67,6 +67,9 @@ final class CheckWhenExpressionsPass implements SemanticPass
 
     private int $nestedCallableDepth = 0;
 
+    /** @var array<int, true> */
+    private array $freshArrayResults = [];
+
     private ExpressionTypeResolver $expressionTypes;
 
     private readonly ?ExpressionTypeResolver $configuredExpressionTypes;
@@ -97,6 +100,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
         $this->typedForInitializers = [];
         $this->typedForeachBindings = [];
         $this->nestedCallableDepth = 0;
+        $this->freshArrayResults = [];
 
         foreach ($context->parsedFile->extensionSyntax->typedLocals as $local) {
             $this->typedLocals[$local->variableSpan->start->offset] = $local;
@@ -279,6 +283,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
 
         $analyses = [];
         $allTypes = [];
+        $allResultSpans = [];
 
         foreach ($parsed->branches as $branch) {
             $scope = $this->copyScope($outerScope, 'when-branch');
@@ -297,6 +302,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
             }
 
             array_push($allTypes, ...$flow['types']);
+            array_push($allResultSpans, ...$flow['spans']);
             $analyses[] = new WhenBranchAnalysis(
                 $branch->syntax,
                 $branch->condition,
@@ -316,6 +322,8 @@ final class CheckWhenExpressionsPass implements SemanticPass
             $analyses,
             $resultType,
             $this->createTemporaryName($when),
+            $allResultSpans !== [] && array_all($allResultSpans,
+                fn (Span $span): bool => isset($this->freshArrayResults[$span->start->offset])),
         );
         $this->context->model->whenExpressions->record($analysis);
         $this->checkContextType($analysis, $outerScope);
@@ -361,11 +369,16 @@ final class CheckWhenExpressionsPass implements SemanticPass
             }
 
             $this->inspectExpression($statement->expr, $scope);
+            $type = $this->resolveExpressionType($statement->expr, $scope);
+            $span = $this->span($statement->expr);
+            if ($this->context->model->whenExpressions->resolveArrayFreshness($statement->expr)) {
+                $this->freshArrayResults[$span->start->offset] = true;
+            }
 
             return [
                 'canComplete' => false,
-                'types' => [$this->resolveExpressionType($statement->expr, $scope)],
-                'spans' => [$this->span($statement->expr)],
+                'types' => [$type],
+                'spans' => [$span],
             ];
         }
 
@@ -727,7 +740,12 @@ final class CheckWhenExpressionsPass implements SemanticPass
     private function checkContextType(WhenExpressionAnalysis $analysis, Scope $scope): void
     {
         $expected = $this->resolveExpectedType($analysis, $scope);
-        if ($expected === null || $analysis->resultType->unknown || $this->compatibility->accepts($expected, $analysis->resultType, $this->context->symbols)) {
+        if ($expected === null || $analysis->resultType->unknown || $this->compatibility->compare(
+            $expected->semanticType,
+            $analysis->resultType->semanticType,
+            $this->context->symbols,
+            $analysis->resultIsFreshArray,
+        )->isAccepted()) {
             return;
         }
 

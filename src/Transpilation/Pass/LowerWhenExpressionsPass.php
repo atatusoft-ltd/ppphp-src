@@ -731,7 +731,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             }
 
             if ($statement instanceof Stmt\TryCatch) {
-                array_push($lowered, ...$this->lowerTryCatch($statement, $analysis, $breakDepth));
+                array_push($lowered, ...$this->lowerTryCatch($statement, $analysis, $breakDepth, $completionFlag));
                 continue;
             }
 
@@ -871,19 +871,24 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         Stmt\TryCatch $statement,
         WhenExpressionAnalysis $analysis,
         int $breakDepth,
+        ?string $completionFlag = null,
     ): array {
-        $statement->stmts = $this->lowerBranchStatements(array_values($statement->stmts), $analysis, $breakDepth);
-        foreach ($statement->catches as $catch) {
-            $catch->stmts = $this->lowerBranchStatements(array_values($catch->stmts), $analysis, $breakDepth);
-        }
         if ($statement->finally === null) {
+            $statement->stmts = $this->lowerBranchStatements(array_values($statement->stmts), $analysis, $breakDepth, $completionFlag);
+            foreach ($statement->catches as $catch) {
+                $catch->stmts = $this->lowerBranchStatements(array_values($catch->stmts), $analysis, $breakDepth, $completionFlag);
+            }
             return [$statement];
         }
 
         $sourceFinally = $statement->finally;
         $statement->finally = null;
-        $protectedStatements = $statement->catches === [] ? $statement->stmts : [$statement];
         $flag = $this->allocateName('__ppphp_when_finally');
+        $statement->stmts = $this->lowerBranchStatements(array_values($statement->stmts), $analysis, 1, $flag);
+        foreach ($statement->catches as $catch) {
+            $catch->stmts = $this->lowerBranchStatements(array_values($catch->stmts), $analysis, 1, $flag);
+        }
+        $protectedStatements = $statement->catches === [] ? $statement->stmts : [$statement];
         $pending = $this->allocateName('__ppphp_when_pending_error');
         $caught = $this->allocateName('__ppphp_when_caught_error');
         $finally = $this->lowerBranchStatements(
@@ -909,17 +914,16 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         );
 
         return [
-            new Stmt\Expression(new Expr\Assign(
-                new Expr\Variable($pending),
-                new Expr\ConstFetch(new Name('null')),
-            )),
-            new Stmt\Expression(new Expr\Assign(
-                new Expr\Variable($flag),
-                new Expr\ConstFetch(new Name('false')),
-            )),
-            $wrapper,
+            $this->declareTemporary($pending, '\\Throwable|null', new Expr\ConstFetch(new Name('null')), $analysis->syntax->span),
+            $this->declareTemporary($flag, 'bool', new Expr\ConstFetch(new Name('false')), $analysis->syntax->span),
+            new Stmt\Do_(new Expr\ConstFetch(new Name('false')), [$wrapper]),
             new Stmt\If_(new Expr\Variable($flag), [
-                'stmts' => [new Stmt\Break_($breakDepth === 1 ? null : new Scalar\Int_($breakDepth))],
+                'stmts' => [
+                    ...($completionFlag === null ? [] : [new Stmt\Expression(new Expr\Assign(
+                        new Expr\Variable($completionFlag), new Expr\ConstFetch(new Name('true')),
+                    ))]),
+                    new Stmt\Break_($breakDepth === 1 ? null : new Scalar\Int_($breakDepth)),
+                ],
             ]),
             new Stmt\If_(new Expr\BinaryOp\NotIdentical(
                 new Expr\Variable($pending),
@@ -928,6 +932,16 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 'stmts' => [new Stmt\Expression(new Expr\Throw_(new Expr\Variable($pending)))],
             ]),
         ];
+    }
+
+    private function declareTemporary(string $name, string $type, Expr $value, Span $owner): Stmt\Expression
+    {
+        $statement = new Stmt\Expression(new Expr\Assign(new Expr\Variable($name), $value));
+        $document = new Doc(sprintf('/** @var %s $%s */', $type, $name));
+        $statement->setDocComment($document);
+        $this->bindingDocumentOrigins[$document] = $owner;
+
+        return $statement;
     }
 
     /**
