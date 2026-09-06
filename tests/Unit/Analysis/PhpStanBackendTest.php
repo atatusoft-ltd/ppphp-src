@@ -73,7 +73,7 @@ test('empty and malformed backend output are rejected', function (): void {
         ->toThrow(PhpStanExecutionException::class);
 });
 
-test('backend timeouts unexpected exits and malformed results become infrastructure diagnostics', function (PhpStanProcessResult $processResult, string $code): void {
+test('backend timeouts unexpected exits and malformed results retain their specific causes', function (PhpStanProcessResult $processResult, string $code, string $reason): void {
     $root = $this->createTemporaryDirectory();
     $project = createBackendAnalysisProject($root);
     $runner = new class($processResult) extends PhpStanProcessRunner {
@@ -86,13 +86,57 @@ test('backend timeouts unexpected exits and malformed results become infrastruct
     };
     $analysis = (new PhpStanProjectAnalyzer(dirname(__DIR__, 3), $runner))->analyze($project);
 
-    expect(backendDiagnosticCodes($analysis->diagnostics))->toBe([$code]);
+    expect(backendDiagnosticCodes($analysis->diagnostics))->toBe([$code])
+        ->and($analysis->diagnostics->errors[0]->message)->toContain($reason)
+        ->and($analysis->diagnostics->errors[0]->primary)->toBeNull()
+        ->and($analysis->diagnostics->errors[0]->help)->not->toContain('permissions');
 })->with([
-    'timeout' => [new PhpStanProcessResult([], '', '', -1, true), DiagnosticCode::StaticAnalysisBackendFailed->value],
-    'unexpected exit' => [new PhpStanProcessResult([], '', 'failed', 2, false), DiagnosticCode::StaticAnalysisBackendFailed->value],
-    'empty result' => [new PhpStanProcessResult([], '', 'failed', 1, false), DiagnosticCode::StaticAnalysisResultInvalid->value],
-    'malformed json' => [new PhpStanProcessResult([], '{', '', 1, false), DiagnosticCode::StaticAnalysisResultInvalid->value],
+    'timeout' => [new PhpStanProcessResult([], '', '', -1, true), DiagnosticCode::StaticAnalysisBackendFailed->value, 'time limit'],
+    'output limit' => [new PhpStanProcessResult([], '', '', -1, false, true), DiagnosticCode::StaticAnalysisBackendFailed->value, 'output limit'],
+    'execution failure' => [new PhpStanProcessResult([], '', '', -1, false, false, 'private process details'), DiagnosticCode::StaticAnalysisBackendFailed->value, 'failed to complete'],
+    'unexpected exit' => [new PhpStanProcessResult([], '', 'failed', 2, false), DiagnosticCode::StaticAnalysisBackendFailed->value, 'exit status 2'],
+    'empty result' => [new PhpStanProcessResult([], '', 'failed', 1, false), DiagnosticCode::StaticAnalysisResultInvalid->value, 'empty result'],
+    'malformed json' => [new PhpStanProcessResult([], '{', '', 1, false), DiagnosticCode::StaticAnalysisResultInvalid->value, 'malformed JSON'],
+    'invalid diagnostic' => [new PhpStanProcessResult([], '{"files":{"a":{"messages":[{}]}},"errors":[]}', '', 1, false), DiagnosticCode::StaticAnalysisResultInvalid->value, 'invalid diagnostic'],
 ]);
+
+test('unexpected analyzer exceptions cannot masquerade as ordinary backend failures', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $runner = new class extends PhpStanProcessRunner {
+        public function run(array $command, string $workingDirectory, float $timeout): PhpStanProcessResult
+        {
+            throw new LogicException('private implementation details');
+        }
+    };
+    $analysis = (new PhpStanProjectAnalyzer(dirname(__DIR__, 3), $runner))->analyze(createBackendAnalysisProject($root));
+    expect(backendDiagnosticCodes($analysis->diagnostics))->toBe([DiagnosticCode::InternalCompilerError->value])
+        ->and($analysis->diagnostics->errors[0]->message)->not->toContain('private implementation details')
+        ->and($analysis->diagnostics->errors[0]->debug['message'])->toBe('private implementation details');
+});
+
+test('analysis configuration write failures retain environmental classification', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $project = createBackendAnalysisProject($root);
+    mkdir($project->workspaceRoot . '/phpstan.neon');
+    // Capture only the deliberately induced I/O warning; assert the public diagnostic below.
+    $writeWarning = null;
+    set_error_handler(static function (int $severity, string $message) use (&$writeWarning): bool {
+        if ($severity !== E_WARNING || !str_contains($message, 'file_put_contents(') || !str_contains($message, 'Is a directory')) {
+            return false;
+        }
+        $writeWarning = $message;
+        return true;
+    });
+    try {
+        $analysis = (new PhpStanProjectAnalyzer(dirname(__DIR__, 3)))->analyze($project);
+    } finally {
+        restore_error_handler();
+    }
+    expect(backendDiagnosticCodes($analysis->diagnostics))->toBe([DiagnosticCode::AnalysisWorkspacePreparationFailed->value])
+        ->and($writeWarning)->not->toBeNull()
+        ->and($analysis->diagnostics->errors[0]->message)->toContain('could not be written')
+        ->and($analysis->diagnostics->errors[0]->help)->toContain('write permissions');
+});
 
 test('a missing pinned backend executable becomes an infrastructure diagnostic', function (): void {
     $root = $this->createTemporaryDirectory();
@@ -234,12 +278,12 @@ test('generic and typed-array backend findings map to stable P3 diagnostics', fu
     'list shape' => [
         'return.type',
         "Function values() should return list<string> but returns array{key: 'value'}.",
-        DiagnosticCode::OperationWouldBreakListShape,
+        DiagnosticCode::ReturnTypeDoesNotMatch,
     ],
     'map value' => [
         'argument.type',
         'Parameter expects array<string, int>, array<string, string> given.',
-        DiagnosticCode::TypedArrayValueTypeDoesNotMatch,
+        DiagnosticCode::ArgumentTypeDoesNotMatch,
     ],
     'offset key' => [
         'offsetAccess.invalidOffset',
@@ -249,7 +293,27 @@ test('generic and typed-array backend findings map to stable P3 diagnostics', fu
     'generic invariance' => [
         'argument.type',
         'Parameter expects Box<Animal>, Box<Dog> given.',
-        DiagnosticCode::GenericTypeIsInvariant,
+        DiagnosticCode::ArgumentTypeDoesNotMatch,
+    ],
+    'list mentioned in an unrelated return mismatch' => [
+        'return.type',
+        'Function values() should return int but returns list<string>.',
+        DiagnosticCode::ReturnTypeDoesNotMatch,
+    ],
+    'generic text without a known identifier' => [
+        'unknown.finding',
+        'Unexpected relationship between Box<Animal> and Box<Dog>.',
+        DiagnosticCode::StaticAnalysisError,
+    ],
+    'nullable return keeps return-specific advice' => [
+        'return.type',
+        'Function value() should return int but returns null.',
+        DiagnosticCode::ReturnTypeDoesNotMatch,
+    ],
+    'missing offset does not imply a wrong key type' => [
+        'offsetAccess.notFound',
+        'Offset 10 does not exist on array<int, string>.',
+        DiagnosticCode::StaticAnalysisError,
     ],
 ]);
 

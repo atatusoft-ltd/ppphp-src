@@ -56,21 +56,8 @@ final class DiagnosticSanitizer
     {
         $text = Utf8::sanitize($text);
         $text = str_replace(["\r\n", "\r"], "\n", $text);
-        $text = str_ireplace([
-            'PHPStan',
-            'PhpParser',
-            'backendIdentifier',
-            'analysis workspace',
-            'normalized PHP',
-            'temporary analysis configuration',
-        ], [
-            'static analysis',
-            'PHP parser',
-            'analysis identifier',
-            'compiler workspace',
-            'generated PHP',
-            'compiler configuration',
-        ], $text);
+        // User identifiers and literal values are diagnostic evidence, not prose to rewrite.
+        // Producers own wording; this layer only makes text safe to render.
 
         $text = preg_replace(
             '~(?:[^\s\x00-\x1F\x7F`"\']*[\\/])?\.ppphp-cache[\\/]analysis[^\s\x00-\x1F\x7F`"\']*~i',

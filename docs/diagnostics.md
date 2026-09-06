@@ -8,6 +8,10 @@ Diagnostics are validated against the catalog, sanitized, deduplicated by code, 
 
 Semantic type identity and presentation remain separate. Compatibility and lookup may use a normalized canonical identity, while diagnostic messages retain the resolved spelling of class, interface, trait, enum, and type-parameter names. Canonical normalization is never exposed as a remediation spelling.
 
+Diagnostic producers preserve the most specific known cause. Translation uses structured error identifiers, not type names or words found in a message. Sanitization escapes unsafe bytes and redacts internal paths; it does not rewrite identifiers or quoted values. Known environmental failures carry condition-specific help. Unexpected compiler failures remain internal errors, without invented permissions or source-editing advice. Editor request failures retain the underlying project diagnostic code, message, location when available, and help.
+
+Every `.ppphp` file needs a PHP opening tag. A missing tag produces `P1011` with an insertion location and instructions to add `<?php`, before analysis or output preparation. Ordinary `.php` files retain PHP's inline-text behavior. Project-wide diagnostics have no source location; editor integrations must not attach them to the first token of an unrelated document.
+
 The stable sort order is severity (`Error`, `Warning`, `Note`), source presence and project-relative display path, byte range, code, identity, and message. Source offsets are zero-based bytes. Lines and columns are one-based, and columns count Unicode code points.
 
 ## Console output
@@ -83,6 +87,7 @@ The table below is generated from `DiagnosticCatalog`. Reserved codes preserve s
 | `P1008` | `syntax` | `active` | `error` | Invalid Extension Syntax |
 | `P1009` | `syntax` | `active` | `error` | Unsupported Extension Syntax |
 | `P1010` | `syntax` | `active` | `error` | Extension Normalization Failed |
+| `P1011` | `syntax` | `active` | `error` | Missing PHP Opening Tag |
 | `P2001` | `type` | `reserved` | `error` | Typed Local Syntax Not Active |
 | `P2002` | `type` | `active` | `error` | Assignment Cannot Declare Variable |
 | `P2003` | `type` | `active` | `error` | Local Variable Is Not Declared |

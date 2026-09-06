@@ -10,6 +10,7 @@ use Atatusoft\Ppphp\Config\ProjectConfigLoader;
 use Atatusoft\Ppphp\Diagnostics\ConsoleRenderer;
 use Atatusoft\Ppphp\Diagnostics\Diagnostic;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
+use Atatusoft\Ppphp\Diagnostics\DiagnosticProcessor;
 use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
 use Atatusoft\Ppphp\Diagnostics\JsonRenderer;
 use Atatusoft\Ppphp\Support\Path;
@@ -117,5 +118,24 @@ abstract class ProjectCommand extends Command
         OutputInterface $output,
     ): void {
         $this->diagnosticOutputWriter->write($diagnostics, $format, $input, $output);
+    }
+
+    /** Preserve the first actionable project failure in editor protocol error messages. */
+    protected function describeProjectFailure(DiagnosticBag $diagnostics): string
+    {
+        $diagnostic = (new DiagnosticProcessor())->process($diagnostics)->errors[0] ?? null;
+        if ($diagnostic === null) {
+            throw new \LogicException('An unsuccessful project load must provide an error diagnostic.');
+        }
+
+        $location = $diagnostic->primary?->span;
+        $where = $location === null ? '' : sprintf(
+            ' (%s:%d:%d)',
+            $location->start->sourceFile->displayPath,
+            $location->start->line,
+            $location->start->column,
+        );
+
+        return sprintf('%s: %s%s %s', $diagnostic->code->value, $diagnostic->message, $where, $diagnostic->help);
     }
 }

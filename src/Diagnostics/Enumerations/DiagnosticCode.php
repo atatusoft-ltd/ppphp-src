@@ -41,6 +41,7 @@ enum DiagnosticCode: string
     case InvalidExtensionSyntax = 'P1008';
     case UnsupportedExtensionSyntax = 'P1009';
     case ExtensionNormalizationFailed = 'P1010';
+    case MissingPhpOpeningTag = 'P1011';
     case TypedLocalSyntaxNotActive = 'P2001';
     case AssignmentCannotDeclareVariable = 'P2002';
     case LocalVariableNotDeclared = 'P2003';

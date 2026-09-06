@@ -71,13 +71,13 @@ final class EditorSemanticTokensCommand extends ProjectCommand
         );
 
         if (!$configResult->isSuccessful || $configResult->configuration === null) {
-            return $this->renderError('invalid-project', 'The ++PHP project configuration is invalid.', $format, $output);
+            return $this->renderError('invalid-project', $this->describeProjectFailure($configResult->diagnostics), $format, $output);
         }
 
         $projectResult = $this->projectLoader->load($configResult->configuration);
 
         if (!$projectResult->isSuccessful || $projectResult->project === null) {
-            return $this->renderError('invalid-project', 'The ++PHP project could not be loaded.', $format, $output);
+            return $this->renderError('invalid-project', $this->describeProjectFailure($projectResult->diagnostics), $format, $output);
         }
 
         $project = $projectResult->project;

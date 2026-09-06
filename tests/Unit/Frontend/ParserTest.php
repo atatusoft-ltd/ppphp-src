@@ -23,6 +23,26 @@ function createParserSource(string $contents, string $name = 'Example.ppphp'): S
     );
 }
 
+test('missing opening tags are source diagnostics before extension parsing or lowering', function (string $contents): void {
+    $result = (new PpphpParser())->parse(createParserSource($contents));
+
+    expect($result->parsedFile)->toBeNull()
+        ->and($result->diagnostics->errors)->toHaveCount(1);
+    $diagnostic = $result->diagnostics->errors[0];
+    expect($diagnostic->code)->toBe(DiagnosticCode::MissingPhpOpeningTag)
+        ->and($diagnostic->message)->toBe('This ++PHP file is missing a PHP opening tag.')
+        ->and($diagnostic->help)->toContain('<?php')
+        ->and($diagnostic->primary?->span->start->offset)->toBe(0)
+        ->and($diagnostic->primary?->span->end->offset)->toBe(0);
+})->with(['final class Box<T> {}', '', " \n\t", '<?phpfinal class Box {}']);
+
+test('opening-tag validation retains PHP mode inline text and valid tagged sources', function (): void {
+    $parser = new PpphpParser();
+    expect($parser->parse(createParserSource('plain text'), ParseMode::Php)->isSuccessful)->toBeTrue()
+        ->and($parser->parse(createParserSource('<?php final class Box<T> {}'))->isSuccessful)->toBeTrue()
+        ->and($parser->parse(createParserSource("#!/usr/bin/env ppphp\n<?php\n"))->isSuccessful)->toBeTrue();
+});
+
 test('the ordinary frontend retains an empty PHP program and its tokens', function (): void {
     $source = createParserSource('<?php');
     $result = (new PpphpParser())->parse($source);

@@ -49,7 +49,7 @@ final readonly class PhpStanAnalysisPlanBuilder
         $executable = $this->executablePath();
 
         if (!is_file($executable)) {
-            throw new PhpStanExecutionException('The compiler-pinned static-analysis backend is not installed.');
+            throw new PhpStanExecutionException('The static analyzer required by the compiler is not installed.', help: 'Reinstall the compiler and its locked dependencies.');
         }
 
         $configuration = (new PhpStanConfigBuilder($this->compilerRoot))->build($project);

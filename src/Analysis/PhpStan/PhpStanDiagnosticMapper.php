@@ -62,7 +62,6 @@ final class PhpStanDiagnosticMapper
     private function resolveStageEightCategory(PhpStanFinding $finding, FileKind $kind): ?array
     {
         $identifier = strtolower($finding->identifier ?? '');
-        $message = strtolower($finding->message);
 
         if ($identifier === 'missingtype.generics' && $kind === FileKind::Ppphp) {
             return [
@@ -82,31 +81,10 @@ final class PhpStanDiagnosticMapper
             return null;
         }
 
-        if (str_contains($message, 'list<')) {
-            return [
-                DiagnosticCode::OperationWouldBreakListShape,
-                'Preserve contiguous integer keys and the declared list element type.',
-            ];
-        }
-
-        if (str_contains($identifier, 'offsetaccess')) {
+        if ($identifier === 'offsetaccess.invalidoffset') {
             return [
                 DiagnosticCode::TypedArrayKeyTypeDoesNotMatch,
                 'Use an offset accepted by the declared typed-array key contract.',
-            ];
-        }
-
-        if (str_contains($message, 'array<')) {
-            return [
-                DiagnosticCode::TypedArrayValueTypeDoesNotMatch,
-                'Preserve the declared typed-array key and value contract.',
-            ];
-        }
-
-        if (preg_match_all('/\b[A-Z_a-z\\\\][A-Z_a-z0-9\\\\]*<[^>]+>/', $finding->message) >= 2) {
-            return [
-                DiagnosticCode::GenericTypeIsInvariant,
-                'Use the exact applied generic type required by the declaration.',
             ];
         }
 
@@ -116,10 +94,6 @@ final class PhpStanDiagnosticMapper
     /** @return array{DiagnosticCode, string} */
     private function resolveCategory(PhpStanFinding $finding): array
     {
-        if ($this->reportsNullMismatch($finding)) {
-            return [DiagnosticCode::NullNotAssignable, 'Make the receiving type nullable or avoid passing null.'];
-        }
-
         if (
             str_starts_with($finding->identifier ?? '', 'missingType.')
             && !in_array($finding->identifier, [
@@ -158,12 +132,4 @@ final class PhpStanDiagnosticMapper
         };
     }
 
-    private function reportsNullMismatch(PhpStanFinding $finding): bool
-    {
-        if (!in_array($finding->identifier, ['argument.type', 'return.type', 'assign.propertyType'], true)) {
-            return false;
-        }
-
-        return preg_match('/(?:null given|returns null|accept null)(?:\.|$)/i', $finding->message) === 1;
-    }
 }
