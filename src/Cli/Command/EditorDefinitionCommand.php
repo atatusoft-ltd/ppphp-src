@@ -88,7 +88,7 @@ final class EditorDefinitionCommand extends ProjectCommand
         $projectSource = $project->sources->find($documentPath);
 
         if ($projectSource === null) {
-            return $this->renderError('document-not-owned', 'The editor document is not a project-owned source file.', $format, $output);
+            return $this->renderError('document-not-owned', 'The editor document is outside the configured source roots.', $format, $output);
         }
 
         $sourceFile = new SourceFile(

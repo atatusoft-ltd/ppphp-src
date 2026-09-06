@@ -8,6 +8,7 @@ use Atatusoft\Ppphp\Compiler\Compiler;
 use Atatusoft\Ppphp\Support\CanonicalJson;
 use Atatusoft\Ppphp\Support\Path;
 use Atatusoft\Ppphp\Versioning\Enumerations\ReleaseChannel;
+use Atatusoft\Ppphp\Versioning\Exceptions\InvalidReleaseMetadata;
 
 final readonly class ReleaseMetadataLoader
 {
@@ -43,7 +44,7 @@ final readonly class ReleaseMetadataLoader
                 throw new \UnexpectedValueException('The release manifest is not a regular file.');
             }
 
-            $contents = file_get_contents($this->manifestPath);
+            $contents = @file_get_contents($this->manifestPath);
 
             if (!is_string($contents)) {
                 throw new \UnexpectedValueException('The release manifest is not readable.');
@@ -106,13 +107,17 @@ final readonly class ReleaseMetadataLoader
                 throw new \UnexpectedValueException('The bundled release schema is unavailable.');
             }
 
-            $actualSchemaHash = hash_file('sha256', $this->schemaPath);
+            $actualSchemaHash = @hash_file('sha256', $this->schemaPath);
 
-            if (!is_string($actualSchemaHash) || $schemaSha256 !== 'sha256:' . $actualSchemaHash) {
+            if (!is_string($actualSchemaHash)) {
+                throw new \UnexpectedValueException('The bundled release schema could not be read.');
+            }
+
+            if ($schemaSha256 !== 'sha256:' . $actualSchemaHash) {
                 throw new \UnexpectedValueException('The release schema hash does not match the bundled schema.');
             }
 
-            $schemaContents = file_get_contents($this->schemaPath);
+            $schemaContents = @file_get_contents($this->schemaPath);
             $schemaDocument = is_string($schemaContents) ? CanonicalJson::decode($schemaContents) : null;
 
             if (!is_array($schemaDocument) || ($schemaDocument['$id'] ?? null) !== $schemaUrl) {
@@ -138,8 +143,10 @@ final readonly class ReleaseMetadataLoader
                 $schemaSha256,
                 $releaseNotes,
             );
-        } catch (\Throwable $exception) {
-            throw new \RuntimeException('The compiler release manifest is invalid.', previous: $exception);
+        } catch (\JsonException $exception) {
+            throw new InvalidReleaseMetadata('The release metadata contains invalid JSON.', $exception);
+        } catch (\UnexpectedValueException|\InvalidArgumentException $exception) {
+            throw new InvalidReleaseMetadata($exception->getMessage(), $exception);
         }
     }
 

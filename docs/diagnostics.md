@@ -185,7 +185,7 @@ The table below is generated from `DiagnosticCatalog`. Reserved codes preserve s
 | `P6004` | `interop` | `active` | `error` | Configured Stub Path Is Invalid |
 | `P6005` | `interop` | `active` | `error` | Static Analysis Failed |
 | `P6006` | `interop` | `active` | `error` | Static Analysis Result Is Invalid |
-| `P6007` | `interop` | `active` | `error` | Analysis Workspace Could Not Be Prepared |
+| `P6007` | `interop` | `active` | `error` | Code Could Not Be Prepared For Analysis |
 | `P6008` | `interop` | `active` | `warning` | Composer Autoload Does Not Target Build Output |
 | `P6009` | `interop` | `active` | `error` | Composer Autoload Mapping Cannot Be Projected |
 | `P6010` | `interop` | `active` | `error` | Composer Configuration Could Not Be Updated |
@@ -196,7 +196,7 @@ The table below is generated from `DiagnosticCatalog`. Reserved codes preserve s
 | `P6015` | `interop` | `active` | `error` | Composer Dependency Declaration Invalid |
 | `P6016` | `interop` | `active` | `error` | PHP Signature Package Invalid |
 | `P6017` | `interop` | `active` | `error` | Declaration Conflicts With PHP Platform |
-| `P6018` | `interop` | `active` | `error` | Dependency Declaration Context Unavailable |
+| `P6018` | `interop` | `active` | `error` | Dependency Source Unavailable |
 | `P6019` | `interop` | `active` | `error` | Portable Dependency Index Invalid |
 | `P6020` | `interop` | `active` | `error` | Dependency Declaration Ambiguous |
 | `P6021` | `interop` | `active` | `error` | Dependency Source Path Unsafe |

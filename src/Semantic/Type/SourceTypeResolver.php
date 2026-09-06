@@ -231,7 +231,8 @@ final readonly class SourceTypeResolver
 
         return new AtomicType(
             $resolved,
-            str_contains($resolved, '\\') || str_starts_with($type->renderPhpDoc(), '\\'),
+            str_contains($resolved, '\\') || str_starts_with($type->renderPhpDoc(), '\\')
+                || $this->names->resolveNamespaceAt($parsedFile, $offset) !== '',
         );
     }
 

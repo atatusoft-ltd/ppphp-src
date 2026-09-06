@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Transpilation\Pass;
 
 use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
+use Atatusoft\Ppphp\Interop\PhpDoc\PhpDocReader;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionAnalysis;
 use Atatusoft\Ppphp\Source\Span;
 use Atatusoft\Ppphp\Transpilation\Pass\Interfaces\TranspilationPass;
 use Atatusoft\Ppphp\Transpilation\SourceEditMapping;
 use Atatusoft\Ppphp\Transpilation\TranspilationContext;
+use Atatusoft\Ppphp\Transpilation\LocalBindingTypeRenderer;
 use PhpParser\Comment\Doc;
 use PhpParser\Node;
 use PhpParser\Node\Arg;
@@ -32,6 +34,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     /** @var array<string, true> */
     private array $generatedNames = [];
 
+    /** @var \WeakMap<Doc, Span> */
+    private \WeakMap $bindingDocumentOrigins;
+
     public function __construct(private readonly Standard $printer = new Standard()) {}
 
     public function execute(TranspilationContext $context): void
@@ -40,6 +45,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $this->prerequisiteSequence = 0;
         $this->reservedNames = [];
         $this->generatedNames = [];
+        $this->bindingDocumentOrigins = new \WeakMap();
 
         foreach (token_get_all($context->parsedFile->sourceFile->contents) as $token) {
             if (is_array($token) && $token[0] === T_VARIABLE) {
@@ -70,19 +76,25 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             $lowered = $this->lowerOrdinaryStatement($this->copyStatement($statement));
             $php = $this->printer->prettyPrint($lowered);
             $replacement = $this->formatForSource($php, $span->start->offset);
-            $context->replace($span, $replacement, $this->buildSourceMappings($span, $replacement));
+            $context->replace($span, $replacement, $this->buildSourceMappings($span, $replacement, $lowered));
         }
     }
 
-    /** @return list<SourceEditMapping> */
-    private function buildSourceMappings(Span $owner, string $replacement): array
+    /**
+     * @param list<Stmt> $statements
+     * @return list<SourceEditMapping>
+     */
+    private function buildSourceMappings(Span $owner, string $replacement, array $statements): array
     {
         /** @var list<array{string, Span}> $candidates */
         $candidates = [];
         /** @var list<array{int, int}> $occupied */
         $occupied = [];
         /** @var list<SourceEditMapping> $mappings */
-        $mappings = [];
+        $mappings = $this->mapBindingDocuments($statements, $replacement);
+        foreach ($mappings as $mapping) {
+            $occupied[] = [$mapping->replacementStart, $mapping->replacementEnd];
+        }
 
         foreach ($this->context->semanticModel->whenExpressions->expressions as $analysis) {
             if (!$this->contains($owner, $analysis->syntax->span)) {
@@ -146,6 +158,57 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             $left->replacementStart <=> $right->replacementStart);
 
         return $mappings;
+    }
+
+    /**
+     * @param list<Stmt> $statements
+     * @return list<SourceEditMapping>
+     */
+    private function mapBindingDocuments(array $statements, string $replacement): array
+    {
+        $documents = [];
+        foreach ($statements as $statement) {
+            $this->collectDocuments($statement, $documents);
+        }
+        $tokens = array_values(array_filter(\PhpToken::tokenize('<?php ' . $replacement),
+            static fn (\PhpToken $token): bool => $token->id === T_DOC_COMMENT));
+        if (count($tokens) !== count($documents)) {
+            return [];
+        }
+
+        $mappings = [];
+        foreach ($documents as $index => $document) {
+            $token = $tokens[$index];
+            // Match the complete emitted comment sequence, not a tag-text search:
+            // an authored assertion can have the same text as a generated tag.
+            if (preg_replace('/\s+/', '', $token->text) !== preg_replace('/\s+/', '', $document->getText())) {
+                return [];
+            }
+            $origin = $this->bindingDocumentOrigins[$document] ?? null;
+            if ($origin !== null) {
+                $start = $token->pos - strlen('<?php ');
+                $mappings[] = new SourceEditMapping($start, $start + strlen($token->text), $origin);
+            }
+        }
+
+        return $mappings;
+    }
+
+    /** @param list<Doc> $documents */
+    private function collectDocuments(Node $node, array &$documents): void
+    {
+        foreach ($node->getComments() as $comment) {
+            if ($comment instanceof Doc) {
+                $documents[] = $comment;
+            }
+        }
+        foreach ($node->getSubNodeNames() as $name) {
+            foreach (is_array($node->$name) ? $node->$name : [$node->$name] as $child) {
+                if ($child instanceof Node) {
+                    $this->collectDocuments($child, $documents);
+                }
+            }
+        }
     }
 
     /** @param list<Expr> $expressions */
@@ -936,7 +999,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             }
             $binding = $this->context->semanticModel->bindings->find($declaration->id);
             if ($binding !== null) {
-                $statement->setDocComment(new Doc(sprintf('/** @var %s %s */', $binding->type->semanticType->renderPhpDoc(), $binding->name)));
+                $document = new Doc(sprintf('/** @var %s %s */', (new LocalBindingTypeRenderer())->render($binding, $this->context), $binding->name));
+                $statement->setDocComment($document);
+                $this->bindingDocumentOrigins[$document] = $declaration->span;
             }
         }
     }
@@ -964,6 +1029,8 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     {
         if ($statement instanceof Stmt\For_ || $statement instanceof Stmt\Foreach_) {
             $tags = [];
+            $origin = null;
+            $authoredDocument = $statement->getDocComment();
             $offset = $this->span($statement)->start->offset;
             foreach ([
                 ...$this->context->parsedFile->extensionSyntax->typedForInitializers,
@@ -974,11 +1041,17 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 }
                 $binding = $this->context->semanticModel->bindings->find($declaration->id);
                 if ($binding !== null) {
-                    $tags[] = sprintf('@var %s %s', $binding->type->semanticType->renderPhpDoc(), $binding->name);
+                    $tags[] = sprintf('@var %s %s', (new LocalBindingTypeRenderer())->render($binding, $this->context), $binding->name);
+                    $origin = $declaration->loopKeywordSpan;
                 }
             }
             foreach ($tags as $tag) {
                 $this->addPhpDocTag($statement, $tag);
+            }
+            $document = $statement->getDocComment();
+            if (!(new PhpDocReader())->hasVariableAssertions($authoredDocument)
+                && $document !== null && $origin !== null) {
+                $this->bindingDocumentOrigins[$document] = $origin;
             }
         }
 

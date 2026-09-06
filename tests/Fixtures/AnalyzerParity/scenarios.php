@@ -85,7 +85,7 @@ function valid(): void
     int $length = strlen('++PHP');
     string $label = $length > 0 ? 'ready' : 'empty';
 }
-PPP, optional: ['P2099', 'P2099'], disagreement: 'optionalLint'),
+PPP, optional: ['P2099'], disagreement: 'optionalLint'),
     $scenario('flow-locals', 'flow.locals', <<<'PPP'
 <?php
 function invalid(): void { $value = 1; }

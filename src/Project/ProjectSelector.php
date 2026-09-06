@@ -23,7 +23,7 @@ final class ProjectSelector
                 return $this->createFailure(
                     $diagnostics,
                     DiagnosticCode::ExplicitSourceFileRequired,
-                    'The dump:ast command requires one project-owned PHP or ++PHP file.',
+                    'The dump:ast command requires one PHP or ++PHP file within the configured source roots.',
                 );
             }
 

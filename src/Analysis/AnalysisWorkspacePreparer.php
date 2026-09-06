@@ -112,6 +112,9 @@ final readonly class AnalysisWorkspacePreparer
                     $source->kind,
                     $selected,
                     new AnalysisSourceMap($analysisPath, $generated->contents, $generated->sourceMap),
+                    $source->kind === FileKind::Ppphp
+                        ? (new GeneratedTypeDeclarationIndex())->collect($generated, $parsedFile, $semanticResult)
+                        : [],
                 );
 
                 if ($selected) {

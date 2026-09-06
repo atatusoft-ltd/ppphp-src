@@ -86,7 +86,8 @@ final class DiagnosticCatalog
     private static function resolveTitle(DiagnosticCode $code): string
     {
         $canonical = match ($code) {
-            DiagnosticCode::AnalysisWorkspacePreparationFailed => 'Analysis Workspace Could Not Be Prepared',
+            DiagnosticCode::AnalysisWorkspacePreparationFailed => 'Code Could Not Be Prepared For Analysis',
+            DiagnosticCode::DependencyDeclarationContextUnavailable => 'Dependency Source Unavailable',
             DiagnosticCode::AssignmentNotAssignableToDeclaredType => 'Assignment Is Not Assignable To Declared Type',
             DiagnosticCode::CaughtErrorNeverThrown => 'Caught Error Is Never Thrown',
             DiagnosticCode::CheckedErrorDeclarationNotCovariant => 'Checked Error Declaration Is Not Covariant',

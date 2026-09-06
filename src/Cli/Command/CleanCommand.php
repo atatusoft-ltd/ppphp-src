@@ -31,8 +31,8 @@ final class CleanCommand extends ProjectCommand
     protected function configure(): void
     {
         $this
-            ->setDescription('Remove compiler-owned output and cache directories.')
-            ->setHelp('Removes only validated compiler-owned paths beneath the project root. Use --dry-run to report paths without changing them. Diagnostics use the selected console or JSON contract.')
+            ->setDescription('Remove generated output and cache directories.')
+            ->setHelp('Removes only validated output and cache paths beneath the project root. Use --dry-run to report paths without changing them. Diagnostics use the selected console or JSON contract.')
             ->addOption(
                 'dry-run',
                 null,

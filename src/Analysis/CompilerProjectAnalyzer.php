@@ -13,7 +13,6 @@ use Atatusoft\Ppphp\Project\Project;
 use Atatusoft\Ppphp\Project\ProjectParseResult;
 use Atatusoft\Ppphp\Project\ProjectSyntaxChecker;
 use Atatusoft\Ppphp\Project\SourceSet;
-use Atatusoft\Ppphp\Semantic\SemanticAnalysisResult;
 use Atatusoft\Ppphp\Semantic\SemanticAnalyzer;
 
 final readonly class CompilerProjectAnalyzer
@@ -72,17 +71,13 @@ final readonly class CompilerProjectAnalyzer
         }
 
         $semanticResult = $this->semanticAnalyzer->analyze($parseResult, $declarationContext);
-        $emissionResult = new SemanticAnalysisResult(
-            $semanticResult->models,
-            $semanticResult->diagnostics,
-        );
 
         return new CompilerProjectAnalysis(
             $project,
             $selectedSources,
             $parseResult,
             $declarationContext,
-            $emissionResult,
+            $semanticResult,
             $this->diagnosticProcessor->process($semanticResult->diagnostics),
             AnalysisCompleteness::CompilerCore,
             $this->capabilityCatalog->uncoveredRequiredCapabilityIds,

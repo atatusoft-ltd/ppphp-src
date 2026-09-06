@@ -43,7 +43,7 @@ final class DumpAstCommand extends ProjectCommand
     protected function configure(): void
     {
         $this
-            ->setDescription('Display the syntax tree for one project-owned PHP or ++PHP file.')
+            ->setDescription('Display the syntax tree for one PHP or ++PHP source file.')
             ->setHelp('Writes one selected source tree to standard output. Parse and project diagnostics use standard error in console mode; JSON AST output remains one machine-readable standard-output document.')
             ->addArgument('path', InputArgument::OPTIONAL, sprintf('Explicit %s or %s source file path.', FileKind::PHP_SUFFIX, FileKind::PPPHP_SUFFIX));
         $this->addProjectOptions();

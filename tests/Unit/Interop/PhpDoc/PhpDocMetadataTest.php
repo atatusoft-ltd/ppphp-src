@@ -5,6 +5,14 @@ declare(strict_types=1);
 use Atatusoft\Ppphp\Interop\PhpDoc\PhpDocReader;
 use PhpParser\Comment\Doc;
 
+test('variable assertion detection includes supported aliases and malformed values', function (string $tag): void {
+    $reader = new PhpDocReader();
+    expect($reader->hasVariableAssertions(new Doc('/** ' . $tag . ' string $value */')))->toBeTrue()
+        ->and($reader->hasVariableAssertions(new Doc('/** ' . $tag . ' */')))->toBeTrue()
+        ->and($reader->hasVariableAssertions(new Doc('/** Handler setup. */')))->toBeFalse()
+        ->and($reader->hasVariableAssertions(null))->toBeFalse();
+})->with(['@var', '@phpstan-var', '@psalm-var']);
+
 test('PHPDoc metadata reader exposes the supported generic contract tags', function (): void {
     $metadata = (new PhpDocReader())->readMetadata(new Doc(<<<'DOC'
 /**

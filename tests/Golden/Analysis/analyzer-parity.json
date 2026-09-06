@@ -17,7 +17,7 @@
     "fullParity": true,
     "requiredGaps": [],
     "supplementalDifferenceCount": 3,
-    "optionalDifferenceCount": 6,
+    "optionalDifferenceCount": 5,
     "unexpectedCompilerDiagnostics": [],
     "unexpectedFullDiagnostics": [],
     "expectationFailures": [],
@@ -2506,15 +2506,6 @@
                     "code": "P2099",
                     "path": "src/main.ppphp",
                     "range": {
-                        "start": 31,
-                        "end": 32
-                    },
-                    "identity": "varTag.nativeType"
-                },
-                {
-                    "code": "P2099",
-                    "path": "src/main.ppphp",
-                    "range": {
                         "start": 6,
                         "end": 7
                     },
@@ -2525,15 +2516,6 @@
             "requiredFullDiagnostics": [],
             "supplementalFullDiagnostics": [],
             "optionalFullDiagnostics": [
-                {
-                    "code": "P2099",
-                    "path": "src/main.ppphp",
-                    "range": {
-                        "start": 31,
-                        "end": 32
-                    },
-                    "identity": "varTag.nativeType"
-                },
                 {
                     "code": "P2099",
                     "path": "src/main.ppphp",

@@ -16,6 +16,7 @@ use Atatusoft\Ppphp\Diagnostics\JsonRenderer;
 use Atatusoft\Ppphp\Support\Path;
 use Atatusoft\Ppphp\Support\CanonicalJson;
 use Atatusoft\Ppphp\Versioning\ReleaseMetadataLoader;
+use Atatusoft\Ppphp\Versioning\Exceptions\InvalidReleaseMetadata;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -100,10 +101,19 @@ final class InitCommand extends ProjectCommand
             return ExitCode::InvalidProject->value;
         }
 
-        $template = file_get_contents($this->templatePath);
+        $template = is_file($this->templatePath) && is_readable($this->templatePath)
+            ? @file_get_contents($this->templatePath)
+            : false;
 
         if ($template === false) {
-            throw new \RuntimeException('The maintained project configuration template is not readable.');
+            $diagnostics->add($this->createErrorDiagnostic(
+                DiagnosticCode::ProjectInitializationFailed,
+                'The bundled ppphp.json.dist configuration template is missing or unreadable.',
+                'Restore ppphp.json.dist in the compiler checkout or installation and check its read permissions.',
+            ));
+            $this->renderDiagnostics($diagnostics, $format, $input, $output);
+
+            return ExitCode::InvalidProject->value;
         }
 
         try {
@@ -127,22 +137,35 @@ final class InitCommand extends ProjectCommand
             ) {
                 throw new \UnexpectedValueException('The maintained project configuration template is invalid.');
             }
-
-            $releaseMetadata = $this->releaseMetadataLoader->load();
-            $templateValues = $releaseMetadata === null
-                ? $decodedTemplate
-                : ['$schema' => $releaseMetadata->schemaUrl, ...$decodedTemplate];
-            $configurationContents = CanonicalJson::encode($templateValues);
-        } catch (\Throwable $exception) {
+        } catch (\UnexpectedValueException|\JsonException $exception) {
             $diagnostics->add($this->createErrorDiagnostic(
                 DiagnosticCode::ProjectInitializationFailed,
-                'The maintained project configuration could not be prepared.',
-                'Reinstall the compiler package and try initialization again.',
+                'The bundled ppphp.json.dist configuration template is invalid.',
+                'Restore a valid ppphp.json.dist in the compiler checkout or installation.',
             ));
             $this->renderDiagnostics($diagnostics, $format, $input, $output);
 
             return ExitCode::InvalidProject->value;
         }
+
+        try {
+            $releaseMetadata = $this->releaseMetadataLoader->load();
+        } catch (InvalidReleaseMetadata $exception) {
+            $diagnostics->add(new Diagnostic(
+                DiagnosticCode::ProjectInitializationFailed,
+                $exception->reason,
+                help: 'Restore matching release metadata, schema and release notes from the same compiler version. A development checkout without release metadata can initialize without a schema hint.',
+                debug: ['exception' => $exception::class, 'cause' => $exception->getPrevious()?->getMessage()],
+            ));
+            $this->renderDiagnostics($diagnostics, $format, $input, $output);
+
+            return ExitCode::InvalidProject->value;
+        }
+
+        $templateValues = $releaseMetadata === null
+            ? $decodedTemplate
+            : ['$schema' => $releaseMetadata->schemaUrl, ...$decodedTemplate];
+        $configurationContents = CanonicalJson::encode($templateValues);
 
         /** @var array{output: string, cache: string, stubs?: list<string>} $templateValues */
         $directories = [

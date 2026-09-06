@@ -542,7 +542,7 @@ final class ProjectConfigLoader
             sprintf('The configured %s and %s paths overlap.', $first, $second),
             $source,
             $first,
-            'Choose separate paths so compiler-owned directories cannot affect protected project files.',
+            'Choose separate output and cache paths so generated files cannot affect protected project files.',
         ));
     }
 

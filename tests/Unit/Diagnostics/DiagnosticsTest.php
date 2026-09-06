@@ -406,7 +406,7 @@ test('portable dependency diagnostics render through both stable presentation co
     $json = json_decode((new JsonRenderer())->render($diagnostics), true, flags: JSON_THROW_ON_ERROR);
 
     expect($console)->toContain(
-        'Error[P6018]: Dependency Declaration Context Unavailable',
+        'Error[P6018]: Dependency Source Unavailable',
         'Error[P6019]: Portable Dependency Index Invalid',
         'Error[P6020]: Dependency Declaration Ambiguous',
         'Error[P6021]: Dependency Source Path Unsafe',
