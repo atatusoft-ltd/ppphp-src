@@ -29,7 +29,7 @@ At authoring, compiler `develop` was `0cc6ba1ee3893752821f24769cf585b94ecc6899`.
 
 A concrete preflight discrepancy needs investigation: at the inspected commit, `tools/web-spike/src/php-worker.js` rejects `payload.catalogVersion !== 3`, whereas the README says the current gate requires version 4. The compiler-only gate runs before the standalone PHPStan probe. This is a source-level inconsistency, not evidence that a new browser run has failed. First preserve an unchanged run; then verify the authoritative catalog and actual response. Do not blindly change either number or weaken the assertion.
 
-Do not apply the retired PHPlus attachment or historical `.ppp`/`.phplus` syntax as current specifications. Current repository contracts and owner-approved amendments govern. Preserve `++PHP`, `ppphp`, `.ppphp`, release-channel semantics and the separation of compiler host, source parsing, analysis platform, emitted target and execution runtime.
+Use only the current repository specifications; historical attachments, retired product names and obsolete source extensions are not authoritative. Current repository contracts and owner-approved amendments govern. Preserve `++PHP`, `ppphp`, `.ppphp`, release-channel semantics and the separation of compiler host, source parsing, analysis platform, emitted target and execution runtime.
 
 ## Scope boundaries
 
