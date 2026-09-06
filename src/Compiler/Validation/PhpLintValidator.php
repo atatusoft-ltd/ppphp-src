@@ -31,7 +31,7 @@ final readonly class PhpLintValidator implements PhpValidator
                 'failure' => $result->executionFailure,
                 'stdout' => $result->stdout,
                 'stderr' => $result->stderr,
-            ]);
+            ], DiagnosticCode::PhpOutputValidationFailed);
 
             return $diagnostics;
         }
@@ -42,7 +42,7 @@ final readonly class PhpLintValidator implements PhpValidator
                 'failure' => $result->executionFailure,
                 'stdout' => $result->stdout,
                 'stderr' => $result->stderr,
-            ]);
+            ], DiagnosticCode::PhpOutputValidationFailed);
 
             return $diagnostics;
         }
@@ -63,7 +63,7 @@ final readonly class PhpLintValidator implements PhpValidator
             'exitCode' => $result->exitCode,
             'stdout' => $result->stdout,
             'stderr' => $result->stderr,
-        ]);
+        ], $line === null ? DiagnosticCode::PhpOutputValidationFailed : DiagnosticCode::GeneratedPhpIsInvalid);
 
         return $diagnostics;
     }
@@ -75,6 +75,7 @@ final readonly class PhpLintValidator implements PhpValidator
         ?int $generatedLine,
         string $message,
         array $debug,
+        DiagnosticCode $code = DiagnosticCode::GeneratedPhpIsInvalid,
     ): void {
         $generatedOffset = $generatedLine === null
             ? 0
@@ -83,13 +84,13 @@ final readonly class PhpLintValidator implements PhpValidator
         $source = $artifact->sourceFile;
         $end = min($source->length, $originalOffset + ($originalOffset < $source->length ? 1 : 0));
         $diagnostics->add(new Diagnostic(
-            DiagnosticCode::GeneratedPhpIsInvalid,
+            $code,
             $message,
-            new DiagnosticLabel(
+            $generatedLine === null ? null : new DiagnosticLabel(
                 $source->createSpan($originalOffset, $end),
                 'The generated PHP failed validation for this source.',
             ),
-            help: sprintf('The candidate output for "%s" was rejected before the build was committed.', $artifact->relativeOutputPath),
+            help: sprintf('The candidate output for "%s" was rejected before the build was committed. Run with --debug for validation details.', $artifact->relativeOutputPath),
             debug: $debug,
             origin: DiagnosticOrigin::Subprocess,
         ));

@@ -47,6 +47,8 @@ This boundary does not hide safe, actionable causes. For example, a symbolic lin
 
 `P7009` reports a conflicting shared/exclusive project operation without waiting. `P7014` means a durable build journal, marker, candidate, or backup could not be proven safe to recover; the compiler fails before guessed mutation and preserves ambiguous evidence for inspection.
 
+`P7015` means PHP output validation could not complete or failed without a reported source location. Timeouts and execution failures keep their specific messages and never acquire an invented source span. A located PHP lint rejection retains `P7003` and its original-source mapping.
+
 ## Catalog
 
 The table below is generated from `DiagnosticCatalog`. Reserved codes preserve stable identities for earlier planning boundaries and cannot be emitted at runtime.
@@ -212,5 +214,6 @@ The table below is generated from `DiagnosticCatalog`. Reserved codes preserve s
 | `P7012` | `emission` | `active` | `error` | Build Output Has Been Modified |
 | `P7013` | `emission` | `active` | `warning` | Previous Build Backup Could Not Be Removed |
 | `P7014` | `emission` | `active` | `error` | Build Transaction Could Not Be Recovered |
+| `P7015` | `emission` | `active` | `error` | PHP Output Validation Failed |
 | `P9001` | `internal` | `active` | `error` | Internal Compiler Error |
 <!-- diagnostic-catalog:end -->
