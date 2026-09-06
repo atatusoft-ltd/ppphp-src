@@ -24,15 +24,22 @@ final class GeneratedTypeDeclarationIndex
         foreach ([...$parsed->extensionSyntax->typedLocals, ...$parsed->extensionSyntax->typedForInitializers, ...$parsed->extensionSyntax->typedForeachBindings] as $local) {
             $offset = $local instanceof TypedLocalDeclaration ? $local->span->start->offset : $local->loopKeywordSpan->start->offset;
             $binding = $model?->bindings->find($local->id);
+            $initializer = $binding?->initializerExpression;
+            $initializerType = $initializer === null ? null : $model->expressionTypes->resolve($parsed->sourceFile, $initializer)?->type;
             if ($binding !== null && (new TypeCompatibility())->compare(
                 $binding->type->semanticType,
-                $binding->initializerType->semanticType,
+                $initializerType ?? $binding->initializerType->semanticType,
                 $analysis->symbols,
                 $binding->initializerExpression instanceof \PhpParser\Node\Expr\Array_,
             ) === TypeCompatibilityResult::Compatible) {
                 $origins[$offset] = true;
             } else {
                 $unverified[$offset] = true;
+            }
+        }
+        foreach ($model?->whenExpressions->expressions ?? [] as $when) {
+            if (!$when->resultType->unknown) {
+                $origins[$when->syntax->span->start->offset] = true;
             }
         }
         $origins = array_diff_key($origins, $unverified);

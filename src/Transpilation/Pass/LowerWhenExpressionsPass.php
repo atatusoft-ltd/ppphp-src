@@ -129,6 +129,20 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 continue;
             }
             $start = $this->resolveGeneratedLineStart($replacement, $offset);
+            $prefix = substr($replacement, $start, $offset - $start);
+            foreach ($this->generatedNames as $name => $_) {
+                if (str_starts_with(ltrim($prefix), '$' . $name . ' = ')) {
+                    // Line-only findings belong to the source result, while
+                    // the generated variable itself belongs to its when.
+                    $indentEnd = $start + strlen($prefix) - strlen(ltrim($prefix));
+                    if ($indentEnd > $start && !$this->overlaps($start, $indentEnd, $occupied)) {
+                        $occupied[] = [$start, $indentEnd];
+                        $mappings[] = new SourceEditMapping($start, $indentEnd, $origin);
+                    }
+                    $start = $offset;
+                    break;
+                }
+            }
             $end = $offset + strlen($text);
             if ($this->overlaps($start, $end, $occupied)) {
                 continue;
@@ -144,7 +158,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             $needle = '$' . ltrim($analysis->temporaryName, '$');
             $offset = 0;
             while (($offset = strpos($replacement, $needle, $offset)) !== false) {
-                $start = $this->resolveGeneratedLineStart($replacement, $offset);
+                $start = $offset;
                 $end = $offset + strlen($needle);
                 if (!$this->overlaps($start, $end, $occupied)) {
                     $occupied[] = [$start, $end];
@@ -674,13 +688,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $if->elseifs = $elseifs;
         $if->else = $else;
 
-        return new Stmt\Do_(new Expr\ConstFetch(new Name('false')), [
-            new Stmt\Expression(new Expr\Assign(
-                new Expr\Variable(ltrim($analysis->temporaryName, '$')),
-                new Expr\ConstFetch(new Name('null')),
-            )),
-            $if,
-        ]);
+        // Branches leave through an explicit result break or termination.
+        // There is no condition exit that can fabricate an unassigned result.
+        return new Stmt\Do_(new Expr\ConstFetch(new Name('true')), [$if]);
     }
 
     /**
@@ -1016,11 +1026,21 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         foreach ($this->context->semanticModel->whenExpressions->expressions as $analysis) {
             $name = ltrim($analysis->temporaryName, '$');
             if (isset($names[$name])) {
+                $previous = $consumer->getDocComment();
+                $origin = $previous === null ? null : ($this->bindingDocumentOrigins[$previous] ?? null);
+                $generated = $origin !== null || !(new PhpDocReader())->hasVariableAssertions($previous);
                 $this->addPhpDocTag($consumer, sprintf(
                     '@var %s $%s',
                     $analysis->resultType->semanticType->renderPhpDoc(),
                     $name,
                 ));
+                $document = $consumer->getDocComment();
+                if ($generated && !$analysis->resultType->unknown && $document !== null) {
+                    // Preserve the original declaration's eligibility when
+                    // several generated tags share a comment. Authored or
+                    // unknown assertions make the whole comment ineligible.
+                    $this->bindingDocumentOrigins[$document] = $origin ?? $analysis->syntax->span;
+                }
             }
         }
     }

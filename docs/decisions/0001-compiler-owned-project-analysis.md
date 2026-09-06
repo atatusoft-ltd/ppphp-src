@@ -32,6 +32,11 @@ declare bindings introduced by the loop, not pre-existing PHP variables.
 Regenerated `when` code carries annotation ownership from its generated comment
 objects through the verified emitted comment sequence into source maps; authored
 comments are never identified as declarations merely because their text matches.
+The same policy covers inferred `when` result temporaries, including combined
+consumer annotations, only when the result type is known. Unknown or authored
+assertions keep the combined comment ineligible. Result temporaries have no null
+seed: every valid completing branch assigns a result, and terminating branches
+do not reach the consumer.
 
 For ordinary PHP, adopt Model B as the target contract and Model C as the migration vehicle: compiler-owned analysis must be complete for strict ++PHP and for ordinary-PHP declarations/contracts crossing the language boundary; deep ordinary-PHP body analysis remains supplemental until its required subset is deliberately promoted. A `compilerCore` result is never presented as full while required catalog gaps remain.
 
