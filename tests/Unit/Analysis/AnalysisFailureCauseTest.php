@@ -62,3 +62,37 @@ test('unexpected preparation failures remain compiler bugs with details only in 
     expect($renderer->render($result->diagnostics))->not->toContain('private implementation failure')
         ->and($renderer->render($result->diagnostics, true))->toContain('private implementation failure');
 });
+
+test('unreadable root and nested analysis directories are environmental failures', function (bool $nested): void {
+    if (DIRECTORY_SEPARATOR !== '/' || !function_exists('chmod')) {
+        $this->markTestSkipped('Reliable POSIX permission assertions are unavailable.');
+    }
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/main.ppphp', '<?php final class Box<T> {}');
+    $configuration = (new ProjectConfigLoader())->load($root)->configuration;
+    $project = (new ProjectLoader())->load($configuration)->project;
+    $analysis = (new CompilerProjectAnalyzer())->analyze($project, $project->sources);
+    $blocked = $root . '/.ppphp-cache/analysis' . ($nested ? '/locked' : '');
+    $this->writeFile($blocked . '/sentinel', 'preserve inaccessible evidence');
+    chmod($blocked, 0000);
+    clearstatcache(true, $blocked);
+
+    try {
+        if (is_readable($blocked)) {
+            $this->markTestSkipped('The current filesystem does not enforce the requested unreadable mode.');
+        }
+        $result = (new AnalysisWorkspacePreparer())->prepare($analysis);
+        $diagnostic = $result->diagnostics->errors[0];
+        expect($diagnostic->code)->toBe(DiagnosticCode::AnalysisWorkspacePreparationFailed)
+            ->and($diagnostic->message)->toContain('could not be opened')
+            ->and($diagnostic->help)->toContain('reading and traversal')
+            ->and($diagnostic->primary)->toBeNull();
+        $renderer = new JsonRenderer();
+        expect($renderer->render($result->diagnostics))->not->toContain($root, 'DirectoryIterator')
+            ->and($renderer->render($result->diagnostics, true))->toContain('Permission denied');
+    } finally {
+        chmod($blocked, 0755);
+    }
+    expect(file_get_contents($blocked . '/sentinel'))->toBe('preserve inaccessible evidence');
+})->with([true, false]);

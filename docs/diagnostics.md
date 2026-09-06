@@ -43,6 +43,8 @@ Browser protocol version 2 embeds this unchanged version 1 diagnostic envelope. 
 
 Normal output is compiler-oriented and does not expose backend names, backend identifiers, analysis workspace paths, generated analysis paths, temporary configuration paths, raw subprocess commands, cache keys, or transaction paths. Cache corruption and incompatibility are silent safe misses rather than user diagnostics. `--debug` adds normalized JSON-safe values and an explicit origin (`compiler`, `php-parser`, `phpstan`, or `subprocess`). Debug output can contain implementation details and should be reviewed before sharing publicly.
 
+This boundary does not hide safe, actionable causes. For example, a symbolic link, a file occupying a needed directory, or an unreadable cache directory is explained in normal output without exposing its internal absolute path. Moving the cause into debug-only output would leave the user with the same misleading wrapper error. Expected directory-access failures remain environmental errors, not compiler bugs.
+
 `P7009` reports a conflicting shared/exclusive project operation without waiting. `P7014` means a durable build journal, marker, candidate, or backup could not be proven safe to recover; the compiler fails before guessed mutation and preserves ambiguous evidence for inspection.
 
 ## Catalog

@@ -139,7 +139,7 @@ final readonly class AnalysisWorkspacePreparer
                 DiagnosticCode::AnalysisWorkspacePreparationFailed,
                 $exception->getMessage(),
                 help: $exception->help,
-                debug: ['exception' => $exception::class, 'message' => $exception->getMessage()],
+                debug: ['exception' => $exception::class, 'message' => $exception->getMessage(), 'cause' => $exception->getPrevious()?->getMessage()],
             ));
             $analysisProject = null;
         } catch (\Throwable $exception) {
@@ -216,17 +216,17 @@ final readonly class AnalysisWorkspacePreparer
     private function resetDirectory(string $path): void
     {
         if (is_link($path)) {
-            throw new AnalysisWorkspaceException('The analysis directory is a symbolic link.', 'Use a real directory for the project cache and its analysis subdirectory.');
+            throw new AnalysisWorkspaceException('A cache directory needed for analysis is a symbolic link.', 'Use real directories for compiler cache files.');
         }
 
         if (is_dir($path)) {
-            foreach (new \DirectoryIterator($path) as $entry) {
+            foreach ($this->openDirectory($path) as $entry) {
                 if (!$entry->isDot()) {
                     $this->removePath($entry->getPathname());
                 }
             }
         } elseif (file_exists($path)) {
-            throw new AnalysisWorkspaceException('The analysis directory path is occupied by a file.', 'Move that file or configure a different cache directory.');
+            throw new AnalysisWorkspaceException('A cache directory needed for analysis is occupied by a file.', 'Move that file or configure a different cache directory.');
         } elseif (!mkdir($path, 0777, true) && !is_dir($path)) {
             throw new AnalysisWorkspaceException('The analysis directory could not be created.', 'Check free disk space and write permissions on the project cache directory.');
         }
@@ -246,7 +246,7 @@ final readonly class AnalysisWorkspacePreparer
             return;
         }
 
-        foreach (new \DirectoryIterator($path) as $entry) {
+        foreach ($this->openDirectory($path) as $entry) {
             if (!$entry->isDot()) {
                 $this->removePath($entry->getPathname());
             }
@@ -265,6 +265,19 @@ final readonly class AnalysisWorkspacePreparer
             : $source->relativePath;
 
         return Path::join($workspace, $selected ? 'selected' : 'context', $rootId, $relative);
+    }
+
+    private function openDirectory(string $path): \DirectoryIterator
+    {
+        try {
+            return new \DirectoryIterator($path);
+        } catch (\UnexpectedValueException $exception) {
+            throw new AnalysisWorkspaceException(
+                'A cache directory needed for analysis could not be opened.',
+                'Check that the project cache directories still exist and allow reading and traversal.',
+                $exception,
+            );
+        }
     }
 
     /** @return list<string> */

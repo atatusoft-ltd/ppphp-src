@@ -88,7 +88,7 @@ final readonly class BrowserAnalysisProtocol
                 $exception->diagnosticCode,
                 $exception->getMessage(),
                 help: $exception->help,
-                debug: ['exception' => $exception::class, 'message' => $exception->getMessage()],
+                debug: ['exception' => $exception::class, 'message' => $exception->getMessage(), 'cause' => $exception->getPrevious()?->getMessage()],
                 origin: DiagnosticOrigin::Subprocess,
             )]));
         } catch (\Throwable $exception) {
@@ -293,7 +293,18 @@ final readonly class BrowserAnalysisProtocol
     /** @param list<array{path: string, bytes: int, hash: string}> $manifest */
     private function appendWorkspaceFiles(string $workspaceRoot, string $directory, array &$manifest): void
     {
-        foreach (new \DirectoryIterator($directory) as $entry) {
+        try {
+            $entries = new \DirectoryIterator($directory);
+        } catch (\UnexpectedValueException $exception) {
+            throw new PhpStanExecutionException(
+                'A cache directory needed for analysis could not be opened.',
+                previous: $exception,
+                diagnosticCode: DiagnosticCode::AnalysisWorkspacePreparationFailed,
+                help: 'Check that the project cache directories still exist and allow reading and traversal.',
+            );
+        }
+
+        foreach ($entries as $entry) {
             if ($entry->isDot() || $entry->isLink()) {
                 continue;
             }
