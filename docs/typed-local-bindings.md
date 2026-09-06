@@ -67,6 +67,7 @@ callable $shortLabel = fn (int $number): string => $prefix . ' #' . $number;
 
 Their generated PHPDoc preserves parameter names, types, reference/variadic and
 optional markers, and return types so PHP tools can check subsequent calls.
+This also applies to typed `for` initializers and declarations inside `when` branches.
 Fresh array literals containing closures also satisfy `array<callable>` contracts.
 Existing typed arrays remain invariant: an `array<Closure>` variable does not
 become `array<callable>` merely because each current element is callable.

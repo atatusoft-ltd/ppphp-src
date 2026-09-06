@@ -53,10 +53,17 @@ PPP);
         ->and($runtime->getErrorOutput())->toBe('');
 });
 
-test('closure and callable locals preserve literal signatures', function (string $type, string $literal): void {
+test('closure and callable locals preserve literal signatures', function (string $type, string $literal, string $context): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
-    $this->writeFile($root . '/src/main.ppphp', '<?php' . "\nreadonly string \$prefix = 'Order';\n" . $type . ' $label = ' . $literal . ";\necho \$label(number: 7);\n");
+    $declaration = $type . ' $label = ' . $literal;
+    $body = match ($context) {
+        'local' => $declaration . '; echo $label(number: 7);',
+        'for' => 'for (' . $declaration . '; true;) { echo $label(number: 7); break; }',
+        'when-local' => 'string $result = when ($enabled) { ' . $declaration . '; return $label(number: 7); } else { return ""; }; echo $result;',
+        'when-for' => 'string $result = when ($enabled) { for (' . $declaration . '; $iterate;) { return $label(number: 7); } return ""; } else { return ""; }; echo $result;',
+    };
+    $this->writeFile($root . '/src/main.ppphp', '<?php function show(bool $enabled, bool $iterate): void {' . "\nreadonly string \$prefix = 'Order';\n" . $body . "\n} show(true, true);\n");
     $build = runTypedLocalCommand($root, 'build');
     $response = json_decode($build->getOutput(), true);
     expect(array_filter($response['diagnostics'], static fn (array $diagnostic): bool => $diagnostic['severity'] === 'error'))->toBe([])
@@ -70,7 +77,7 @@ test('closure and callable locals preserve literal signatures', function (string
 })->with(['Closure', 'callable'])->with([
     'function (int $number) use ($prefix): string { return $prefix . " #" . $number; }',
     'fn (int $number): string => $prefix . " #" . $number',
-]);
+])->with(['local', 'for', 'when-local', 'when-for']);
 
 test('local declarations still reject incompatible initializers', function (string $statement, string $code): void {
     $root = $this->createTemporaryDirectory();
@@ -110,6 +117,29 @@ PPP);
     expect($check->getExitCode())->toBe(1)
         ->and(array_column(json_decode($check->getOutput(), true)['diagnostics'], 'code'))->toContain('P2099');
 });
+
+test('regenerated when declarations never hide authored variable assertions', function (string $assertion, string $message): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/main.ppphp', '<?php function show(bool $enabled): void {
+        string $result = when ($enabled) {
+            object $value = new stdClass();
+            ' . $assertion . '
+            return "ok";
+        } else { return ""; };
+        echo $result;
+    } show(true);');
+    $check = runTypedLocalCommand($root);
+    $errors = array_values(array_filter(json_decode($check->getOutput(), true)['diagnostics'],
+        static fn (array $diagnostic): bool => $diagnostic['severity'] === 'error'));
+    expect($check->getExitCode())->toBe(1, $check->getOutput())
+        ->and($errors)->toHaveCount(1)
+        ->and($errors[0]['code'])->toBe('P2099')
+        ->and($errors[0]['message'])->toContain($message);
+})->with([
+    'identical tag text is not provenance' => ['/** @var object $value */ $value = new stdClass();', 'not subtype'],
+    'authored missing variable remains an error' => ['/** @var string $missing */ echo "marker";', 'Variable $missing'],
+]);
 
 test('fixed local types still reject later writes and bad calls', function (string $body, string $code): void {
     $root = $this->createTemporaryDirectory();

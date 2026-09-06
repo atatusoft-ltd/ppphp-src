@@ -9,6 +9,7 @@ use Atatusoft\Ppphp\Frontend\Ast\TypedForeachBinding;
 use Atatusoft\Ppphp\Frontend\Ast\Interfaces\Node;
 use Atatusoft\Ppphp\Transpilation\Pass\Interfaces\TranspilationPass;
 use Atatusoft\Ppphp\Transpilation\TranspilationContext;
+use Atatusoft\Ppphp\Transpilation\LocalBindingTypeRenderer;
 
 final class LowerLoopDeclarationsPass implements TranspilationPass
 {
@@ -64,7 +65,7 @@ final class LowerLoopDeclarationsPass implements TranspilationPass
                 throw new \LogicException('A typed loop declaration cannot be lowered without its semantic binding.');
             }
 
-            $lines[] = sprintf('@var %s %s', $binding->type->semanticType->renderPhpDoc(), $binding->name);
+            $lines[] = sprintf('@var %s %s', (new LocalBindingTypeRenderer())->render($binding, $context), $binding->name);
         }
 
         $newline = str_contains($context->parsedFile->sourceFile->contents, "\r\n") ? "\r\n" : "\n";

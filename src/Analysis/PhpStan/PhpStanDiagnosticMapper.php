@@ -28,7 +28,7 @@ final class PhpStanDiagnosticMapper
         // A validated ++PHP declaration fixes the storage type; it is not an
         // assertion that narrows PHP's inferred initializer type (ADR 0001).
         if ($file->kind === FileKind::Ppphp
-            && in_array($finding->identifier, ['varTag.nativeType', 'varTag.type'], true)
+            && in_array($finding->identifier, ['varTag.nativeType', 'varTag.type', 'varTag.variableNotFound'], true)
             && in_array($finding->line, $file->generatedTypeDeclarationLines, true)) {
             return null;
         }
