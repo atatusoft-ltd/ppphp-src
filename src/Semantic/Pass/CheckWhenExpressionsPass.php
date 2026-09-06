@@ -9,6 +9,7 @@ use Atatusoft\Ppphp\Diagnostics\DiagnosticLabel;
 use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
 use Atatusoft\Ppphp\Frontend\Ast\TypedLocalDeclaration;
 use Atatusoft\Ppphp\Frontend\Ast\TypedForeachBinding;
+use Atatusoft\Ppphp\Frontend\Ast\TypedForInitializer;
 use Atatusoft\Ppphp\Frontend\Ast\WhenBranch;
 use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
 use Atatusoft\Ppphp\Frontend\Ast\WhenExpression;
@@ -58,10 +59,16 @@ final class CheckWhenExpressionsPass implements SemanticPass
     /** @var array<int, TypedLocalDeclaration> */
     private array $typedLocals = [];
 
+    /** @var array<int, TypedForInitializer> */
+    private array $typedForInitializers = [];
+
     /** @var array<int, TypedForeachBinding> */
     private array $typedForeachBindings = [];
 
     private int $nestedCallableDepth = 0;
+
+    /** @var array<int, true> */
+    private array $freshArrayResults = [];
 
     private ExpressionTypeResolver $expressionTypes;
 
@@ -90,11 +97,17 @@ final class CheckWhenExpressionsPass implements SemanticPass
         $this->parsed = [];
         $this->locations = [];
         $this->typedLocals = [];
+        $this->typedForInitializers = [];
         $this->typedForeachBindings = [];
         $this->nestedCallableDepth = 0;
+        $this->freshArrayResults = [];
 
         foreach ($context->parsedFile->extensionSyntax->typedLocals as $local) {
             $this->typedLocals[$local->variableSpan->start->offset] = $local;
+        }
+
+        foreach ($context->parsedFile->extensionSyntax->typedForInitializers as $local) {
+            $this->typedForInitializers[$local->variableSpan->start->offset] = $local;
         }
 
         foreach ($context->parsedFile->extensionSyntax->typedForeachBindings as $binding) {
@@ -263,13 +276,14 @@ final class CheckWhenExpressionsPass implements SemanticPass
         if ($location->site === WhenExpressionSite::Unsupported) {
             $this->addDiagnostic(
                 DiagnosticCode::WhenPositionNotSupported,
-                'This `when` expression is not in a supported Stage 9 value position.',
+                'This `when` expression is not in a supported value position.',
                 $when->span,
             );
         }
 
         $analyses = [];
         $allTypes = [];
+        $allResultSpans = [];
 
         foreach ($parsed->branches as $branch) {
             $scope = $this->copyScope($outerScope, 'when-branch');
@@ -288,6 +302,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
             }
 
             array_push($allTypes, ...$flow['types']);
+            array_push($allResultSpans, ...$flow['spans']);
             $analyses[] = new WhenBranchAnalysis(
                 $branch->syntax,
                 $branch->condition,
@@ -307,6 +322,8 @@ final class CheckWhenExpressionsPass implements SemanticPass
             $analyses,
             $resultType,
             $this->createTemporaryName($when),
+            $allResultSpans !== [] && array_all($allResultSpans,
+                fn (Span $span): bool => isset($this->freshArrayResults[$span->start->offset])),
         );
         $this->context->model->whenExpressions->record($analysis);
         $this->checkContextType($analysis, $outerScope);
@@ -352,11 +369,16 @@ final class CheckWhenExpressionsPass implements SemanticPass
             }
 
             $this->inspectExpression($statement->expr, $scope);
+            $type = $this->resolveExpressionType($statement->expr, $scope);
+            $span = $this->span($statement->expr);
+            if ($this->context->model->whenExpressions->resolveArrayFreshness($statement->expr)) {
+                $this->freshArrayResults[$span->start->offset] = true;
+            }
 
             return [
                 'canComplete' => false,
-                'types' => [$this->resolveExpressionType($statement->expr, $scope)],
-                'spans' => [$this->span($statement->expr)],
+                'types' => [$type],
+                'spans' => [$span],
             ];
         }
 
@@ -569,6 +591,11 @@ final class CheckWhenExpressionsPass implements SemanticPass
                     $this->inspectNode($statement, $callableScope, false);
                 }
             } else {
+                foreach ($scope->symbols as $symbol) {
+                    if (!$expression->static || $symbol->name !== '$this') {
+                        $callableScope->import($symbol);
+                    }
+                }
                 $this->inspectExpression($expression->expr, $callableScope);
             }
             $this->nestedCallableDepth--;
@@ -620,7 +647,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
 
         $name = '$' . $assignment->var->name;
         $offset = $this->span($assignment->var)->start->offset;
-        $declaration = $this->typedLocals[$offset] ?? null;
+        $declaration = $this->typedLocals[$offset] ?? $this->typedForInitializers[$offset] ?? null;
         $actual = $this->resolveExpressionType($assignment->expr, $scope);
 
         if ($declaration !== null) {
@@ -713,7 +740,12 @@ final class CheckWhenExpressionsPass implements SemanticPass
     private function checkContextType(WhenExpressionAnalysis $analysis, Scope $scope): void
     {
         $expected = $this->resolveExpectedType($analysis, $scope);
-        if ($expected === null || $analysis->resultType->unknown || $this->compatibility->accepts($expected, $analysis->resultType, $this->context->symbols)) {
+        if ($expected === null || $analysis->resultType->unknown || $this->compatibility->compare(
+            $expected->semanticType,
+            $analysis->resultType->semanticType,
+            $this->context->symbols,
+            $analysis->resultIsFreshArray,
+        )->isAccepted()) {
             return;
         }
 

@@ -242,6 +242,23 @@ PPP);
         ->and($runtime->getOutput())->toBe('finally');
 });
 
+test('nested finally completion reaches the owning when without losing overrides', function (string $body, string $output): void {
+    $generated = lowerStageNineSource('<?php function result(): string {
+        return when (true) { ' . $body . ' } else { return "else"; };
+    } echo result();');
+    $path = $this->createTemporaryDirectory() . '/NestedFinally.php';
+    $this->writeFile($path, $generated->contents);
+    $runtime = new Process([PHP_BINARY, $path]);
+    $runtime->run();
+    expect($runtime->getExitCode())->toBe(0)
+        ->and($runtime->getOutput())->toBe($output)
+        ->and($runtime->getErrorOutput())->toBe('');
+})->with([
+    ['try { try { return "value"; } finally { echo "inner|"; } } finally { echo "outer|"; }', 'inner|outer|value'],
+    ['try { return "original"; } finally { try { return "replacement"; } finally { echo "inner|"; } }', 'inner|replacement'],
+    ['try { throw new RuntimeException("pending"); } finally { try { return "recovered"; } finally { echo "inner|"; } }', 'inner|recovered'],
+]);
+
 test('finally results suppress pending exceptions while finally throws supersede pending results', function (): void {
     $generated = lowerStageNineSource(<<<'PPP'
 <?php

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Transpilation\Pass;
 
 use Atatusoft\Ppphp\Frontend\Ast\TypedLocalDeclaration;
+use Atatusoft\Ppphp\Transpilation\LocalBindingTypeRenderer;
 use Atatusoft\Ppphp\Transpilation\Pass\Interfaces\TranspilationPass;
 use Atatusoft\Ppphp\Transpilation\TranspilationContext;
 
@@ -37,7 +38,7 @@ final class LowerLocalDeclarationsPass implements TranspilationPass
                 $prefix,
                 sprintf(
                     '/** @var %s %s */%s',
-                    $binding->type->semanticType->renderPhpDoc(),
+                    (new LocalBindingTypeRenderer())->render($binding, $context),
                     $binding->name,
                     $this->resolveTrivia($declaration, $context),
                 ),

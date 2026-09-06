@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Transpilation\Pass;
 
 use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
+use Atatusoft\Ppphp\Interop\PhpDoc\PhpDocReader;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionAnalysis;
 use Atatusoft\Ppphp\Source\Span;
 use Atatusoft\Ppphp\Transpilation\Pass\Interfaces\TranspilationPass;
 use Atatusoft\Ppphp\Transpilation\SourceEditMapping;
 use Atatusoft\Ppphp\Transpilation\TranspilationContext;
+use Atatusoft\Ppphp\Transpilation\LocalBindingTypeRenderer;
 use PhpParser\Comment\Doc;
 use PhpParser\Node;
 use PhpParser\Node\Arg;
@@ -32,6 +34,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     /** @var array<string, true> */
     private array $generatedNames = [];
 
+    /** @var \WeakMap<Doc, Span> */
+    private \WeakMap $bindingDocumentOrigins;
+
     public function __construct(private readonly Standard $printer = new Standard()) {}
 
     public function execute(TranspilationContext $context): void
@@ -40,6 +45,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $this->prerequisiteSequence = 0;
         $this->reservedNames = [];
         $this->generatedNames = [];
+        $this->bindingDocumentOrigins = new \WeakMap();
 
         foreach (token_get_all($context->parsedFile->sourceFile->contents) as $token) {
             if (is_array($token) && $token[0] === T_VARIABLE) {
@@ -70,19 +76,25 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             $lowered = $this->lowerOrdinaryStatement($this->copyStatement($statement));
             $php = $this->printer->prettyPrint($lowered);
             $replacement = $this->formatForSource($php, $span->start->offset);
-            $context->replace($span, $replacement, $this->buildSourceMappings($span, $replacement));
+            $context->replace($span, $replacement, $this->buildSourceMappings($span, $replacement, $lowered));
         }
     }
 
-    /** @return list<SourceEditMapping> */
-    private function buildSourceMappings(Span $owner, string $replacement): array
+    /**
+     * @param list<Stmt> $statements
+     * @return list<SourceEditMapping>
+     */
+    private function buildSourceMappings(Span $owner, string $replacement, array $statements): array
     {
         /** @var list<array{string, Span}> $candidates */
         $candidates = [];
         /** @var list<array{int, int}> $occupied */
         $occupied = [];
         /** @var list<SourceEditMapping> $mappings */
-        $mappings = [];
+        $mappings = $this->mapBindingDocuments($statements, $replacement);
+        foreach ($mappings as $mapping) {
+            $occupied[] = [$mapping->replacementStart, $mapping->replacementEnd];
+        }
 
         foreach ($this->context->semanticModel->whenExpressions->expressions as $analysis) {
             if (!$this->contains($owner, $analysis->syntax->span)) {
@@ -117,6 +129,20 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 continue;
             }
             $start = $this->resolveGeneratedLineStart($replacement, $offset);
+            $prefix = substr($replacement, $start, $offset - $start);
+            foreach ($this->generatedNames as $name => $_) {
+                if (str_starts_with(ltrim($prefix), '$' . $name . ' = ')) {
+                    // Line-only findings belong to the source result, while
+                    // the generated variable itself belongs to its when.
+                    $indentEnd = $start + strlen($prefix) - strlen(ltrim($prefix));
+                    if ($indentEnd > $start && !$this->overlaps($start, $indentEnd, $occupied)) {
+                        $occupied[] = [$start, $indentEnd];
+                        $mappings[] = new SourceEditMapping($start, $indentEnd, $origin);
+                    }
+                    $start = $offset;
+                    break;
+                }
+            }
             $end = $offset + strlen($text);
             if ($this->overlaps($start, $end, $occupied)) {
                 continue;
@@ -132,7 +158,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             $needle = '$' . ltrim($analysis->temporaryName, '$');
             $offset = 0;
             while (($offset = strpos($replacement, $needle, $offset)) !== false) {
-                $start = $this->resolveGeneratedLineStart($replacement, $offset);
+                $start = $offset;
                 $end = $offset + strlen($needle);
                 if (!$this->overlaps($start, $end, $occupied)) {
                     $occupied[] = [$start, $end];
@@ -146,6 +172,57 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             $left->replacementStart <=> $right->replacementStart);
 
         return $mappings;
+    }
+
+    /**
+     * @param list<Stmt> $statements
+     * @return list<SourceEditMapping>
+     */
+    private function mapBindingDocuments(array $statements, string $replacement): array
+    {
+        $documents = [];
+        foreach ($statements as $statement) {
+            $this->collectDocuments($statement, $documents);
+        }
+        $tokens = array_values(array_filter(\PhpToken::tokenize('<?php ' . $replacement),
+            static fn (\PhpToken $token): bool => $token->id === T_DOC_COMMENT));
+        if (count($tokens) !== count($documents)) {
+            return [];
+        }
+
+        $mappings = [];
+        foreach ($documents as $index => $document) {
+            $token = $tokens[$index];
+            // Match the complete emitted comment sequence, not a tag-text search:
+            // an authored assertion can have the same text as a generated tag.
+            if (preg_replace('/\s+/', '', $token->text) !== preg_replace('/\s+/', '', $document->getText())) {
+                return [];
+            }
+            $origin = $this->bindingDocumentOrigins[$document] ?? null;
+            if ($origin !== null) {
+                $start = $token->pos - strlen('<?php ');
+                $mappings[] = new SourceEditMapping($start, $start + strlen($token->text), $origin);
+            }
+        }
+
+        return $mappings;
+    }
+
+    /** @param list<Doc> $documents */
+    private function collectDocuments(Node $node, array &$documents): void
+    {
+        foreach ($node->getComments() as $comment) {
+            if ($comment instanceof Doc) {
+                $documents[] = $comment;
+            }
+        }
+        foreach ($node->getSubNodeNames() as $name) {
+            foreach (is_array($node->$name) ? $node->$name : [$node->$name] as $child) {
+                if ($child instanceof Node) {
+                    $this->collectDocuments($child, $documents);
+                }
+            }
+        }
     }
 
     /** @param list<Expr> $expressions */
@@ -611,13 +688,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $if->elseifs = $elseifs;
         $if->else = $else;
 
-        return new Stmt\Do_(new Expr\ConstFetch(new Name('false')), [
-            new Stmt\Expression(new Expr\Assign(
-                new Expr\Variable(ltrim($analysis->temporaryName, '$')),
-                new Expr\ConstFetch(new Name('null')),
-            )),
-            $if,
-        ]);
+        // Branches leave through an explicit result break or termination.
+        // There is no condition exit that can fabricate an unassigned result.
+        return new Stmt\Do_(new Expr\ConstFetch(new Name('true')), [$if]);
     }
 
     /**
@@ -658,7 +731,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             }
 
             if ($statement instanceof Stmt\TryCatch) {
-                array_push($lowered, ...$this->lowerTryCatch($statement, $analysis, $breakDepth));
+                array_push($lowered, ...$this->lowerTryCatch($statement, $analysis, $breakDepth, $completionFlag));
                 continue;
             }
 
@@ -798,19 +871,24 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         Stmt\TryCatch $statement,
         WhenExpressionAnalysis $analysis,
         int $breakDepth,
+        ?string $completionFlag = null,
     ): array {
-        $statement->stmts = $this->lowerBranchStatements(array_values($statement->stmts), $analysis, $breakDepth);
-        foreach ($statement->catches as $catch) {
-            $catch->stmts = $this->lowerBranchStatements(array_values($catch->stmts), $analysis, $breakDepth);
-        }
         if ($statement->finally === null) {
+            $statement->stmts = $this->lowerBranchStatements(array_values($statement->stmts), $analysis, $breakDepth, $completionFlag);
+            foreach ($statement->catches as $catch) {
+                $catch->stmts = $this->lowerBranchStatements(array_values($catch->stmts), $analysis, $breakDepth, $completionFlag);
+            }
             return [$statement];
         }
 
         $sourceFinally = $statement->finally;
         $statement->finally = null;
-        $protectedStatements = $statement->catches === [] ? $statement->stmts : [$statement];
         $flag = $this->allocateName('__ppphp_when_finally');
+        $statement->stmts = $this->lowerBranchStatements(array_values($statement->stmts), $analysis, 1, $flag);
+        foreach ($statement->catches as $catch) {
+            $catch->stmts = $this->lowerBranchStatements(array_values($catch->stmts), $analysis, 1, $flag);
+        }
+        $protectedStatements = $statement->catches === [] ? $statement->stmts : [$statement];
         $pending = $this->allocateName('__ppphp_when_pending_error');
         $caught = $this->allocateName('__ppphp_when_caught_error');
         $finally = $this->lowerBranchStatements(
@@ -836,17 +914,16 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         );
 
         return [
-            new Stmt\Expression(new Expr\Assign(
-                new Expr\Variable($pending),
-                new Expr\ConstFetch(new Name('null')),
-            )),
-            new Stmt\Expression(new Expr\Assign(
-                new Expr\Variable($flag),
-                new Expr\ConstFetch(new Name('false')),
-            )),
-            $wrapper,
+            $this->declareTemporary($pending, '\\Throwable|null', new Expr\ConstFetch(new Name('null')), $analysis->syntax->span),
+            $this->declareTemporary($flag, 'bool', new Expr\ConstFetch(new Name('false')), $analysis->syntax->span),
+            new Stmt\Do_(new Expr\ConstFetch(new Name('false')), [$wrapper]),
             new Stmt\If_(new Expr\Variable($flag), [
-                'stmts' => [new Stmt\Break_($breakDepth === 1 ? null : new Scalar\Int_($breakDepth))],
+                'stmts' => [
+                    ...($completionFlag === null ? [] : [new Stmt\Expression(new Expr\Assign(
+                        new Expr\Variable($completionFlag), new Expr\ConstFetch(new Name('true')),
+                    ))]),
+                    new Stmt\Break_($breakDepth === 1 ? null : new Scalar\Int_($breakDepth)),
+                ],
             ]),
             new Stmt\If_(new Expr\BinaryOp\NotIdentical(
                 new Expr\Variable($pending),
@@ -855,6 +932,16 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 'stmts' => [new Stmt\Expression(new Expr\Throw_(new Expr\Variable($pending)))],
             ]),
         ];
+    }
+
+    private function declareTemporary(string $name, string $type, Expr $value, Span $owner): Stmt\Expression
+    {
+        $statement = new Stmt\Expression(new Expr\Assign(new Expr\Variable($name), $value));
+        $document = new Doc(sprintf('/** @var %s $%s */', $type, $name));
+        $statement->setDocComment($document);
+        $this->bindingDocumentOrigins[$document] = $owner;
+
+        return $statement;
     }
 
     /**
@@ -936,7 +1023,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             }
             $binding = $this->context->semanticModel->bindings->find($declaration->id);
             if ($binding !== null) {
-                $statement->setDocComment(new Doc(sprintf('/** @var %s %s */', $binding->type->semanticType->renderPhpDoc(), $binding->name)));
+                $document = new Doc(sprintf('/** @var %s %s */', (new LocalBindingTypeRenderer())->render($binding, $this->context), $binding->name));
+                $statement->setDocComment($document);
+                $this->bindingDocumentOrigins[$document] = $declaration->span;
             }
         }
     }
@@ -951,11 +1040,21 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         foreach ($this->context->semanticModel->whenExpressions->expressions as $analysis) {
             $name = ltrim($analysis->temporaryName, '$');
             if (isset($names[$name])) {
+                $previous = $consumer->getDocComment();
+                $origin = $previous === null ? null : ($this->bindingDocumentOrigins[$previous] ?? null);
+                $generated = $origin !== null || !(new PhpDocReader())->hasVariableAssertions($previous);
                 $this->addPhpDocTag($consumer, sprintf(
                     '@var %s $%s',
                     $analysis->resultType->semanticType->renderPhpDoc(),
                     $name,
                 ));
+                $document = $consumer->getDocComment();
+                if ($generated && !$analysis->resultType->unknown && $document !== null) {
+                    // Preserve the original declaration's eligibility when
+                    // several generated tags share a comment. Authored or
+                    // unknown assertions make the whole comment ineligible.
+                    $this->bindingDocumentOrigins[$document] = $origin ?? $analysis->syntax->span;
+                }
             }
         }
     }
@@ -964,6 +1063,8 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     {
         if ($statement instanceof Stmt\For_ || $statement instanceof Stmt\Foreach_) {
             $tags = [];
+            $origin = null;
+            $authoredDocument = $statement->getDocComment();
             $offset = $this->span($statement)->start->offset;
             foreach ([
                 ...$this->context->parsedFile->extensionSyntax->typedForInitializers,
@@ -974,11 +1075,17 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 }
                 $binding = $this->context->semanticModel->bindings->find($declaration->id);
                 if ($binding !== null) {
-                    $tags[] = sprintf('@var %s %s', $binding->type->semanticType->renderPhpDoc(), $binding->name);
+                    $tags[] = sprintf('@var %s %s', (new LocalBindingTypeRenderer())->render($binding, $this->context), $binding->name);
+                    $origin = $declaration->loopKeywordSpan;
                 }
             }
             foreach ($tags as $tag) {
                 $this->addPhpDocTag($statement, $tag);
+            }
+            $document = $statement->getDocComment();
+            if (!(new PhpDocReader())->hasVariableAssertions($authoredDocument)
+                && $document !== null && $origin !== null) {
+                $this->bindingDocumentOrigins[$document] = $origin;
             }
         }
 

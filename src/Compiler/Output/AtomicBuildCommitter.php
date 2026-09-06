@@ -292,7 +292,7 @@ final readonly class AtomicBuildCommitter
                 throw new BuildOutputException(
                     DiagnosticCode::BuildOutputHasBeenModified,
                     sprintf('Manifest-owned output "%s" no longer matches its recorded hash.', $entry->output),
-                    'Run a complete pathless build to regenerate compiler-owned output.',
+                    'Run `ppphp build` without a path to regenerate the complete output.',
                 );
             }
 

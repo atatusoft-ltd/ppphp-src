@@ -64,7 +64,7 @@ final readonly class OutputPlanner
 
             $diagnostics->add(new Diagnostic(
                 DiagnosticCode::OutputPathIsReserved,
-                sprintf('Source "%s" maps into the compiler-owned .ppphp metadata directory.', $source->displayPath),
+                sprintf('Source "%s" maps into the reserved .ppphp build metadata directory.', $source->displayPath),
                 help: 'Rename or move the source so its output does not begin with .ppphp/.',
             ));
         }

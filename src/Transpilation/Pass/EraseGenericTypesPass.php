@@ -19,6 +19,7 @@ use Atatusoft\Ppphp\Source\Span;
 use Atatusoft\Ppphp\Transpilation\PhpDocEmitter;
 use Atatusoft\Ppphp\Transpilation\Pass\Interfaces\TranspilationPass;
 use Atatusoft\Ppphp\Transpilation\TranspilationContext;
+use Atatusoft\Ppphp\Transpilation\ThrowsClauseEraser;
 use PhpParser\Node;
 use PhpParser\Node\Stmt;
 
@@ -164,7 +165,7 @@ final class EraseGenericTypesPass implements TranspilationPass
 
         if ($clause !== null) {
             $tags[] = $this->renderThrowsTag($clause, $context);
-            $context->replace($clause->span, $this->resolveThrowsTrivia($clause, $context));
+            (new ThrowsClauseEraser())->erase($clause, $context);
         }
 
         if ($tags !== []) {
@@ -486,20 +487,4 @@ final class EraseGenericTypesPass implements TranspilationPass
         return '@throws ' . implode('|', array_values($types));
     }
 
-    private function resolveThrowsTrivia(ThrowsClause $clause, TranspilationContext $context): string
-    {
-        $trivia = '';
-
-        foreach ($context->parsedFile->tokens->tokens as $token) {
-            if ($token->end <= $clause->span->start->offset || $token->start >= $clause->span->end->offset || !$token->isTrivia) {
-                continue;
-            }
-
-            $start = max($clause->span->start->offset, $token->start);
-            $end = min($clause->span->end->offset, $token->end);
-            $trivia .= substr($token->text, $start - $token->start, $end - $start);
-        }
-
-        return $trivia;
-    }
 }

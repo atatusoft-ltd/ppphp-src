@@ -1,0 +1,67 @@
+<?php
+declare(strict_types=1);
+class Failure extends Exception {}
+/**
+ * @throws \Failure
+ */
+function inline(): void { throw new Failure('inline'); }
+/**
+ * @throws \Failure
+ */
+function multiline(): void
+{
+    throw new Failure('function');
+}
+/**
+ * @throws \Failure
+ */
+function commented(): void  /* keep this comment */  { throw new Failure('commented'); }
+class InlineConstructor
+{
+    /**
+     * @throws \Failure
+     */
+    public function __construct() { throw new Failure('inline constructor'); }
+}
+interface Contract
+{
+    /**
+     * @throws \Failure
+     */
+    public function inline(): void;
+    /**
+     * @throws \Failure
+     */
+    public function multiline(): void
+    ;
+}
+abstract class Service implements Contract
+{
+    /**
+     * @throws \Failure
+     */
+    public function __construct()
+    {
+        throw new Failure('constructor');
+    }
+    /**
+     * @throws \Failure
+     */
+    public function inline(): void { throw new Failure('method'); }
+    /**
+     * @throws \Failure
+     */
+    public function multilineBody(): void
+    {
+        throw new Failure('multiline method');
+    }
+    /**
+     * @throws \Failure
+     */
+    abstract public function abstractInline(): void;
+    /**
+     * @throws \Failure
+     */
+    abstract public function multiline(): void
+    ;
+}

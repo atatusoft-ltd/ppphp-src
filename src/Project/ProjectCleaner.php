@@ -49,7 +49,7 @@ final class ProjectCleaner
         if (!$acquired) {
             $diagnostics->add(new Diagnostic(
                 DiagnosticCode::BuildIsAlreadyInProgress,
-                'Cleanup cannot remove compiler-owned paths while a build transaction is active.',
+                'Cleanup cannot remove output or cache directories while a build is active.',
                 help: 'Wait for the active compiler operation to finish, then run clean again.',
             ));
 
@@ -92,7 +92,7 @@ final class ProjectCleaner
                     $diagnostics->add(new Diagnostic(
                         DiagnosticCode::ProjectCleanupFailed,
                         sprintf(
-                            'The compiler-owned path "%s" could not be removed.',
+                            'The output or cache path "%s" could not be removed.',
                             Path::resolveRelativeTo($path, $configuration->projectRoot),
                         ),
                         help: 'Check the path permissions and ownership, then run clean again.',

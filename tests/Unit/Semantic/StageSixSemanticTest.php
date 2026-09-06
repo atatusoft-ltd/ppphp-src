@@ -210,7 +210,7 @@ PPP);
         ->and($class?->parent)->toBe('App\\BaseService')
         ->and($class?->interfaces)->toBe(['App\\Clocked'])
         ->and($class?->traits)->toBe(['App\\Named'])
-        ->and($class?->findMethod('now')?->parameters[0]->type?->text)->toBe('DateTimeImmutable')
+        ->and($class?->findMethod('now')?->parameters[0]->type?->text)->toBe('\\DateTimeImmutable')
         ->and($analysis->symbols->findFunction('App\\service'))->not->toBeNull()
         ->and($analysis->resolvedNames->entries)->not->toBeEmpty();
 });

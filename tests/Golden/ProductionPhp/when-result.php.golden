@@ -1,0 +1,23 @@
+<?php
+declare(strict_types=1);
+function identity(string $value): string { return $value; }
+/**
+ * @param list<string> $names
+ */
+function describeUsers(array $names): string {
+    /** @var int $count */ $count = count($names);
+    do {
+        if ($count === 0) {
+            $__ppphp_when_173 = "No users";
+            break;
+        } else {
+            $__ppphp_when_173 = $count . " users: " . implode(", ", $names);
+            break;
+        }
+    } while (true);
+    /**
+     * @var string $__ppphp_when_173
+     */
+    return $__ppphp_when_173;
+}
+echo describeUsers([]), "|", describeUsers(["Maya"]);

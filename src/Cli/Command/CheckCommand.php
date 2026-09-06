@@ -35,9 +35,9 @@ final class CheckCommand extends ProjectCommand
     protected function configure(): void
     {
         $this
-            ->setDescription('Check project-owned PHP and ++PHP sources for syntax and semantic errors.')
-            ->setHelp('Without a path, checks every project-owned source. A file or directory limits reported diagnostics while the remaining valid project supplies context. Diagnostics produce a nonzero exit status.')
-            ->addArgument('path', InputArgument::OPTIONAL, 'Optional project-owned file or source subtree.');
+            ->setDescription('Check this project\'s PHP and ++PHP sources for syntax and type errors.')
+            ->setHelp('Without a path, checks every file under the configured source roots. A file or directory limits reported diagnostics while the remaining valid project supplies context. Diagnostics produce a nonzero exit status.')
+            ->addArgument('path', InputArgument::OPTIONAL, 'Optional file or directory within the configured source roots.');
         $this->addProjectOptions();
     }
 

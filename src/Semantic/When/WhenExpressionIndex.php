@@ -31,6 +31,12 @@ final class WhenExpressionIndex
         return is_string($id) ? $this->find($id) : null;
     }
 
+    public function resolveArrayFreshness(?Expr $expression): bool
+    {
+        return $expression instanceof Expr\Array_
+            || ($expression !== null && $this->findPlaceholder($expression)?->resultIsFreshArray === true);
+    }
+
     /** @var list<WhenExpressionAnalysis> */
     public array $expressions {
         get => array_values($this->recordedExpressions);

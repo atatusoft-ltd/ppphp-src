@@ -16,6 +16,11 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 
 ### Fixed
 
+- Valid string concatenations and broader local types no longer fail PHPDoc checks; closure and arrow-function locals retain callable signatures in generated PHP.
+- `when` results no longer produce false PHPDoc errors for narrower branch values or acquire an artificial nullable result type.
+- Fresh callback arrays retain their compatibility through `when` results, including nested expressions and `finally` overrides; existing arrays keep their type contracts.
+- Erasing a standalone `throws` clause removes its indentation-only line without shifting diagnostic source locations.
+- Type and project errors use clearer wording, initialization failures name their specific cause, and extra command paths receive one-path guidance.
 - Missing PHP opening tags now point to the needed `<?php` insertion, instead of suggesting cache-permissions changes. Diagnostics preserve user identifiers, report the actual argument or return-type mismatch, and retain specific project and analysis-failure reasons in editor requests.
 
 - Semantic type names in diagnostics retain their resolved spelling while normalized canonical identities remain internal to type comparison and lookup.

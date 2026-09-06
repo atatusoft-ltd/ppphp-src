@@ -20,5 +20,6 @@ final readonly class WhenExpressionAnalysis
         public array $branches,
         public LocalType $resultType,
         public string $temporaryName,
+        public bool $resultIsFreshArray = false,
     ) {}
 }

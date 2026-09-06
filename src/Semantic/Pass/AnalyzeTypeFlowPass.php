@@ -746,7 +746,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
             $this->context->genericDeclarations,
         );
 
-        if ($this->compatibility->compare($declared, $actual->type, $this->context->symbols) === TypeCompatibilityResult::Incompatible) {
+        if ($this->compatibility->compare($declared, $actual->type, $this->context->symbols, $this->context->model->whenExpressions->resolveArrayFreshness($function->expr)) === TypeCompatibilityResult::Incompatible) {
             $this->addDiagnostic(
                 DiagnosticCode::ReturnTypeDoesNotMatch,
                 sprintf('Arrow function result %s is not compatible with %s.', $actual->type->renderPhpDoc(), $declared->renderPhpDoc()),
@@ -962,7 +962,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
             $expected = $substitution->substitute($parameterType);
             $actual = $actualTypes[spl_object_id($bound->argument)];
 
-            if ($this->compatibility->compare($expected, $actual, $this->context->symbols) === TypeCompatibilityResult::Incompatible) {
+            if ($this->compatibility->compare($expected, $actual, $this->context->symbols, $this->context->model->whenExpressions->resolveArrayFreshness($bound->argument->value)) === TypeCompatibilityResult::Incompatible) {
                 $related = $contract->origin === CallableOrigin::IntrinsicOverride
                     ? []
                     : [new DiagnosticLabel($bound->parameter->declarationSpan, sprintf('Parameter %s is declared as %s.', $bound->parameter->name, $expected->renderPhpDoc()))];
@@ -1028,7 +1028,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
                 || $target->var instanceof Expr\NullsafePropertyFetch;
 
             if ($propertyContainer && $container instanceof TypedArrayType) {
-                if ($this->compatibility->compare($container->valueType, $actual, $this->context->symbols) === TypeCompatibilityResult::Incompatible) {
+                if ($this->compatibility->compare($container->valueType, $actual, $this->context->symbols, $this->context->model->whenExpressions->resolveArrayFreshness($value)) === TypeCompatibilityResult::Incompatible) {
                     $this->addDiagnostic(
                         DiagnosticCode::TypedArrayValueTypeDoesNotMatch,
                         sprintf('Array element expects %s, but %s was assigned.', $container->valueType->renderPhpDoc(), $actual->renderPhpDoc()),
@@ -1128,7 +1128,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
                         $resolvedTarget['calledReceiver'],
                     );
 
-                    if ($this->compatibility->compare($expected, $actual, $this->context->symbols) === TypeCompatibilityResult::Incompatible) {
+                    if ($this->compatibility->compare($expected, $actual, $this->context->symbols, $this->context->model->whenExpressions->resolveArrayFreshness($value)) === TypeCompatibilityResult::Incompatible) {
                         $this->addDiagnostic(
                             $this->mismatchCode($actual, DiagnosticCode::PropertyTypeDoesNotMatch),
                             sprintf('Property %s expects %s, but %s was assigned.', $property->name, $expected->renderPhpDoc(), $actual->renderPhpDoc()),
@@ -1307,7 +1307,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
         }
 
         if ($isVoid || $isNever
-            || $this->compatibility->compare($declared, $actual->type, $this->context->symbols) === TypeCompatibilityResult::Incompatible) {
+            || $this->compatibility->compare($declared, $actual->type, $this->context->symbols, $this->context->model->whenExpressions->resolveArrayFreshness($return->expr)) === TypeCompatibilityResult::Incompatible) {
             $this->addDiagnostic(
                 $this->returnMismatchCode($declared, $actual->type),
                 sprintf('Returned type %s is not compatible with declared return type %s.', $actual->type->renderPhpDoc(), $declared->renderPhpDoc()),
@@ -2114,9 +2114,9 @@ final class AnalyzeTypeFlowPass implements SemanticPass
 
             $this->addDiagnostic(
                 DiagnosticCode::TypeDoesNotExist,
-                sprintf('Type %s does not exist in the compiler-owned project declaration context.', $resolved),
+                sprintf('Type %s is not defined in this project or its dependencies.', $resolved),
                 $this->span($name),
-                help: 'Declare or import the type, or configure a stub. Unindexed external dependency types remain deferred.',
+                help: 'Check the type name and imports. Ensure the package is installed and its Composer autoload paths are correct, or provide a stub.',
             );
         }
     }

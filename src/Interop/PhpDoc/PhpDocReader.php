@@ -33,6 +33,25 @@ final class PhpDocReader
         );
     }
 
+    /** Includes invalid assertion values so authored checks are never discarded. */
+    public function hasVariableAssertions(?Doc $document): bool
+    {
+        if ($document === null) {
+            return false;
+        }
+        $node = $this->parse($document);
+        if ($node === null) {
+            return true;
+        }
+        foreach (['@var', '@phpstan-var', '@psalm-var'] as $name) {
+            if ($node->getTagsByName($name) !== []) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function readMetadata(?Doc $document): PhpDocMetadata
     {
         $node = $this->parse($document);

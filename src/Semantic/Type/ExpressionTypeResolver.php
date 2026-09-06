@@ -68,7 +68,7 @@ final class ExpressionTypeResolver
         }
 
         if ($expression instanceof Expr\Closure || $expression instanceof Expr\ArrowFunction) {
-            return LocalType::createAtomic('callable');
+            return LocalType::createAtomic('Closure');
         }
 
         if ($expression instanceof Expr\ConstFetch) {
