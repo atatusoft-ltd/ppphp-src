@@ -61,7 +61,9 @@ test('closure and callable locals preserve literal signatures', function (string
         'local' => $declaration . '; echo $label(number: 7);',
         'for' => 'for (' . $declaration . '; true;) { echo $label(number: 7); break; }',
         'when-local' => 'string $result = when ($enabled) { ' . $declaration . '; return $label(number: 7); } else { return ""; }; echo $result;',
-        'when-for' => 'string $result = when ($enabled) { for (' . $declaration . '; $iterate;) { return $label(number: 7); } return ""; } else { return ""; }; echo $result;',
+        'when-for', 'when-documented-for' => 'string $result = when ($enabled) { '
+            . ($context === 'when-documented-for' ? '/** Handler setup. */ ' : '')
+            . 'for (' . $declaration . '; $iterate;) { return $label(number: 7); } return ""; } else { return ""; }; echo $result;',
     };
     $this->writeFile($root . '/src/main.ppphp', '<?php function show(bool $enabled, bool $iterate): void {' . "\nreadonly string \$prefix = 'Order';\n" . $body . "\n} show(true, true);\n");
     $build = runTypedLocalCommand($root, 'build');
@@ -77,7 +79,7 @@ test('closure and callable locals preserve literal signatures', function (string
 })->with(['Closure', 'callable'])->with([
     'function (int $number) use ($prefix): string { return $prefix . " #" . $number; }',
     'fn (int $number): string => $prefix . " #" . $number',
-])->with(['local', 'for', 'when-local', 'when-for']);
+])->with(['local', 'for', 'when-local', 'when-for', 'when-documented-for']);
 
 test('local declarations still reject incompatible initializers', function (string $statement, string $code): void {
     $root = $this->createTemporaryDirectory();
@@ -140,6 +142,21 @@ test('regenerated when declarations never hide authored variable assertions', fu
     'identical tag text is not provenance' => ['/** @var object $value */ $value = new stdClass();', 'not subtype'],
     'authored missing variable remains an error' => ['/** @var string $missing */ echo "marker";', 'Variable $missing'],
 ]);
+
+test('authored assertions immediately before generated declarations remain checked', function (string $declaration, string $tag): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/main.ppphp', '<?php function show(): void {
+        /** ' . $tag . ' string $missing */
+        ' . $declaration . '
+    } show();');
+    $check = runTypedLocalCommand($root);
+    expect($check->getExitCode())->toBe(1, $check->getOutput())
+        ->and($check->getOutput())->toContain('Variable $missing');
+})->with([
+    'local' => 'string $message = "ok"; echo $message;',
+    'for' => 'for (int $n = 0; $n < 1; ++$n) { echo $n; }',
+])->with(['@var', '@phpstan-var', '@psalm-var']);
 
 test('fixed local types still reject later writes and bad calls', function (string $body, string $code): void {
     $root = $this->createTemporaryDirectory();

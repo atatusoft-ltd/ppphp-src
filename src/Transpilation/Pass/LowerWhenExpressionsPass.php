@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Transpilation\Pass;
 
 use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
+use Atatusoft\Ppphp\Interop\PhpDoc\PhpDocReader;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionAnalysis;
 use Atatusoft\Ppphp\Source\Span;
 use Atatusoft\Ppphp\Transpilation\Pass\Interfaces\TranspilationPass;
@@ -1048,7 +1049,8 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 $this->addPhpDocTag($statement, $tag);
             }
             $document = $statement->getDocComment();
-            if ($authoredDocument === null && $document !== null && $origin !== null) {
+            if (!(new PhpDocReader())->hasVariableAssertions($authoredDocument)
+                && $document !== null && $origin !== null) {
                 $this->bindingDocumentOrigins[$document] = $origin;
             }
         }

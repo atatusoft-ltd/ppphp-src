@@ -6,6 +6,7 @@ namespace Atatusoft\Ppphp\Analysis;
 
 use Atatusoft\Ppphp\Frontend\ParsedFile;
 use Atatusoft\Ppphp\Frontend\Ast\TypedLocalDeclaration;
+use Atatusoft\Ppphp\Interop\PhpDoc\PhpDocReader;
 use Atatusoft\Ppphp\Transpilation\GeneratedPhp;
 use Atatusoft\Ppphp\Semantic\SemanticAnalysisResult;
 use Atatusoft\Ppphp\Semantic\Type\TypeCompatibility;
@@ -49,9 +50,13 @@ final class GeneratedTypeDeclarationIndex
         $lines = [];
         $authoredLines = [];
         $pending = null;
+        $pendingAuthored = false;
+        $phpDocReader = new PhpDocReader();
         foreach (\PhpToken::tokenize($generated->contents) as $token) {
-            if ($token->id === T_DOC_COMMENT && str_contains($token->text, '@var')) {
-                $pending = isset($generatedStarts[$token->pos]);
+            if ($token->id === T_DOC_COMMENT && $phpDocReader->hasVariableAssertions(new \PhpParser\Comment\Doc($token->text))) {
+                $isGenerated = isset($generatedStarts[$token->pos]);
+                $pending = ($pending ?? false) || $isGenerated;
+                $pendingAuthored = $pendingAuthored || !$isGenerated;
                 continue;
             }
             if ($token->isIgnorable()) {
@@ -60,10 +65,12 @@ final class GeneratedTypeDeclarationIndex
             if ($pending !== null) {
                 if ($pending) {
                     $lines[$token->line] = true;
-                } else {
+                }
+                if ($pendingAuthored) {
                     $authoredLines[$token->line] = true;
                 }
                 $pending = null;
+                $pendingAuthored = false;
             }
         }
 

@@ -23,7 +23,7 @@ that narrow PHPStan's inferred initializer type. The adapter therefore discards
 only `varTag.nativeType`, `varTag.type`, and `varTag.variableNotFound` findings on unambiguous generated
 declaration lines whose initializer compatibility the compiler has established.
 Source-map provenance distinguishes these tags from authored PHPDoc. Unknown
-compatibility, authored assertions (including ambiguous same-line findings),
+compatibility, authored assertions (including `@phpstan-var`/`@psalm-var`, adjacent comment blocks, and ambiguous same-line findings),
 other findings, and ordinary PHP retain their checks. This is a language-policy
 difference, not a rule-level change or a user-configurable ignore. Closure
 literals retain their nominal `Closure` identity and parameter/return metadata.
