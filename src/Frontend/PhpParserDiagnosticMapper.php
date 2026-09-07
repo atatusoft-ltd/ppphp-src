@@ -15,17 +15,20 @@ use PhpParser\Error;
 
 final class PhpParserDiagnosticMapper
 {
-    public function map(Error $error, SourceFile $sourceFile, ?SourceMap $sourceMap = null): Diagnostic
+    public function map(Error $error, SourceFile $sourceFile, ?SourceMap $sourceMap = null, bool $missingSemicolon = false): Diagnostic
     {
         $attributes = $error->getAttributes();
         $span = $this->resolveSpan($attributes, $error->getStartLine(), $sourceFile, $sourceMap);
 
+        $message = PhpSyntaxMessage::format($error, $span->text, $missingSemicolon);
+
         return new Diagnostic(
             DiagnosticCode::InvalidPhpSyntax,
-            sprintf('The source contains invalid PHP 8.4 syntax: %s', $error->getRawMessage()),
-            new DiagnosticLabel($span, 'Syntax error reported here.'),
+            $message,
+            new DiagnosticLabel($span, $message),
             debug: [
                 'parserError' => $error::class,
+                'parserMessage' => $error->getRawMessage(),
                 'parserAttributes' => $attributes,
             ],
             origin: DiagnosticOrigin::PhpParser,

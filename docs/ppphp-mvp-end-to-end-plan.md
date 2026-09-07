@@ -585,6 +585,7 @@ Configuration principles:
 - Output and cache paths may not overlap source paths.
 - Unknown configuration properties produce diagnostics.
 - The target PHP version is distinct from the host PHP version running the compiler.
+- Root Composer config.platform.php takes precedence over targetPhpVersion; require.php constrains the selection. Conflicting or unsupported targets fail before analysis, without silently selecting the compiler host. This does not qualify additional platform capabilities or complete the FI-1 runtime/dependency gates.
 ```
 
 ### 8.1 Schema Distribution Policy

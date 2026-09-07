@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Semantic\When;
 
+use Atatusoft\Ppphp\Config\PhpTarget;
 use Atatusoft\Ppphp\Diagnostics\Diagnostic;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticLabel;
 use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
 use Atatusoft\Ppphp\Frontend\Ast\WhenExpression;
 use Atatusoft\Ppphp\Frontend\ParsedFile;
+use Atatusoft\Ppphp\Frontend\PhpSyntaxMessage;
 use Atatusoft\Ppphp\Source\Span;
 use PhpParser\Error;
 use PhpParser\ErrorHandler\Collecting;
@@ -24,9 +26,12 @@ final readonly class WhenFragmentParser
 {
     private Parser $parser;
 
-    public function __construct()
+    public function __construct(string $targetPhpVersion = PhpTarget::DEFAULT)
     {
-        $this->parser = (new ParserFactory())->createForVersion(PhpVersion::fromString('8.4'));
+        if (!in_array($targetPhpVersion, PhpTarget::SUPPORTED, true)) {
+            throw new \InvalidArgumentException('The when parser does not support the selected project target.');
+        }
+        $this->parser = (new ParserFactory())->createForVersion(PhpVersion::fromString($targetPhpVersion));
     }
 
     public function parseCondition(ParsedFile $file, Span $span): WhenFragmentParseResult
@@ -67,11 +72,13 @@ final readonly class WhenFragmentParser
     ): WhenFragmentParseResult {
         $normalized = $this->normalize($file, $span);
         $handler = new Collecting();
-        $statements = $this->parser->parse($prefix . $normalized . $suffix, $handler);
+        $contents = $prefix . $normalized . $suffix;
+        $statements = $this->parser->parse($contents, $handler);
         $diagnostics = new DiagnosticBag();
 
-        foreach ($handler->getErrors() as $error) {
-            $diagnostics->add($this->mapError($file, $span, strlen($prefix), $error));
+        foreach ($handler->getErrors() as $index => $error) {
+            $missingSemicolon = $index === 0 && PhpSyntaxMessage::checkMissingSemicolon($error, $contents, $this->parser);
+            $diagnostics->add($this->mapError($file, $span, strlen($prefix), $error, $missingSemicolon));
         }
 
         $statements = $statements === null ? [] : array_values($statements);
@@ -191,19 +198,23 @@ final readonly class WhenFragmentParser
         }
     }
 
-    private function mapError(ParsedFile $file, Span $span, int $prefixLength, Error $error): Diagnostic
+    private function mapError(ParsedFile $file, Span $span, int $prefixLength, Error $error, bool $missingSemicolon): Diagnostic
     {
         $position = $error->getAttributes()['startFilePos'] ?? null;
         $position = is_int($position) ? $position : $prefixLength;
         $offset = $position < $prefixLength
             ? $span->start->offset
             : min($span->end->offset, $span->start->offset + $position - $prefixLength);
-        $errorSpan = $file->sourceFile->createSpan($offset, min($span->end->offset, $offset + 1));
+        $end = $error->getAttributes()['endFilePos'] ?? $position;
+        $length = is_int($end) ? max(1, $end - $position + 1) : 1;
+        $errorSpan = $file->sourceFile->createSpan($offset, min($span->end->offset, $offset + $length));
+        $message = PhpSyntaxMessage::format($error, $errorSpan->text, $missingSemicolon);
 
         return new Diagnostic(
             DiagnosticCode::WhenBranchCouldNotBeParsed,
-            sprintf('The `when` fragment is not valid PHP 8.4: %s', $error->getRawMessage()),
-            new DiagnosticLabel($errorSpan, 'The invalid branch fragment appears here.'),
+            $message,
+            new DiagnosticLabel($errorSpan, $message),
+            debug: ['parserMessage' => $error->getRawMessage(), 'parserAttributes' => $error->getAttributes()],
         );
     }
 

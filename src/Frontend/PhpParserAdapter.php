@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Frontend;
 
+use Atatusoft\Ppphp\Config\PhpTarget;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
 use Atatusoft\Ppphp\Frontend\Ast\ExtensionSyntaxIndex;
 use Atatusoft\Ppphp\Frontend\Enumerations\ParseMode;
@@ -22,11 +23,11 @@ final readonly class PhpParserAdapter
     private NativeParser $parser;
 
     public function __construct(
-        string $targetPhpVersion = '8.4',
+        string $targetPhpVersion = PhpTarget::DEFAULT,
         private PhpParserDiagnosticMapper $diagnosticMapper = new PhpParserDiagnosticMapper(),
     ) {
-        if ($targetPhpVersion !== '8.4') {
-            throw new \InvalidArgumentException('The ordinary PHP frontend currently supports only PHP 8.4.');
+        if (!in_array($targetPhpVersion, PhpTarget::SUPPORTED, true)) {
+            throw new \InvalidArgumentException('The ordinary PHP frontend does not support the selected project target.');
         }
 
         $this->parser = (new ParserFactory())->createForVersion(PhpVersion::fromString($targetPhpVersion));
@@ -54,8 +55,10 @@ final readonly class PhpParserAdapter
             $errorHandler->handleError($error);
         }
 
-        foreach ($errorHandler->getErrors() as $error) {
-            $diagnostics->add($this->diagnosticMapper->map($error, $sourceFile, $normalizedSource->sourceMap));
+        $phpTokens = array_values($this->parser->getTokens());
+        foreach ($errorHandler->getErrors() as $index => $error) {
+            $missingSemicolon = $index === 0 && PhpSyntaxMessage::checkMissingSemicolon($error, $normalizedSource->contents, $this->parser);
+            $diagnostics->add($this->diagnosticMapper->map($error, $sourceFile, $normalizedSource->sourceMap, $missingSemicolon));
         }
 
         $parsedFile = $statements === null
@@ -69,7 +72,7 @@ final readonly class PhpParserAdapter
                 $normalizedSource,
                 $normalizedSource->sourceMap,
                 array_values($statements),
-                array_values($this->parser->getTokens()),
+                $phpTokens,
             );
 
         return new ParseResult($parsedFile, $diagnostics);

@@ -18,7 +18,15 @@ composer require --dev atatusoft-ltd/ppphp-src
 vendor/bin/ppphp init
 ```
 
-`ppphp init` creates `ppphp.json`, `build/ppphp`, `.ppphp-cache`, and `stubs`. A packaged release writes the immutable `$schema` URL as the first configuration property. Set the root project's Composer mapping to source, for example:
+`ppphp init` creates `ppphp.json`, `build/ppphp`, `.ppphp-cache`, and `stubs`. A packaged release writes the immutable `$schema` URL as the first configuration property.
+
+The project's Composer `config.platform.php` selects the PHP target when set;
+otherwise `ppphp.json` supplies it. Composer `require.php` constrains the selection.
+Unsupported or conflicting settings are reported directly—changing the PHP
+interpreter that runs the compiler does not silently change the project target.
+See [diagnostics](diagnostics.md) for the target-selection rules.
+
+Set the root project's Composer mapping to source, for example:
 
 ```json
 {

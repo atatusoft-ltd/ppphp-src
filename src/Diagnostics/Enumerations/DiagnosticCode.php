@@ -31,6 +31,7 @@ enum DiagnosticCode: string
     case ProjectSourceDiscoveryFailed = 'P0023';
     case SelectedPathExcluded = 'P0024';
     case SelectedPathNotReadable = 'P0025';
+    case ConflictingPhpTargetConfiguration = 'P0026';
     case InvalidPhpSyntax = 'P1001';
     case ExplicitSourceFileRequired = 'P1002';
     case DirectoryCompilationUnavailable = 'P1003';

@@ -4,6 +4,7 @@ This file is derived from production package entries in `composer.lock`; no inst
 
 | Package | Locked version | Declared license |
 | --- | --- | --- |
+| `composer/semver` | `3.4.4` | MIT |
 | `nikic/php-parser` | `v5.8.0` | BSD-3-Clause |
 | `phpstan/phpdoc-parser` | `2.3.3` | MIT |
 | `phpstan/phpstan` | `2.2.9` | MIT |

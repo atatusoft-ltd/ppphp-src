@@ -117,6 +117,7 @@ final class DiagnosticCatalog
             DiagnosticCode::StaticAnalysisBackendFailed => 'Static Analysis Failed',
             DiagnosticCode::StaticAnalysisResultInvalid => 'Static Analysis Result Is Invalid',
             DiagnosticCode::UnsupportedTargetPhpVersion => 'Unsupported Target PHP Version',
+            DiagnosticCode::ConflictingPhpTargetConfiguration => 'Conflicting PHP Target Configuration',
             DiagnosticCode::WhenBranchDoesNotProduceValue => 'When Branch Does Not Produce A Value',
             DiagnosticCode::WhenByReferenceArgumentNotAllowed => 'When By-Reference Argument Is Not Allowed',
             DiagnosticCode::WhenControlTransferNotAllowed => 'When Control Transfer Is Not Allowed',
