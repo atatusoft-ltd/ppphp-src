@@ -72,13 +72,12 @@ try {
         ?? throw new RuntimeException('Committed release metadata is missing.');
 
     if (
-        Compiler::VERSION !== '2026.3.1-rc-2'
-        || $metadata->version->canonical !== Compiler::VERSION
+        $metadata->version->canonical !== Compiler::VERSION
         || $metadata->tag !== Compiler::VERSION
-        || $metadata->channel->value !== 'rc'
-        || !$metadata->prerelease
+        || $metadata->channel !== $metadata->version->channel
+        || $metadata->prerelease !== $metadata->version->isPrerelease
     ) {
-        throw new RuntimeException('The compiler and release metadata do not identify the exact prepared RC.');
+        throw new RuntimeException('The compiler and release metadata do not identify the selected canonical release.');
     }
 
     $composer = readinessJson(Path::join($root, 'composer.json'));
@@ -94,7 +93,7 @@ try {
         || isset($composer['minimum-stability'])
         || isset($composer['extra']['branch-alias'])
     ) {
-        throw new RuntimeException('Composer distribution metadata does not match the RC contract.');
+        throw new RuntimeException('Composer distribution metadata does not match the release contract.');
     }
 
     foreach (['nikic/php-parser', 'phpstan/phpdoc-parser', 'phpstan/phpstan', 'symfony/console', 'symfony/process'] as $dependency) {
@@ -162,7 +161,7 @@ try {
     if (
         !is_string($release)
         || !str_contains($release, "tags:\n      - '*'")
-        || !str_contains($release, 'git merge-base --is-ancestor')
+        || !str_contains($release, 'tools/release/verify-source.php')
         || !str_contains($release, 'composer check')
         || !str_contains($release, 'composer verify:distribution')
         || !str_contains($release, 'contents: write')
@@ -178,7 +177,7 @@ try {
         throw new RuntimeException('Release readiness modified repository state.');
     }
 
-    fwrite(STDOUT, sprintf("Verified Stage 14A release readiness for ++PHP %s.\n", Compiler::VERSION));
+    fwrite(STDOUT, sprintf("Verified offline preparation readiness for ++PHP %s (%s). Public installation is a separate post-publication check.\n", Compiler::VERSION, $metadata->channel->value));
 } catch (Throwable $exception) {
     fwrite(STDERR, 'Release readiness failed: ' . $exception->getMessage() . "\n");
     $exitCode = 1;

@@ -2,101 +2,54 @@
 
 declare(strict_types=1);
 
-use Atatusoft\Ppphp\Compiler\Compiler;
+use Atatusoft\Ppphp\Versioning\ReleaseMetadataLoader;
+use Atatusoft\Ppphp\Versioning\ReleaseNotesRenderer;
 use Atatusoft\Ppphp\Versioning\ReleaseNotesValidator;
+use Atatusoft\Ppphp\Versioning\ReleaseVersion;
 
-function validReleaseNotes(): string
-{
-    return sprintf(
-        <<<'MARKDOWN'
-# ++PHP %1$s
+test('authored notes require no workflow status namespace or feature inventory', function (string $identity): void {
+    $notes = "# ++PHP $identity\n\nFixed nullable assignment diagnostics.\n";
+    expect((new ReleaseNotesValidator())->validate($notes, ReleaseVersion::parse($identity)))->toBe([]);
+})->with(['2031.4.7-rc-3', '2031.4.7', 'dev-2031.4.7']);
 
-++PHP %1$s is a release candidate that produces ordinary PHP 8.4. Behavior may change before the first Stable release.
-
-composer require --dev atatusoft-ltd/ppphp-src:%1$s
-
-## Requirements
-
-- PHP `^8.4`
-- Composer 2
-- At least 512 MiB of memory available to compiler processes
-
-## Major Features
-
-- Typed local bindings.
-
-The canonical compiler namespace is `Atatusoft\Ppphp`.
-
-## Known Limitations
-
-- Records are future work and are not part of this release.
-MARKDOWN,
-        Compiler::VERSION,
-    );
-}
-
-test('release notes accept concise user-facing release candidate content', function (): void {
-    expect((new ReleaseNotesValidator())->validate(validReleaseNotes(), Compiler::VERSION, '8.4'))->toBe([]);
+test('notes preserve legitimate historical publication and migration prose', function (): void {
+    $version = ReleaseVersion::parse('2031.4.7');
+    $notes = "# ++PHP $version\n\nBefore publication of the older release, configurations used a local schema. Regenerate them when upgrading.\n";
+    expect((new ReleaseNotesValidator())->validate($notes, $version))->toBe([]);
 });
 
-test('release notes reject internal development process language', function (string $term): void {
-    $notes = validReleaseNotes() . "\n" . $term . "\n";
-    $failures = (new ReleaseNotesValidator())->validate($notes, Compiler::VERSION, '8.4');
-
-    expect(implode("\n", $failures))->toContain('prohibited public process language');
-})->with([
-    'Stage 13D completed the cache.',
-    'The completion gate passed.',
-]);
-
-test('release notes allow user-relevant supplemental analysis disclosure', function (): void {
-    $notes = validReleaseNotes() . "\nNative checks include supplemental PHPStan analysis.\n";
-
-    expect((new ReleaseNotesValidator())->validate($notes, Compiler::VERSION, '8.4'))->toBe([]);
-});
-
-test('release notes require compiler prerequisites', function (string $requirement, string $message): void {
-    $notes = str_replace($requirement, '', validReleaseNotes());
-
-    expect((new ReleaseNotesValidator())->validate($notes, Compiler::VERSION, '8.4'))
+test('notes reject internal process content and unresolved substitutions', function (string $text, string $message): void {
+    $version = ReleaseVersion::parse('2031.4.7-rc-3');
+    expect(implode("\n", (new ReleaseNotesValidator())->validate("# ++PHP $version\n\n$text\n", $version)))
         ->toContain($message);
 })->with([
-    ['## Requirements', 'release notes do not contain a requirements section'],
-    ['PHP `^8.4`', 'release notes do not state the compiler PHP requirement'],
-    ['Composer 2', 'release notes do not state the Composer requirement'],
-    ['512 MiB', 'release notes do not state the compiler memory requirement'],
+    ['Stage 13D completed the cache.', 'prohibited public process language'],
+    ['The completion gate passed.', 'prohibited public process language'],
+    ['Install {{version}}.', 'unresolved generated substitutions'],
+    ['Download /<release-tag>/schema.', 'unresolved generated substitutions'],
 ]);
 
-test('release notes reject contradictory Stable claims', function (string $claim): void {
-    $notes = validReleaseNotes() . "\n" . $claim . "\n";
+test('notes reject missing or mismatched historical identity', function (): void {
+    $validator = new ReleaseNotesValidator();
+    $version = ReleaseVersion::parse('2031.4.7');
+    expect($validator->validate("# ++PHP 2031.4.6\n\nChanges.\n", $version))->not->toBe([])
+        ->and($validator->validate("# ++PHP $version\n", $version))->not->toBe([]);
+});
 
-    expect((new ReleaseNotesValidator())->validate($notes, Compiler::VERSION, '8.4'))
-        ->toContain('release notes incorrectly claim Stable release status');
-})->with([
-    'This version is the Stable release.',
-    'The candidate is now Stable.',
-    'Stable is now available.',
-    'Published as Stable.',
-]);
+test('active authored notes and rendered assets use metadata without publication bookkeeping', function (): void {
+    $root = dirname(__DIR__, 3);
+    $metadata = (new ReleaseMetadataLoader($root))->load();
+    expect($metadata)->not->toBeNull();
+    $notes = (string) file_get_contents($root . '/' . $metadata->releaseNotes);
+    $renderer = new ReleaseNotesRenderer();
+    $rendered = $renderer->render($notes, $metadata);
 
-test('the maintained release notes satisfy the release contract', function (): void {
-    $notes = file_get_contents(dirname(__DIR__, 3) . '/docs/releases/' . Compiler::VERSION . '.md');
-
-    expect($notes)->toBeString();
-
-    if (!is_string($notes)) {
-        throw new RuntimeException('The maintained release notes could not be read.');
-    }
-
-    expect((new ReleaseNotesValidator())->validate($notes, Compiler::VERSION, '8.4'))->toBe([])
-        ->and($notes)->toContain(
-            'release candidate',
-            '## Requirements',
-            'PHP `^8.4`',
-            'Composer 2',
-            '512 MiB',
-            '## Major Features',
-            '## Known Limitations',
-        )
-        ->and($notes)->not->toContain('Stable is now available');
+    expect((new ReleaseNotesValidator())->validate($rendered, $metadata->version))->toBe([])
+        ->and($notes)->not->toContain('After publication', 'Until then', 'has not yet been published', '## Major Features')
+        ->and($rendered)->toBe($renderer->render($notes, $metadata))
+        ->and($rendered)->toContain(
+            'composer require --dev atatusoft-ltd/ppphp-src:' . $metadata->version->canonical,
+            '/blob/' . $metadata->tag . '/SECURITY.md',
+            $metadata->schemaUrl,
+        );
 });

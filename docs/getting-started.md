@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide takes a clean Composer project to executable generated PHP with the prepared `2026.3.1-rc-2` candidate.
+This guide takes a clean Composer project to executable generated PHP with ++PHP.
 
 ## Requirements
 
@@ -8,17 +8,17 @@ This guide takes a clean Composer project to executable generated PHP with the p
 - Composer 2.
 - A PHP `memory_limit` of at least `512M` for compiler commands.
 
-After the release candidate is published, create a project and install the exact prerelease:
+Create a project and request the Stable package. For a Release Candidate or Development release, use the exact installation command from [GitHub Releases](https://github.com/atatusoft-ltd/ppphp-src/releases) instead; unqualified resolution does not select prereleases or guarantee a Stable version is available.
 
 ```bash
 mkdir hello-ppphp
 cd hello-ppphp
 composer init --name=example/hello-ppphp --no-interaction
-composer require --dev atatusoft-ltd/ppphp-src:2026.3.1-rc-2
+composer require --dev atatusoft-ltd/ppphp-src
 vendor/bin/ppphp init
 ```
 
-`ppphp init` creates `ppphp.json`, `build/ppphp`, `.ppphp-cache`, and `stubs`. The prepared RC writes the immutable `$schema` URL as the first configuration property. Set the root project's Composer mapping to source, for example:
+`ppphp init` creates `ppphp.json`, `build/ppphp`, `.ppphp-cache`, and `stubs`. A packaged release writes the immutable `$schema` URL as the first configuration property. Set the root project's Composer mapping to source, for example:
 
 ```json
 {

@@ -1,7 +1,7 @@
 # Quarterly CalVer And Release Channels
 
-++PHP uses quarterly calendar versions. The current compiler identity is
-`2026.3.1-rc-2`. The version is emitted unchanged by the CLI, manifests,
+++PHP uses quarterly calendar versions. `ppphp --version` reports the installed
+identity. The version is emitted unchanged by the CLI, manifests,
 configuration fingerprints, browser analysis, analyzer parity reports, and
 portable dependency metadata.
 
@@ -73,8 +73,8 @@ Development releases are prereleases there, while retaining their distinct
 
 ## Composer Distribution
 
-Stable is the default Composer acquisition channel. Once the public package is
-available, the ordinary installation command is:
+Stable is the default Composer acquisition channel. The ordinary command requests
+a Stable version without falling back to prereleases:
 
 ```bash
 composer require --dev atatusoft-ltd/ppphp-src
@@ -82,17 +82,18 @@ composer require --dev atatusoft-ltd/ppphp-src
 
 `dev-2026.3.1` is an immutable ++PHP Development-channel release identity,
 while Composer's `dev-develop` is a rolling branch identity. They are not
-interchangeable. The prepared candidate has been validated with the exact
-constraint `atatusoft-ltd/ppphp-src:2026.3.1-rc-2`; it remains unavailable
-until the package metadata and matching tag are published.
+interchangeable. Choose an exact Release Candidate or Development version from
+[GitHub Releases](https://github.com/atatusoft-ltd/ppphp-src/releases) and use its
+installation instructions. Channel selection describes resolution policy, not
+an assertion that a release is currently available in every channel.
 
 ## Schemas And Network Behavior
 
 Every published release carries `ppphp.schema.json` under its exact release tag.
-The prepared candidate uses:
+The asset location is derived from that identity:
 
 ```text
-https://github.com/atatusoft-ltd/ppphp-src/releases/download/2026.3.1-rc-2/ppphp.schema.json
+https://github.com/atatusoft-ltd/ppphp-src/releases/download/<release-tag>/ppphp.schema.json
 ```
 
 Stable and Release Candidate schema assets use their exact canonical version in
@@ -102,8 +103,7 @@ metadata writes this URL into `ppphp init` output; development builds without
 that metadata omit the instance-level `$schema` property.
 
 Ordinary compiler commands never check for updates or fetch a release catalog or
-schema. The current release candidate is prepared but not yet published. No
-installer or self-update command exists today.
+schema. No installer or self-update command exists today.
 
 ## Verification
 
@@ -112,5 +112,5 @@ fixtures, and documentation without network access. Release automation may also
 validate an exact expected version and tag:
 
 ```bash
-php tools/verify-version.php --expected=2026.3.1-rc-2 --tag=2026.3.1-rc-2
+php tools/verify-version.php --expected="$RELEASE_VERSION" --tag="$RELEASE_VERSION"
 ```

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   COMPOSER_NO_INTERACTION: '1'
 
@@ -16,6 +20,8 @@ jobs:
     name: Verify tagged release
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
     steps:
       - name: Check out the tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,20 +34,23 @@ jobs:
           php-version: '8.4'
           coverage: none
           tools: composer:2.10.3@sha256:7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
-      - name: Require a canonical tag on main
-        run: |
-          php tools/verify-version.php --expected="$GITHUB_REF_NAME" --tag="$GITHUB_REF_NAME"
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
       - run: composer validate --strict
       - run: composer install --prefer-dist --no-progress --no-ansi
+      - name: Verify the selected release-branch commit
+        id: source
+        run: |
+          php tools/verify-version.php --expected="$GITHUB_REF_NAME" --tag="$GITHUB_REF_NAME"
+          commit=$(php tools/release/verify-source.php --tag="$GITHUB_REF_NAME" --commit="$GITHUB_SHA" --publication)
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
       - run: composer audit --locked --abandoned=fail
       - run: composer check
       - run: composer verify:distribution
       - name: Build and verify deterministic release assets
+        env:
+          RELEASE_COMMIT: ${{ steps.source.outputs.commit }}
         run: |
-          php tools/release/build-assets.php --commit="$GITHUB_SHA"
-          php tools/release/verify-assets.php --input="dist/release/$GITHUB_REF_NAME" --commit="$GITHUB_SHA"
+          php tools/release/build-assets.php --commit="$RELEASE_COMMIT"
+          php tools/release/verify-assets.php --input="dist/release/$GITHUB_REF_NAME" --commit="$RELEASE_COMMIT"
       - run: git diff --exit-code
 
   publish:
@@ -51,10 +60,13 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+    env:
+      RELEASE_COMMIT: ${{ needs.verify.outputs.commit }}
     steps:
-      - name: Check out the tag
+      - name: Check out the verified source commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.verify.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
       - name: Set up PHP
@@ -67,24 +79,18 @@ jobs:
       - name: Rebuild the verified assets from the tagged commit
         run: |
           php tools/verify-version.php --expected="$GITHUB_REF_NAME" --tag="$GITHUB_REF_NAME"
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-          php tools/release/build-assets.php --commit="$GITHUB_SHA"
-          php tools/release/verify-assets.php --input="dist/release/$GITHUB_REF_NAME" --commit="$GITHUB_SHA"
+          php tools/release/verify-source.php --tag="$GITHUB_REF_NAME" --commit="$RELEASE_COMMIT"
+          php tools/release/build-assets.php --commit="$RELEASE_COMMIT"
+          php tools/release/verify-assets.php --input="dist/release/$GITHUB_REF_NAME" --commit="$RELEASE_COMMIT"
       - name: Reject duplicate publication
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"; then
-            echo "Release $GITHUB_REF_NAME already exists."
-            exit 1
-          fi
+        run: php tools/release/verify-unpublished.php
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           prerelease=$(php -r '$metadata = json_decode(file_get_contents("resources/release/manifest.json"), true, flags: JSON_THROW_ON_ERROR); echo ($metadata["prerelease"] ?? null) === true ? "true" : "false";')
-          release_notes=$(php -r '$metadata = json_decode(file_get_contents("resources/release/manifest.json"), true, flags: JSON_THROW_ON_ERROR); echo $metadata["releaseNotes"] ?? "";')
           release_flags=()
           if [ "$prerelease" = "true" ]; then
             release_flags=(--prerelease --latest=false)
@@ -94,4 +100,4 @@ jobs:
             --verify-tag \
             "${release_flags[@]}" \
             --title "++PHP $GITHUB_REF_NAME" \
-            --notes-file "$release_notes"
+            --notes-file "dist/release/$GITHUB_REF_NAME/RELEASE_NOTES.md"

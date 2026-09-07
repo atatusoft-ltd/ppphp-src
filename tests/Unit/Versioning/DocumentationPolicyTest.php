@@ -52,7 +52,7 @@ test('future features require an explicit unavailable context', function (): voi
         ))->toBe([]);
 });
 
-test('the public README satisfies identity and release-status requirements', function (): void {
+test('the public README is durable without current-release bookkeeping', function (): void {
     $readme = file_get_contents(dirname(__DIR__, 3) . '/README.md');
 
     expect($readme)->toBeString();
@@ -65,10 +65,14 @@ test('the public README satisfies identity and release-status requirements', fun
         ->and($readme)->toContain(
             'https://ppphplang.org',
             'atatusoft-ltd/ppphp-src',
-            'Atatusoft\\Ppphp',
             '.ppphp',
-            'is a release candidate',
-            'not yet publicly available',
+            'composer require --dev atatusoft-ltd/ppphp-src',
+            'docs/releases/README.md',
         )
-        ->and($readme)->not->toContain('Stable is now available');
+        ->and($readme)->not->toContain('not yet publicly available', 'After publication', Atatusoft\Ppphp\Compiler\Compiler::VERSION);
+});
+
+test('the release runbook permits maintainer lifecycle instructions', function (): void {
+    $runbook = (string) file_get_contents(dirname(__DIR__, 3) . '/docs/releasing.md');
+    expect((new DocumentationPolicy())->validatePublic('docs/releasing.md', $runbook))->toBe([]);
 });

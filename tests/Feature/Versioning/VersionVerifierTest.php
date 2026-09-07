@@ -24,7 +24,7 @@ test('the version verifier confirms current source and release metadata', functi
     );
 
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
-        ->and($process->getOutput())->toContain(Compiler::VERSION, '(rc, prerelease)')
+        ->and($process->getOutput())->toContain(Compiler::VERSION)
         ->and(array_count_values($composer['scripts']['check'])['@verify:version'] ?? 0)->toBe(1);
 });
 

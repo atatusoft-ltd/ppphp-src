@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 use Atatusoft\Ppphp\Compiler\Compiler;
 use Atatusoft\Ppphp\Versioning\ReleaseAssetBuilder;
+use Atatusoft\Ppphp\Versioning\ReleaseSourceVerifier;
 
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
 
@@ -22,8 +23,9 @@ if (!Atatusoft\Ppphp\Support\Path::isAbsolute($output)) {
 }
 
 try {
-    (new ReleaseAssetBuilder())->build($output, $commit);
-    fwrite(STDOUT, sprintf("Built deterministic release assets for %s.\n", Compiler::VERSION));
+    (new ReleaseSourceVerifier(dirname(__DIR__, 2)))->verifyCheckout($commit);
+    (new ReleaseAssetBuilder(dirname(__DIR__, 2)))->build($output, $commit);
+    fwrite(STDOUT, sprintf("Built deterministic release assets for %s in %s.\n", Compiler::VERSION, $output));
 } catch (Throwable $exception) {
     fwrite(STDERR, 'Release asset build failed: ' . $exception->getMessage() . "\n");
     exit(1);

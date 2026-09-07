@@ -4,7 +4,7 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 
 ## Unreleased
 
-## 2026.3.1-rc-2 — Prepared, Not Published
+## 2026.3.1-rc-2
 
 ### Added
 

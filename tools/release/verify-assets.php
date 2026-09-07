@@ -21,7 +21,7 @@ if (!Atatusoft\Ppphp\Support\Path::isAbsolute($input)) {
 }
 
 try {
-    (new ReleaseAssetVerifier())->verify($input, $commit);
+    (new ReleaseAssetVerifier(dirname(__DIR__, 2)))->verify($input, $commit);
     fwrite(STDOUT, "Verified deterministic ++PHP release assets.\n");
 } catch (Throwable $exception) {
     fwrite(STDERR, 'Release asset verification failed: ' . $exception->getMessage() . "\n");

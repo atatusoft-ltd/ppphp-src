@@ -65,7 +65,7 @@ test('init creates a valid configuration and compiler-owned directories without 
     expect($tester->getStatusCode())->toBe(ExitCode::Success->value)
         ->and($tester->getDisplay())->toContain('Created ppphp.json.')
         ->and(array_key_first($configuration))->toBe('$schema')
-        ->and($configuration['$schema'])->toBe('https://github.com/atatusoft-ltd/ppphp-src/releases/download/2026.3.1-rc-2/ppphp.schema.json')
+        ->and($configuration['$schema'])->toBe((new ReleaseMetadataLoader())->load()?->schemaUrl)
         ->and($configuration['targetPhpVersion'])->toBe('8.4')
         ->and(is_dir($root . '/build/ppphp'))->toBeTrue()
         ->and(is_dir($root . '/.ppphp-cache'))->toBeTrue()

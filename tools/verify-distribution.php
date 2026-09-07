@@ -6,6 +6,7 @@ declare(strict_types=1);
 use Atatusoft\Ppphp\Compiler\Compiler;
 use Atatusoft\Ppphp\Support\CanonicalJson;
 use Atatusoft\Ppphp\Support\Path;
+use Atatusoft\Ppphp\Versioning\ReleaseMetadataLoader;
 use Symfony\Component\Process\Process;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -81,6 +82,8 @@ function distributionRemoveTree(string $path, string $ownedRoot): void
 }
 
 try {
+    $metadata = (new ReleaseMetadataLoader($sourceRoot))->load()
+        ?? throw new RuntimeException('Release metadata is missing.');
     foreach ([$temporaryRoot, $package, $consumer, $composerHome, $composerCache, Path::join($consumer, 'src')] as $directory) {
         if (!is_dir($directory) && !mkdir($directory, 0700, true) && !is_dir($directory)) {
             throw new RuntimeException(sprintf('Could not create temporary directory %s.', $directory));
@@ -161,7 +164,7 @@ try {
         'resources/release/manifest.json',
         'resources/schema/ppphp.schema.json',
         'resources/php-signatures/8.4/manifest.json',
-        'docs/releases/2026.3.1-rc-2.md',
+        $metadata->releaseNotes,
         'THIRD_PARTY_NOTICES.md',
     ] as $relativePath) {
         if (!is_file(Path::join($installedPackage, $relativePath))) {
@@ -184,15 +187,15 @@ try {
     $versionOutput = distributionRun($compilerCommand('--version'), $consumer, $environment);
 
     if (!str_contains($versionOutput, Compiler::VERSION)) {
-        throw new RuntimeException('Installed compiler proxy does not report the exact RC version.');
+        throw new RuntimeException('Installed compiler proxy does not report the exact release version.');
     }
 
     distributionRun($compilerCommand('init'), $consumer, $environment);
     $configuration = CanonicalJson::decode((string) file_get_contents(Path::join($consumer, 'ppphp.json')));
     $schemaUrl = is_array($configuration) ? ($configuration['$schema'] ?? null) : null;
 
-    if ($schemaUrl !== 'https://github.com/atatusoft-ltd/ppphp-src/releases/download/2026.3.1-rc-2/ppphp.schema.json') {
-        throw new RuntimeException('Installed compiler init did not write the immutable RC schema identity.');
+    if ($schemaUrl !== $metadata->schemaUrl) {
+        throw new RuntimeException('Installed compiler init did not write the immutable release schema identity.');
     }
 
     distributionWrite(Path::join($consumer, 'src/Greeter.php'), <<<'PHP'

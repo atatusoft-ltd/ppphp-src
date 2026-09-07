@@ -12,7 +12,7 @@ Before analysis, an exact cached bundle may validate the current manifest, outpu
 
 Every emitted or copied output has a source map and a sorted entry in `<output>/.ppphp/manifest.json`. Format version 2 records:
 
-- compiler name and public `2026.3.1-rc-2` version;
+- compiler name and public release version;
 - the exact path-independent compiler build identity;
 - lowering format version and target PHP version;
 - output-configuration fingerprint and complete-project state; and
