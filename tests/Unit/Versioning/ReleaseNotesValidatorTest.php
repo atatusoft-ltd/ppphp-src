@@ -18,6 +18,47 @@ test('notes preserve legitimate historical publication and migration prose', fun
     expect((new ReleaseNotesValidator())->validate($notes, $version))->toBe([]);
 });
 
+test('current release channel claims must agree with selected metadata', function (string $identity, string $text, bool $compatible): void {
+    $version = ReleaseVersion::parse($identity);
+    $notes = "# ++PHP $identity\n\n$text\n";
+    $failures = (new ReleaseNotesValidator())->validate($notes, $version);
+    expect($failures === [])->toBe($compatible);
+    if (!$compatible) {
+        expect(implode("\n", $failures))->toContain('contradicting channel');
+    }
+})->with([
+    ['2031.4.7-rc-3', 'This is the first Stable release.', false],
+    ['dev-2031.4.7', 'This release is **Stable**.', false],
+    ['2031.4.7-rc-3', 'The current version is now stable.', false],
+    ['2031.4.7-rc-3', '++PHP 2031.4.7-rc-3 is a Stable release.', false],
+    ['dev-2031.4.7', 'This Stable release fixes diagnostics.', false],
+    ['2031.4.7-rc-3', '**Channel:** `Stable`.', false],
+    ['dev-2031.4.7', '- Release status: Stable.', false],
+    ['2031.4.7-rc-3', 'This is a Development release.', false],
+    ['dev-2031.4.7', 'This is a Release Candidate.', false],
+    ['2031.4.7', 'This is a Release Candidate.', false],
+    ['2031.4.7', 'This is a prerelease.', false],
+    ['2031.4.7', 'This is a Stable release.', true],
+    ['2031.4.7-rc-3', "This is a Release\nCandidate.", true],
+    ['2031.4.7-rc-3', 'Channel: RC.', true],
+    ['dev-2031.4.7', 'This is a Development release.', true],
+    ['2031.4.7-rc-3', 'This is a prerelease.', true],
+    ['dev-2031.4.7', 'This is a pre-release.', true],
+    ['2031.4.7-rc-3', 'The previous Stable release introduced this feature.', true],
+    ['dev-2031.4.7', '++PHP 2031.4.6 is a Stable release; this release changes diagnostics.', true],
+    ['2031.4.7-rc-3', 'Behavior may change before the first Stable release.', true],
+    ['dev-2031.4.7', 'This release is not Stable. Upgrade from the previous Stable release.', true],
+    ['2031.4.7-rc-3', 'This release is compatible with projects using the previous Stable release.', true],
+]);
+
+test('release rendering refuses contradictory status before producing publishable notes', function (): void {
+    $metadata = (new ReleaseMetadataLoader(dirname(__DIR__, 3)))->load();
+    expect($metadata->version->isPrerelease)->toBeTrue();
+    $notes = "# ++PHP {$metadata->version}\n\nThis is a Stable release.\n";
+    expect(fn () => (new ReleaseNotesRenderer())->render($notes, $metadata))
+        ->toThrow(UnexpectedValueException::class, 'contradicting channel');
+});
+
 test('notes reject internal process content and unresolved substitutions', function (string $text, string $message): void {
     $version = ReleaseVersion::parse('2031.4.7-rc-3');
     expect(implode("\n", (new ReleaseNotesValidator())->validate("# ++PHP $version\n\n$text\n", $version)))

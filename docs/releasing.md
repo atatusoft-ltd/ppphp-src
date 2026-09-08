@@ -50,3 +50,10 @@ Select a Stable identity only after release blockers are resolved. Repeat this l
 The bounded asset set is `ppphp.schema.json`, `ppphp-release.json`, `RELEASE_NOTES.md`, `THIRD_PARTY_NOTICES.md`, and `SHA256SUMS`. Composer plus immutable tagged source remains the distribution. There is no PHAR, installer, native launcher, standalone vendor archive, signing claim, or self-update client.
 
 Authored notes carry historical change descriptions and their title. `ReleaseNotesRenderer` appends the exact installation command, channel, and tag-bound documentation/schema links from validated metadata. The builder hashes this rendering, the verifier compares it, and publication uses that verified asset—not a separate source document. Do not scatter version placeholders throughout Markdown or rewrite published notes when preparing a later release.
+
+Channel prose is optional. If included, explicit current-release claims such as
+“This is a Stable release” or “Channel: Stable” must agree with selected metadata;
+the shared notes validator rejects contradictions before rendering and publication.
+Historical statements about an earlier Stable release and future Stable plans are
+allowed. This targeted prose check does not replace editorial review of arbitrary
+wording or require workflow-status boilerplate in user-facing notes.
