@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { probes, assess, validCleanPhpStanResult } from '../src/baseline-probes.js';
-import { nativeProbe, launchChrome, createOutput, sha256 } from './run-baseline.mjs';
+import { nativeProbe, launchChrome, createOutput, sha256, collectObservation } from './run-baseline.mjs';
 
 for (const probe of probes) test(`native reference: ${probe.id}`, () => {
   const actual = nativeProbe(probe);
@@ -61,4 +61,22 @@ test('missing, partial and failing analyzer results are not clean', () => {
   for (const text of ['', '{', '{}', 'null', '[]', JSON.stringify({ totals: { errors: 1, file_errors: 0 }, errors: ['failed'], files: [] }), JSON.stringify({ totals: { errors: 0, file_errors: 0 }, errors: [], files: { bad: {} } })]) {
     assert.equal(validCleanPhpStanResult(text), false);
   }
+});
+
+
+test('profile-cleanup failure preserves the completed browser observation', async () => {
+  const observation = { kind: 'observed', data: { cases: [{ id: 'fiber-return', semantics: 'FAIL' }], done: true } };
+  const browser = { events: [], close: async () => { throw new Error('ENOTEMPTY'); } };
+  const result = await collectObservation(browser, async () => observation);
+  assert.equal(result.kind, 'observed');
+  assert.deepEqual(result.data, observation.data);
+  assert.match(result.cleanupError, /ENOTEMPTY/);
+});
+test('observation and cleanup failures remain independently visible', async () => {
+  const browser = { events: ['partial evidence'], close: async () => { throw new Error('cleanup failed'); } };
+  const result = await collectObservation(browser, async () => { throw new Error('navigation failed'); });
+  assert.equal(result.kind, 'observation-error');
+  assert.match(result.error, /navigation failed/);
+  assert.match(result.cleanupError, /cleanup failed/);
+  assert.deepEqual(result.events, ['partial evidence']);
 });

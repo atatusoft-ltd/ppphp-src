@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { rm as removeDirectory } from 'node:fs/promises';
 import { tmpdir, platform, arch } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +54,8 @@ export async function launchChrome(binary = process.env.CHROME_BIN) {
   const profile = mkdtempSync(join(tmpdir(), 'ppphp-browser-probe-'));
   const processHandle = spawn(binary, ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
   let launchError;
+  let processClosed = false;
+  processHandle.once('close', () => { processClosed = true; });
   let stderr = '';
   processHandle.on('error', (error) => { launchError = error; });
   processHandle.stderr.on('data', (chunk) => { if (stderr.length < 8192) stderr += String(chunk).slice(0, 8192 - stderr.length); });
@@ -64,12 +67,16 @@ export async function launchChrome(binary = process.env.CHROME_BIN) {
     for (const value of pending.values()) { clearTimeout(value.timer); value.reject(new Error('Browser closed')); }
     pending.clear();
     socket?.close();
-    if (processHandle.exitCode === null) {
-      processHandle.kill('SIGTERM');
-      for (let i = 0; i < 40 && processHandle.exitCode === null; i++) await delay(25);
-      if (processHandle.exitCode === null) processHandle.kill('SIGKILL');
+    // A signal-terminated process has a null exitCode. Wait for close, not exitCode.
+    for (const signal of ['SIGTERM', 'SIGKILL']) {
+      if (processClosed) break;
+      processHandle.kill(signal);
+      for (let i = 0; i < 60 && !processClosed; i++) await delay(25);
     }
-    rmSync(profile, { recursive: true, force: true });
+    if (!processClosed) throw new Error('Browser did not close; its temporary profile was preserved');
+    // Child-process file handles may outlive the browser process briefly.
+    // Only filesystem cleanup retries; PHP execution is never retried here.
+    await removeDirectory(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
   try {
     const activePort = join(profile, 'DevToolsActivePort');
@@ -124,9 +131,18 @@ export async function launchChrome(binary = process.env.CHROME_BIN) {
   } catch (error) { await close(); throw error; }
 }
 
+export async function collectObservation(browser, observe) {
+  let result;
+  try { result = await observe(); }
+  catch (error) { result = { kind: 'observation-error', error: bounded(error.stack || error), events: browser.events }; }
+  try { await browser.close(); }
+  catch (error) { result.cleanupError = bounded(error.stack || error); }
+  return result; // Cleanup must never erase captured runtime evidence.
+}
+
 async function observe(url, baseline = false) {
   const browser = await launchChrome();
-  try {
+  return collectObservation(browser, async () => {
     const navigation = await browser.send('Page.navigate', { url });
     if (navigation.errorText) throw new Error(`Browser navigation failed: ${navigation.errorText}`);
     const end = Date.now() + (baseline ? 300000 : 90000);
@@ -137,7 +153,7 @@ async function observe(url, baseline = false) {
       await delay(250);
     }
     return { kind: 'timeout', data: last, events: browser.events };
-  } finally { await browser.close(); }
+  });
 }
 
 function identity() {
@@ -202,6 +218,8 @@ export async function main(args = process.argv.slice(2)) {
       await vite.build({ root: spikeRoot, configFile, build: { rolldownOptions: { input: { baseline: join(spikeRoot, 'baseline.html') } } } });
       preview = await vite.preview({ root: spikeRoot, configFile, preview: { host: '127.0.0.1', port: 4173, strictPort: true } });
       report.browser = await observe('http://127.0.0.1:4173/baseline.html', true);
+      save();
+      if (report.unchangedSpike.cleanupError || report.browser.cleanupError) throw new Error('Browser cleanup failed; observations are retained in the report');
       if (report.browser.kind !== 'observed' || report.browser.data?.cases?.length !== probes.length + 1) throw new Error('Browser observation did not finish all independent cases');
       const control = report.browser.data.cases.find((item) => item.id === 'plain-json');
       if (control?.semantics !== 'PASS') throw new Error('Basic browser PHP control failed; do not attribute this to Fibers');
@@ -212,9 +230,14 @@ export async function main(args = process.argv.slice(2)) {
     report.harnessError = bounded(error.stack || error);
     process.exitCode = 1;
   } finally {
-    if (preview) await closePreview(preview);
+    if (preview) {
+      try { await closePreview(preview); }
+      catch (error) { report.previewCleanupError = bounded(error.stack || error); process.exitCode = 1; }
+    }
     save();
     console.log(`BP-0 evidence: ${join(output, 'report.json')}`);
+    if (report.harnessError) console.error(report.harnessError);
+    if (report.previewCleanupError) console.error(report.previewCleanupError);
     for (const result of report.native) console.log(`Native ${result.id}: ${result.semantics}`);
     for (const result of report.browser.data?.cases || []) console.log(`Browser ${result.id}: ${result.semantics} (${result.kind}, ${result.phase})`);
     console.log('BP-0 remains INCOMPLETE: full website corpus, parity, provenance and protocol work are not certified by this diagnostic runner.');
