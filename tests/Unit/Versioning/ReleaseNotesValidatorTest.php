@@ -53,8 +53,8 @@ test('current release channel claims must agree with selected metadata', functio
 
 test('release rendering refuses contradictory status before producing publishable notes', function (): void {
     $metadata = (new ReleaseMetadataLoader(dirname(__DIR__, 3)))->load();
-    expect($metadata->version->isPrerelease)->toBeTrue();
-    $notes = "# ++PHP {$metadata->version}\n\nThis is a Stable release.\n";
+    $contradiction = $metadata->version->isStable ? 'a Release Candidate' : 'a Stable release';
+    $notes = "# ++PHP {$metadata->version}\n\nThis is $contradiction.\n";
     expect(fn () => (new ReleaseNotesRenderer())->render($notes, $metadata))
         ->toThrow(UnexpectedValueException::class, 'contradicting channel');
 });
