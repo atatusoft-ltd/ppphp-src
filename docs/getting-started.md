@@ -8,7 +8,7 @@ This guide takes a clean Composer project to executable generated PHP with ++PHP
 - Composer 2.
 - A PHP `memory_limit` of at least `512M` for compiler commands.
 
-Create a project and request the Stable package. For a Release Candidate or Development release, use the exact installation command from [GitHub Releases](https://github.com/atatusoft-ltd/ppphp-src/releases) instead; unqualified resolution does not select prereleases or guarantee a Stable version is available.
+The workflow below requires a published Stable release of `atatusoft/ppphp`. Check [GitHub Releases](https://github.com/atatusoft-ltd/ppphp-src/releases) first. For a Release Candidate or Development release, substitute its exact installation command; unqualified resolution does not select prereleases or guarantee a Stable version is available. RC-1 retains the original package name in its published instructions.
 
 ```bash
 mkdir hello-ppphp

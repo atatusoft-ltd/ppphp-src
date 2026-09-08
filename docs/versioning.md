@@ -74,7 +74,9 @@ Development releases are prereleases there, while retaining their distinct
 ## Composer Distribution
 
 Stable is the default Composer acquisition channel. The ordinary command requests
-a Stable version without falling back to prereleases:
+a Stable version without falling back to prereleases. It requires a published
+Stable release under `atatusoft/ppphp`; otherwise use the exact package and
+version from a published release's instructions:
 
 ```bash
 composer require --dev atatusoft/ppphp

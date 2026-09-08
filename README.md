@@ -85,7 +85,7 @@ Generated code targets PHP 8.4.
 
 ## Installation
 
-For Stable package resolution, use:
+The following command requires a published Stable release of `atatusoft/ppphp`. Check [available releases](https://github.com/atatusoft-ltd/ppphp-src/releases) first; for a prerelease, use its exact installation instructions instead. RC-1 uses the original package name recorded in its release notes.
 
 ~~~bash
 composer require --dev atatusoft/ppphp
