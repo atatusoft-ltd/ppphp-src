@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Interop\Composer;
 
 use Atatusoft\Ppphp\Analysis\Declaration\DeclarationOrigin;
+use Atatusoft\Ppphp\Analysis\Declaration\DeclarationBodyPruner;
 use Atatusoft\Ppphp\Analysis\Declaration\DeclarationReferenceCollector;
 use Atatusoft\Ppphp\Diagnostics\Diagnostic;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
@@ -216,16 +217,9 @@ final class ComposerDependencyDeclarationLoader
                             true,
                         ),
                     );
-                    $parsedFiles[$conditionalKey] = new ParsedFile(
+                    $parsedFiles[$conditionalKey] = $result->parsedFile->withDeclarations(
                         $conditionalSource,
-                        $result->parsedFile->mode,
-                        $result->parsedFile->tokens,
-                        $result->parsedFile->extensionSyntax,
-                        $result->parsedFile->normalizationPlan,
-                        $result->parsedFile->normalizedSource,
-                        $result->parsedFile->sourceMap,
                         $inspection->conditionalDeclarations,
-                        $result->parsedFile->phpTokens,
                     );
                     $sourceFiles[$conditionalKey] = $conditionalSource;
                 }
@@ -289,7 +283,7 @@ final class ComposerDependencyDeclarationLoader
         }
 
         return new ProjectParseResult(
-            $parsedFiles,
+            array_map((new DeclarationBodyPruner())->prune(...), $parsedFiles),
             $sourceFiles,
             $diagnostics,
             array_keys($prefixes),

@@ -79,7 +79,10 @@ Generics, typed arrays, checked `throws` clauses, and `when` expressions are als
 
 - PHP `^8.4`
 - Composer 2
-- At least 512 MiB of memory available to compiler processes
+
+Small mixed Composer projects are tested with a `128M` PHP memory limit. Memory
+use grows with the source and dependency declarations being analyzed; the compiler
+does not change your PHP memory setting.
 
 Generated code targets PHP 8.4.
 

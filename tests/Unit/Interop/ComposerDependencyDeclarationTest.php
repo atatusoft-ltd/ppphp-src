@@ -53,6 +53,31 @@ PHP,
         ))))->toBe([DeclarationOrigin::ComposerDependency->value]);
 });
 
+test('dependency discovery follows implementation references before releasing bodies', function (): void {
+    $root = $this->createTemporaryDirectory();
+    foreach (portableComposerFixture() as $path => $contents) {
+        $this->writeFile($root . '/' . $path, $contents);
+    }
+    $this->writeFile($root . '/vendor/acme/contracts/src/Clock.php', <<<'PHP'
+<?php
+namespace Acme\Contracts;
+class Clock {
+    public function value(): object { return new \Acme\Support\Value(); }
+}
+PHP);
+    $composer = (new ComposerResolver())->resolve($root)->project;
+    $source = new SourceFile($root . '/src/main.ppphp', 'src/main.ppphp', FileKind::Ppphp,
+        '<?php function consume(\Acme\Contracts\Clock $clock): object { return $clock->value(); }');
+    $parsed = (new PpphpParser())->parse($source)->parsedFile;
+    $result = (new ComposerDependencyDeclarationLoader())->load($composer, [$parsed]);
+
+    expect($result->isSuccessful)->toBeTrue()
+        ->and($result->findParsedFile($root . '/vendor/acme/support/src/Value.php'))->not->toBeNull();
+    $clock = $result->findParsedFile($root . '/vendor/acme/contracts/src/Clock.php');
+    expect($clock->statements[0]->stmts[0]->getMethod('value')->stmts)->toBe([])
+        ->and($clock->sourceFile->contents)->toContain('new \Acme\Support\Value()');
+});
+
 test('compiler-only analysis consumes dependency classes methods functions and constants', function (): void {
     $root = $this->createTemporaryDirectory();
     foreach (portableComposerFixture() as $path => $contents) {

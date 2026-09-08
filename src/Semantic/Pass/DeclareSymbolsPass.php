@@ -57,6 +57,15 @@ final class DeclareSymbolsPass
     {
         $this->genericDeclarations = $genericDeclarations;
 
+        try {
+            $this->collectProject($context);
+        } finally {
+            $this->genericDeclarations = null;
+        }
+    }
+
+    private function collectProject(ProjectSemanticContext $context): void
+    {
         foreach ($context->parseResult->parsedFiles as $parsedFile) {
             $this->collectStatements($parsedFile->statements, $parsedFile, $context, '');
 

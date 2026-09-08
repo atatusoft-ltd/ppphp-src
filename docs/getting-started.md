@@ -6,7 +6,10 @@ This guide takes a clean Composer project to executable generated PHP with ++PHP
 
 - PHP 8.4 or 8.5 within the compiler's `^8.4` host requirement.
 - Composer 2.
-- A PHP `memory_limit` of at least `512M` for compiler commands.
+
+Small mixed Composer projects are tested with PHP's `128M` memory limit for both
+cold and cached checks and builds. The compiler does not increase your memory
+limit. Larger source and dependency graphs can require more memory.
 
 The workflow below requires a published Stable release of `atatusoft/ppphp`. Check [GitHub Releases](https://github.com/atatusoft-ltd/ppphp-src/releases) first. For a Release Candidate or Development release, substitute its exact installation command; unqualified resolution does not select prereleases or guarantee a Stable version is available. RC-1 retains the original package name in its published instructions.
 
