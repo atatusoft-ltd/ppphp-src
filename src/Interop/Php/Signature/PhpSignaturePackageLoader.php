@@ -23,10 +23,14 @@ final class PhpSignaturePackageLoader
     /** @var array<string, array<string, mixed>> */
     private array $verifiedManifests = [];
 
+    /** @var array<string, string> */
+    private array $packageIdentities = [];
+
     /**
      * @var array<string, array<string, array{
      *     parsedFiles: array<string, ParsedFile>,
-     *     sourceFiles: array<string, SourceFile>
+     *     sourceFiles: array<string, SourceFile>,
+     *     references: array{classes: list<string>, functions: list<string>, constants: list<string>}
      * }>>
      */
     private array $parsedModules = [];
@@ -45,7 +49,13 @@ final class PhpSignaturePackageLoader
         $package = $this->packagePath($target);
 
         try {
-            $this->verifiedManifests[$target] ??= $this->verifier->verify($package, $target);
+            $manifest = $this->verifiedManifests[$target] ?? null;
+            if ($manifest === null || ($this->packageIdentities[$target] ?? null) !== $this->computePackageIdentity($package, $manifest)) {
+                unset($this->verifiedManifests[$target], $this->packageIdentities[$target], $this->parsedModules[$target]);
+                $manifest = $this->verifier->verify($package, $target);
+                $this->packageIdentities[$target] = $this->computePackageIdentity($package, $manifest);
+                $this->verifiedManifests[$target] = $manifest;
+            }
             $symbols = $this->json($package . '/symbols.json');
             $references = $this->references->collect($projectFiles);
             $modules = ['core' => true];
@@ -63,10 +73,8 @@ final class PhpSignaturePackageLoader
                         ??= $this->parseModule($package, $target, $module);
                     $parsedFiles = array_replace($parsedFiles, $parsedModule['parsedFiles']);
                     $sourceFiles = array_replace($sourceFiles, $parsedModule['sourceFiles']);
+                    $this->addModules($modules, $symbols, $parsedModule['references']);
                 }
-
-                $closure = $this->references->collect($parsedFiles);
-                $this->addModules($modules, $symbols, $closure);
             }
 
             ksort($parsedFiles, SORT_STRING);
@@ -86,7 +94,7 @@ final class PhpSignaturePackageLoader
     }
 
     /**
-     * @return array{parsedFiles: array<string, ParsedFile>, sourceFiles: array<string, SourceFile>}
+     * @return array{parsedFiles: array<string, ParsedFile>, sourceFiles: array<string, SourceFile>, references: array{classes: list<string>, functions: list<string>, constants: list<string>}}
      */
     private function parseModule(string $package, string $target, string $module): array
     {
@@ -128,7 +136,7 @@ final class PhpSignaturePackageLoader
             $parsedFiles[$key] = $result->parsedFile;
         }
 
-        return ['parsedFiles' => $parsedFiles, 'sourceFiles' => $sourceFiles];
+        return ['parsedFiles' => $parsedFiles, 'sourceFiles' => $sourceFiles, 'references' => $this->references->collect($parsedFiles)];
     }
 
     private function packagePath(string $target): string
@@ -136,6 +144,35 @@ final class PhpSignaturePackageLoader
         $root = $this->resourceRoot ?? dirname(__DIR__, 4) . '/resources/php-signatures';
 
         return rtrim(str_replace('\\', '/', $root), '/') . '/' . $target;
+    }
+
+    /** @param array<string, mixed> $manifest Previously verified manifest. */
+    private function computePackageIdentity(string $package, array $manifest): string
+    {
+        if (!is_dir($package) || is_link($package)) {
+            throw new \RuntimeException('The PHP signature package directory is unavailable.');
+        }
+        $paths = ['manifest.json'];
+        $outputs = $manifest['outputs'] ?? null;
+        if (!is_array($outputs)) {
+            throw new \RuntimeException('The verified signature output list is unavailable.');
+        }
+        foreach ($outputs as $output) {
+            if (!is_array($output) || !is_string($output['path'] ?? null)) {
+                throw new \RuntimeException('A verified signature output path is unavailable.');
+            }
+            $paths[] = $output['path'];
+        }
+        $hash = hash_init('sha256');
+        foreach ($paths as $path) {
+            $digest = @hash_file('sha256', $package . '/' . $path);
+            if ($digest === false) {
+                throw new \RuntimeException('A signature resource could not be read.');
+            }
+            hash_update($hash, $path . "\0" . $digest . "\0");
+        }
+
+        return hash_final($hash);
     }
 
     /** @return array<string, mixed> */

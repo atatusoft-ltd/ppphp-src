@@ -549,6 +549,12 @@ cache, lock or output writes. Saved-file `check` and `build` retain supplemental
 PHPStan analysis. See [Editor Protocol](editor-protocol.md) for ownership,
 new/deleted-buffer, limits and stale-response rules.
 
+The optional `--server` transport retains a bounded worker with ordered request
+IDs, client-discard cancellation, explicit recycling, and single-shot fallback.
+Each request reloads project inputs; only verified platform modules and immutable
+derived metadata are reused. Warm measurements do not imply cold-start or
+end-to-end editor latency guarantees.
+
 ---
 
 ## 8. Configuration

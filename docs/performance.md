@@ -65,3 +65,41 @@ For a body-only edit, the public declaration fingerprint remained unchanged. The
 A localized body edit still performs full selected parsing and semantic analysis, prepares supplemental context, launches PHPStan, and lints the complete candidate tree, although unchanged body-free declaration representations and production artifacts are reused. Focused operations also reconstruct complete semantic declaration context. The cache deliberately prefers these conservative costs to persisting a partial semantic model or inventing an unsound dependency graph. Future work may split more reusable frontend products only with complete versioned representations and invalidation evidence.
 
 Run `composer verify:benchmark-harness` for the bounded small-fixture structural smoke check. The full three-size benchmark remains a manual development command and does not run in ordinary CI.
+
+## Unsaved-Buffer Worker
+
+`editor:diagnostics --server` retains verified platform declarations and immutable
+derived metadata between requests. It does not reuse old diagnostic results or
+project semantic models. Project files, configuration, dependencies, and overlays
+are reloaded for each request; platform resource hashes are checked before reuse.
+See [the worker contract](editor-protocol.md#retained-worker-transport) for
+cancellation, recycling, and single-shot fallback requirements.
+
+Run the transport benchmark against a valid project with at most 32 source files:
+
+~~~bash
+php tools/benchmark-editor-diagnostics.php \
+  --project=../ppphp-examples/ppphp-mvp-showcase \
+  --document=app/Application/DemoRunner.ppphp --iterations=20
+~~~
+
+The benchmark sends all project sources as buffers, measures the first valid
+request, then alternates a syntax error and the repaired original buffer. It
+verifies the expected diagnostic outcomes and reports raw samples and nearest-rank
+percentiles. It writes no project files and excludes LSP debounce and UI rendering.
+
+On the development Mac mini with PHP 8.5.6, the ten-file showcase measured:
+
+| Transition | Median ms | p95 ms |
+| --- | ---: | ---: |
+| Syntax error, 20 samples | 18.6 | 21.1 |
+| Repaired buffer, 20 samples | 142.2 | 147.7 |
+
+Worker startup took 117.9 ms and the first valid analysis took a further 739.3 ms
+(one cold sample). These measurements are not a universal 200 ms guarantee: larger
+projects, cold starts, recycling, editor scheduling, and machine load add costs.
+An additional five-cycle run on the same machine using the supported PHP 8.4 host
+measured repaired buffers at 199.8 ms median / 215.2 ms p95, with a 1,163.8 ms first
+analysis, further illustrating host-dependent costs.
+Integrations must measure actual valid → error → repaired editor transitions before
+claiming end-to-end latency. There is no CI wall-clock timing threshold.

@@ -6,6 +6,72 @@ The compiler owns semantic editor queries so every editor observes the same ++PH
 
 ## Unsaved-Buffer Diagnostics
 
+### Retained Worker Transport
+
+`ppphp editor:diagnostics --server --working-directory <project> --format=json`
+keeps a compiler-owned worker alive. The single-shot command without `--server`
+is unchanged and remains the fallback. Worker transport version 1 wraps the
+existing diagnostic request/response version 1; it does not add analysis coverage.
+Use one worker per project/configuration-path/compiler installation. Restart it
+when changing those launch settings or replacing the compiler installation.
+
+The worker immediately writes one UTF-8 JSON line with `version: 1`, `type: "ready"`,
+`compilerVersion`, and `capabilities`. Capabilities advertise `diagnosticsVersion: 1`,
+`maxInFlight: 1`, `cancellation: "client-discard"`, `maxFrameBytes: 16778240`,
+`maxResponseBytes: 4195328`, `maxRequests: 1000`, and `singleShotFallback: true`.
+Read and validate this handshake before sending requests. It means transport-ready,
+not platform-prewarmed: the first successful analysis can still be cold.
+
+Each request must be one JSON object followed by LF (CRLF is accepted). Embedded
+newlines in source are JSON escapes, not frame delimiters. Example:
+
+~~~json
+{"version":1,"id":1,"method":"diagnostics","params":{"version":1,"document":{"path":"src/main.ppphp","contents":"<?php int $value = 1;","version":7}}}
+~~~
+
+IDs are strictly increasing positive integers, at most `9007199254740991`, scoped
+to one worker. `params` is the complete single-shot request described below. The
+response is `{"version":1,"id":1,"result":<single-shot response>,"recycle":false}`.
+The nested result preserves document revision, diagnostic items, coverage, summary,
+and structured errors exactly; a diagnostic error does not terminate the worker.
+The frame limit includes its newline; the nested request retains all original limits.
+
+Keep at most one request in flight. If it becomes obsolete, mark its ID/revision
+superseded, retain only the latest pending editor snapshot, and discard that response
+when received. Then send the newest pending request. There is no wire `cancel`
+method and no promise of mid-pass CPU cancellation. Do not kill a healthy worker on
+every edit: doing so discards reusable state and repeats cold startup. Enforce a
+client-side startup/request timeout, reap a failed worker, and fall back or restart.
+Never interpret EOF, a missing/mismatched response, or a protocol failure as an empty
+successful diagnostic result. A superseded result must not clear newer errors.
+
+`{"version":1,"id":2,"method":"shutdown"}` receives `result: null, recycle: true`
+and exits successfully. Idle EOF exits successfully. Malformed/oversized/truncated
+frames, unsupported versions/methods, missing params, and invalid/reused IDs produce
+an `error` envelope with `code: "invalid-frame"`, `recycle: true`, and exit 2.
+Unexpected transport failures may exit 70 without a response. No unbounded input
+queue or additional files, sockets, project bootstrap, or background child process
+is created by the compiler worker.
+
+After 1,000 requests or when allocated memory reaches 256 MiB, the final normal
+response has `recycle: true` and the worker exits; start another before sending more.
+An internal diagnostic-handler failure also requests recycling. The memory threshold
+is checked between requests, not a replacement for PHP's per-process memory limit.
+
+Every request clears filesystem stat caches and reloads project configuration,
+Composer/installed-package metadata, stubs, discovered sources and explicit overlays.
+Deleted/renamed files and changed contracts are not served from old project results.
+Only immutable derived metadata and platform modules are reused. Signature manifest
+and output hashes are checked before module reuse; changes trigger verification and
+reload, while corruption fails closed. No diagnostic result, project semantic model,
+production output, lock, or disk analysis cache is replayed or written.
+
+The worker provides reuse, not a universal latency guarantee. Editors should measure
+actual valid → error → repaired transitions, including debounce, transport, cold
+startup and worker recycling. The first request is not covered by warm measurements.
+
+### Single-Shot Request And Response
+
 `ppphp editor:diagnostics --working-directory <project> --format=json` reads one
 bounded UTF-8 JSON request from stdin. It diagnoses one PHP or ++PHP document,
 using optional other open documents as unsaved declaration context:

@@ -201,3 +201,29 @@ test('an unavailable or corrupt platform package fails closed', function (): voi
         ->and($result->diagnostics->errors[0]->code)->toBe(DiagnosticCode::PhpSignaturePackageInvalid)
         ->and($result->parsedFiles)->toBe([]);
 });
+
+test('a retained platform loader revalidates changed resources and recovers after repair', function (): void {
+    $root = $this->createTemporaryDirectory();
+    \Tests\Support\StageElevenProject::copyTree(dirname(__DIR__, 3) . '/resources/php-signatures/8.4', $root . '/8.4');
+    $loader = new PhpSignaturePackageLoader($root);
+    $first = $loader->load('8.4', []);
+    expect($first->isSuccessful)->toBeTrue();
+    $path = $root . '/8.4/extensions/core.json';
+    $contents = file_get_contents($path);
+    $this->writeFile($path, $contents . "\n");
+    $broken = $loader->load('8.4', []);
+    expect($broken->parsedFiles)->toBe([])
+        ->and($broken->diagnostics->errors[0]->code)->toBe(DiagnosticCode::PhpSignaturePackageInvalid);
+    $this->writeFile($path, $contents);
+    $repaired = $loader->load('8.4', []);
+    expect($repaired->isSuccessful)->toBeTrue()
+        ->and(array_keys($repaired->parsedFiles))->toBe(array_keys($first->parsedFiles));
+    rename($root . '/8.4', $root . '/moved');
+    symlink($root . '/moved', $root . '/8.4');
+    clearstatcache(true);
+    expect($loader->load('8.4', [])->isSuccessful)->toBeFalse();
+    unlink($root . '/8.4');
+    rename($root . '/moved', $root . '/8.4');
+    clearstatcache(true);
+    expect($loader->load('8.4', [])->isSuccessful)->toBeTrue();
+});
