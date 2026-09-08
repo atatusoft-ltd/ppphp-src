@@ -2,6 +2,25 @@
 
 ++PHP reports project, syntax, type, generic, checked-error, `when`, interoperability, emission, and internal compiler conditions through one stable diagnostic model. Human-facing console output and JSON output consume the same processed sequence.
 
+Syntax errors describe the expected punctuation or the unexpected source token,
+without a fixed PHP-version prefix or internal token names. For example,
+``Expected a semicolon before `return`.`` identifies a missing statement terminator
+instead of blaming the following statement. When the parser provides no expected
+token, this suggestion is made only if inserting a semicolon makes the input parse;
+it never edits your source. Ordinary PHP, ++PHP, `when` bodies and unsaved editor
+buffers share this behavior. Original parser details remain available with `--debug`.
+
+PHP target configuration is checked before source syntax. The project's
+`composer.json` `config.platform.php`, when present, selects the target; otherwise
+`ppphp.json` `targetPhpVersion` supplies it. Composer `require.php` constrains that
+selection. An exact platform override must satisfy the complete constraint; a
+minor target without an override must overlap its allowed runtime versions.
+Contradictory settings are reported against `composer.json`, and unsupported
+targets are rejected rather than silently replaced with the compiler's host or
+default target. Version numbers appear when explaining a real target conflict,
+not as boilerplate on ordinary syntax errors. This selection does not add new
+target capabilities or certify installed dependencies and runtime extensions.
+
 ## Processing
 
 Diagnostics are validated against the catalog, sanitized, deduplicated by code, source range, identity, related labels, and content, then passed through bounded cascade suppression and a stable sorter. Compiler-owned semantic findings take precedence over a corresponding backend fallback. Distinct findings on the same line remain distinct. Producers provide condition-specific help where possible; a family-specific actionable fallback ensures every active diagnostic remains useful.
@@ -81,6 +100,7 @@ The table below is generated from `DiagnosticCatalog`. Reserved codes preserve s
 | `P0023` | `project` | `active` | `error` | Project Source Discovery Failed |
 | `P0024` | `project` | `active` | `error` | Selected Path Excluded |
 | `P0025` | `project` | `active` | `error` | Selected Path Not Readable |
+| `P0026` | `project` | `active` | `error` | Conflicting PHP Target Configuration |
 | `P1001` | `syntax` | `active` | `error` | Invalid PHP Syntax |
 | `P1002` | `syntax` | `active` | `error` | Explicit Source File Is Required |
 | `P1003` | `syntax` | `reserved` | `error` | Directory Compilation Unavailable |

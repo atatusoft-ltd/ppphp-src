@@ -77,7 +77,7 @@ final readonly class ProjectInputSnapshotBuilder
         $dependencyFiles = array_values($dependencyFiles);
         usort($dependencyFiles, static fn (array $left, array $right): int =>
             ($left['package'] <=> $right['package']) ?: ($left['path'] <=> $right['path']));
-        $signatureRoot = dirname(__DIR__, 2) . '/resources/php-signatures/8.4';
+        $signatureRoot = dirname(__DIR__, 2) . '/resources/php-signatures/' . $configuration->targetPhpVersion;
 
         return new ProjectInputSnapshot([
             'analyzerCatalogVersion' => AnalysisCapabilityCatalog::VERSION,

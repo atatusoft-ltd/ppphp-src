@@ -2,8 +2,8 @@
 
 The `ppphp` executable is available through `vendor/bin/ppphp` for a project installation and as `ppphp` for a Composer global installation.
 
-`ppphp --version` reports the exact canonical compiler identity; the current
-source reports `ppphp 2026.3.1-rc-2`. The ordinary compiler commands do not query
+`ppphp --version` reports the exact canonical compiler identity. The ordinary
+compiler commands do not query
 a release catalog, check for updates, or fetch schemas. There is no installer or
 self-update command in the current CLI.
 

@@ -65,7 +65,7 @@ test('init creates a valid configuration and compiler-owned directories without 
     expect($tester->getStatusCode())->toBe(ExitCode::Success->value)
         ->and($tester->getDisplay())->toContain('Created ppphp.json.')
         ->and(array_key_first($configuration))->toBe('$schema')
-        ->and($configuration['$schema'])->toBe('https://github.com/atatusoft-ltd/ppphp-src/releases/download/2026.3.1-rc-2/ppphp.schema.json')
+        ->and($configuration['$schema'])->toBe((new ReleaseMetadataLoader())->load()?->schemaUrl)
         ->and($configuration['targetPhpVersion'])->toBe('8.4')
         ->and(is_dir($root . '/build/ppphp'))->toBeTrue()
         ->and(is_dir($root . '/.ppphp-cache'))->toBeTrue()
@@ -98,6 +98,22 @@ test('init omits schema identity without release metadata and fails closed on co
         ->and($corruptResult->getDisplay())->toContain('Error[P0021]: Project Initialization Failed')
         ->and(file_exists($corrupt . '/ppphp.json'))->toBeFalse();
 });
+
+test('init honors Composer platform settings before writing project files', function (string $platform, int $exit): void {
+    $root = $this->createTemporaryDirectory();
+    $metadata = json_encode(['config' => ['platform' => ['php' => $platform]]]);
+    $this->writeFile($root . '/composer.json', $metadata);
+    $tester = runStageOneCommand(['command' => 'init', '--working-directory' => $root, '--no-interaction' => true]);
+    expect($tester->getStatusCode())->toBe($exit)
+        ->and(file_get_contents($root . '/composer.json'))->toBe($metadata)
+        ->and(file_exists($root . '/ppphp.json'))->toBe($exit === 0)
+        ->and(is_dir($root . '/build/ppphp'))->toBe($exit === 0);
+    if ($exit === 0) {
+        expect((new ProjectConfigLoader())->load($root)->configuration?->targetPhpVersion)->toBe('8.4');
+    } else {
+        expect($tester->getDisplay())->toContain('config.platform.php', $platform);
+    }
+})->with([['8.4.23', 0], ['99.1.0', 2]]);
 
 test('init refuses overwrite unless force is supplied and never prompts', function (): void {
     $root = $this->createTemporaryDirectory();

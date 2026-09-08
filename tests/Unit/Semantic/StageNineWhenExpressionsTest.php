@@ -43,6 +43,24 @@ function lowerStageNineSource(string $contents): GeneratedPhp
     return (new PhpLowerer())->lower($parse->parsedFile, $model);
 }
 
+test('when syntax errors share actionable parser messages and preserve raw details only for debug', function (): void {
+    [, $analysis] = analyzeStageNineSource(<<<'PPP'
+<?php
+function choose(): int {
+    return when (true) {
+        echo 'value'
+        return 1;
+    } else { return 2; };
+}
+PPP);
+    $errors = array_values(array_filter(iterator_to_array($analysis->diagnostics),
+        static fn (Diagnostic $diagnostic): bool => $diagnostic->code === DiagnosticCode::WhenBranchCouldNotBeParsed));
+    expect($errors)->toHaveCount(1)
+        ->and($errors[0]->message)->toBe('Expected a semicolon before `return`.')
+        ->and($errors[0]->primary?->span->text)->toBe('return')
+        ->and($errors[0]->debug['parserMessage'])->toBe("Syntax error, unexpected T_RETURN, expecting ';'");
+});
+
 /** @return list<string> */
 function resolveStageNineCodes(SemanticAnalysisResult $analysis): array
 {

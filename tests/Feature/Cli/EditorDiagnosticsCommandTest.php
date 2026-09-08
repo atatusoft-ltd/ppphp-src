@@ -20,6 +20,46 @@ function requestEditorDiagnostics(string $root, array|string $request): array
     return [$process->getExitCode(), $response];
 }
 
+test('saved check build and unsaved diagnostics use the same plain syntax cause', function (string $extension): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $path = 'src/main.' . $extension;
+    $contents = "<?php function run(): int { \$lines = [1]\nreturn 1; }";
+    $this->writeFile($root . '/' . $path, $contents);
+    [$exit, $response] = requestEditorDiagnostics($root, [
+        'version' => 1, 'document' => ['path' => $path, 'contents' => $contents],
+    ]);
+    expect($exit)->toBe(1)
+        ->and($response['diagnostics'][0]['message'])->toBe('Expected a semicolon before `return`.');
+    foreach (['check', 'build'] as $command) {
+        $process = new Process([PHP_BINARY, dirname(__DIR__, 3) . '/bin/ppphp', $command,
+            '--working-directory', $root, '--format=json']);
+        $process->run();
+        $saved = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        expect($process->getExitCode())->toBe(1)
+            ->and($saved['diagnostics'])->toBe($response['diagnostics'])
+            ->and($process->getOutput())->not->toContain('T_RETURN', 'PHP 8.4');
+    }
+    expect(file_get_contents($root . '/' . $path))->toBe($contents);
+})->with(['php', 'ppphp']);
+
+test('all source-checking commands reject Composer target conflicts before analyzing files', function (string $command): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/main.ppphp', '<?php echo ;');
+    $this->writeFile($root . '/composer.json', json_encode(['config' => ['platform' => ['php' => '99.1']]]));
+    $process = new Process([PHP_BINARY, dirname(__DIR__, 3) . '/bin/ppphp', $command,
+        '--working-directory', $root, '--format=json']);
+    if ($command === 'editor:diagnostics') {
+        $process->setInput(json_encode(['version' => 1, 'document' => ['path' => 'src/main.ppphp', 'contents' => '<?php echo ;']]));
+    }
+    $process->run();
+    expect($process->getExitCode())->toBe(2)
+        ->and($process->getOutput())->toContain('99.1', 'config.platform.php')
+        ->and($process->getOutput())->not->toContain('P1001')
+        ->and(file_exists($root . '/.ppphp-cache/analysis'))->toBeFalse();
+})->with(['check', 'build', 'editor:diagnostics']);
+
 test('editor diagnostics report unsaved errors and clear them without touching disk or compiler state', function (): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);

@@ -9,7 +9,7 @@ use PhpParser\Node;
 use PhpParser\ParserFactory;
 
 test('authored public diagnostic and CLI templates use user vocabulary', function (): void {
-    $pattern = '/\b(?:compiler-owned|declaration context|analysis workspace|supplemental|backend|project-owned|lowering|stage)\b/i';
+    $pattern = '/\b(?:compiler-owned|declaration context|analysis workspace|supplemental|backend|project-owned|lowering|stage|PHP\s+\d+\.\d+)\b/i';
     foreach (DiagnosticCode::cases() as $code) {
         expect(DiagnosticCatalog::definition($code)->title)->not->toMatch($pattern);
         expect(DiagnosticHelpProvider::resolve($code))->not->toMatch($pattern);

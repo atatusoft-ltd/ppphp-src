@@ -8,6 +8,7 @@ use Atatusoft\Ppphp\Cli\Command\AbstractClasses\ProjectCommand;
 use Atatusoft\Ppphp\Cli\Enumerations\ExitCode;
 use Atatusoft\Ppphp\Cli\Enumerations\OutputFormat;
 use Atatusoft\Ppphp\Config\ProjectConfigLoader;
+use Atatusoft\Ppphp\Config\ComposerPhpTargetResolver;
 use Atatusoft\Ppphp\Diagnostics\ConsoleRenderer;
 use Atatusoft\Ppphp\Diagnostics\Diagnostic;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
@@ -126,6 +127,7 @@ final class InitCommand extends ProjectCommand
             $outputPath = $decodedTemplate['output'] ?? null;
             $cachePath = $decodedTemplate['cache'] ?? null;
             $stubPaths = $decodedTemplate['stubs'] ?? [];
+            $targetPhpVersion = $decodedTemplate['targetPhpVersion'] ?? null;
 
             if (
                 !is_string($outputPath)
@@ -133,6 +135,7 @@ final class InitCommand extends ProjectCommand
                 || !is_string($cachePath)
                 || $cachePath === ''
                 || !is_array($stubPaths)
+                || !is_string($targetPhpVersion)
                 || array_filter($stubPaths, static fn (mixed $path): bool => !is_string($path) || $path === '') !== []
             ) {
                 throw new \UnexpectedValueException('The maintained project configuration template is invalid.');
@@ -147,6 +150,14 @@ final class InitCommand extends ProjectCommand
 
             return ExitCode::InvalidProject->value;
         }
+
+        $targetPhpVersion = (new ComposerPhpTargetResolver())->resolve($projectRoot, $targetPhpVersion, $diagnostics);
+        if ($targetPhpVersion === null) {
+            $this->renderDiagnostics($diagnostics, $format, $input, $output);
+
+            return ExitCode::InvalidProject->value;
+        }
+        $decodedTemplate['targetPhpVersion'] = $targetPhpVersion;
 
         try {
             $releaseMetadata = $this->releaseMetadataLoader->load();

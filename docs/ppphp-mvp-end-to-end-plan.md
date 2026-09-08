@@ -161,7 +161,7 @@ Development          dev-YYYY.Q.R
 
 `YYYY` is the four-digit year, `Q` is 1–4, `R` is the positive release
 increment within that quarter, and `N` is the positive candidate increment for
-one exact release core. The current compiler version is `2026.3.1-rc-2`.
+one exact release core. `Compiler::VERSION` owns the selected source identity.
 Development is a separate channel from Release Candidate.
 
 Stable is the default acquisition channel. Release Candidate and Development
@@ -549,6 +549,12 @@ cache, lock or output writes. Saved-file `check` and `build` retain supplemental
 PHPStan analysis. See [Editor Protocol](editor-protocol.md) for ownership,
 new/deleted-buffer, limits and stale-response rules.
 
+The optional `--server` transport retains a bounded worker with ordered request
+IDs, client-discard cancellation, explicit recycling, and single-shot fallback.
+Each request reloads project inputs; only verified platform modules and immutable
+derived metadata are reused. Warm measurements do not imply cold-start or
+end-to-end editor latency guarantees.
+
 ---
 
 ## 8. Configuration
@@ -585,6 +591,7 @@ Configuration principles:
 - Output and cache paths may not overlap source paths.
 - Unknown configuration properties produce diagnostics.
 - The target PHP version is distinct from the host PHP version running the compiler.
+- Root Composer config.platform.php takes precedence over targetPhpVersion; require.php constrains the selection. Conflicting or unsupported targets fail before analysis, without silently selecting the compiler host. This does not qualify additional platform capabilities or complete the FI-1 runtime/dependency gates.
 ```
 
 ### 8.1 Schema Distribution Policy
@@ -1881,13 +1888,17 @@ history.
 
 ### Stage 14B — Publish And Validate The Release Candidate
 
-After the prepared candidate is merged to `main`, create the exact `2026.3.1-rc-2` tag. The
-tag workflow must prove that the tagged commit is reachable from `main`, rerun
-the full aggregate and installed-distribution gates, rebuild and verify the
-deterministic asset set, reject an existing release, and publish a GitHub
-prerelease with the exact assets and release notes. Validate the real package
-metadata and exact Composer RC installation command in a clean consumer before
-announcing availability. Do not classify the RC as Stable.
+Prepare on `develop` and integrate intended changes into `main`. Only when ready,
+cut `release/<canonical-version>` from `main`, complete verification of the exact
+release-branch commit, then create the matching tag as the final step before
+submission. Release-only commits need not already be on `main`, and an advanced
+`main` does not invalidate the branch. Tag-driven publication validates the
+selected branch/tag/commit identity, reruns the aggregate and distribution gates,
+and publishes verified deterministic assets with the rendered notes asset as
+its body. Branch pushes receive CI but do not publish. Delete obsolete release
+branches without affecting historical tag/commit/hash verification. See the
+single [release runbook](releasing.md) for graph-evidence limits and public
+installation checks; preparation requires no release refs.
 
 ### Stage 14C — Promote A Validated Stable Release
 

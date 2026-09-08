@@ -17,6 +17,9 @@ use PhpParser\Comment\Doc;
 
 final class PhpDocReader
 {
+    /** @var \WeakMap<Doc, array{text: string, metadata: PhpDocMetadata}>|null */
+    private static ?\WeakMap $metadata = null;
+
     private readonly Lexer $lexer;
 
     private readonly PhpDocParser $parser;
@@ -54,6 +57,13 @@ final class PhpDocReader
 
     public function readMetadata(?Doc $document): PhpDocMetadata
     {
+        if ($document !== null) {
+            self::$metadata ??= new \WeakMap();
+            $cached = self::$metadata[$document] ?? null;
+            if ($cached !== null && $cached['text'] === $document->getText()) {
+                return $cached['metadata'];
+            }
+        }
         $node = $this->parse($document);
 
         if ($node === null) {
@@ -79,7 +89,7 @@ final class PhpDocReader
             $variables[$tag->variableName] = (string) $tag->type;
         }
 
-        return new PhpDocMetadata(
+        $metadata = new PhpDocMetadata(
             $templates,
             $parameters,
             array_values(array_map(static fn ($tag): string => (string) $tag->type, $node->getReturnTagValues())),
@@ -89,6 +99,11 @@ final class PhpDocReader
             array_values(array_map(static fn ($tag): string => (string) $tag->type, $node->getUsesTagValues())),
             array_values(array_map(static fn ($tag): string => (string) $tag->type, $node->getThrowsTagValues())),
         );
+        if ($document !== null) {
+            self::$metadata[$document] = ['text' => $document->getText(), 'metadata' => $metadata];
+        }
+
+        return $metadata;
     }
 
     /** @return list<PhpDocThrowsTag> */

@@ -13,7 +13,7 @@ final readonly class ReleaseAssetVerifier
 {
     private string $root;
 
-    public function __construct(?string $root = null)
+    public function __construct(?string $root = null, private string $expectedVersion = Compiler::VERSION)
     {
         $this->root = Path::normalize($root ?? dirname(__DIR__, 2));
     }
@@ -80,7 +80,7 @@ final readonly class ReleaseAssetVerifier
             throw new \UnexpectedValueException('SHA256SUMS does not cover the exact release asset set.');
         }
 
-        $metadata = (new ReleaseMetadataLoader($this->root))->load()
+        $metadata = (new ReleaseMetadataLoader($this->root, expectedVersion: $this->expectedVersion))->load()
             ?? throw new \UnexpectedValueException('Committed release metadata is missing.');
         $manifestContents = $this->read(Path::join($assetDirectory, 'ppphp-release.json'));
         $manifest = CanonicalJson::decode($manifestContents);
@@ -141,7 +141,7 @@ final readonly class ReleaseAssetVerifier
 
         if (
             $schema !== $this->read(Path::join($this->root, 'resources/schema/ppphp.schema.json'))
-            || $notes !== $this->read(Path::join($this->root, $metadata->releaseNotes))
+            || $notes !== (new ReleaseNotesRenderer())->render($this->read(Path::join($this->root, $metadata->releaseNotes)), $metadata)
             || $notices !== $this->read(Path::join($this->root, 'THIRD_PARTY_NOTICES.md'))
         ) {
             throw new \UnexpectedValueException('A release asset does not match its maintained source bytes.');

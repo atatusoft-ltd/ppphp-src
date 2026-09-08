@@ -6,6 +6,25 @@ use Atatusoft\Ppphp\Source\Enumerations\FileKind;
 use Atatusoft\Ppphp\Source\SourceFile;
 use Atatusoft\Ppphp\Source\SourceManager;
 
+test('node span reuse checks the source generation and current mapped offsets', function (): void {
+    $parser = new \Atatusoft\Ppphp\Frontend\PpphpParser();
+    $file = $parser->parse(new SourceFile('/project/main.ppphp', 'main.ppphp', FileKind::Ppphp, '<?php echo "é";'))->parsedFile;
+    $node = $file->statements[0];
+    $resolver = new \Atatusoft\Ppphp\Semantic\NodeSpanResolver();
+    $first = $resolver->resolve($file, $node);
+    expect((new \Atatusoft\Ppphp\Semantic\NodeSpanResolver())->resolve($file, $node))->toBe($first);
+    $node->setAttribute('ppphpOriginalStart', 6);
+    $node->setAttribute('ppphpOriginalEnd', 10);
+    expect($resolver->resolve($file, $node)->text)->toBe('echo');
+    $replacement = $parser->parse(new SourceFile('/project/main.ppphp', 'main.ppphp', FileKind::Ppphp, '<?php echo "🙂";'))->parsedFile;
+    expect($resolver->resolve($replacement, $node)->sourceFile)->toBe($replacement->sourceFile)
+        ->and($first->sourceFile)->toBe($file->sourceFile);
+    $reference = WeakReference::create($node);
+    unset($node, $file);
+    gc_collect_cycles();
+    expect($reference->get())->toBeNull();
+});
+
 test('empty and single-line source files expose one-based positions', function (): void {
     $empty = new SourceFile('/project/empty.php', 'empty.php', FileKind::Php, '');
     $single = new SourceFile('/project/main.php', 'main.php', FileKind::Php, 'abc');

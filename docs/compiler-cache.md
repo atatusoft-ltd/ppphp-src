@@ -15,7 +15,7 @@ The current cache format is version 1:
 
 Compiler records, cached diagnostics, declaration-only source, and cached artifacts have independent format versions. Records are canonical JSON; declaration-only PHP, generated PHP, source maps, and manifests are immutable content-addressed blobs. Per-source declaration units are keyed by source, compiler, declaration-format, PHPDoc/importer, namespace/import, and provenance context. Persistent PHP serialization is not used. Compiler records commit only after every referenced blob has committed.
 
-`CompilerBuildIdentity` is a path-independent SHA-256 identity over `src/**/*.php`, `bin/ppphp`, `composer.lock`, code-driving schema/release/PHPStan resources, authoritative PHP-signature metadata, and persisted-format constants. It excludes Git state, tests, documentation, timestamps, host paths, and process data. The public `2026.3.1-rc-2` version remains a release-channel identity and is not a substitute for this build identity.
+`CompilerBuildIdentity` is a path-independent SHA-256 identity over `src/**/*.php`, `bin/ppphp`, `composer.lock`, code-driving schema/release/PHPStan resources, authoritative PHP-signature metadata, and persisted-format constants. It excludes Git state, tests, documentation, timestamps, host paths, and process data. The public version remains a release-channel identity and is not a substitute for this build identity.
 
 ## Input Snapshots And Keys
 

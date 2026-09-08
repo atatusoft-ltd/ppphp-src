@@ -166,7 +166,7 @@ test('maintainer release status and the native analyzer contract agree', functio
     foreach ($maintainerDocuments as $path) {
         $document = file_get_contents($path);
         expect($document)->toBeString()
-            ->and($document)->toContain('Stage 14A', 'Stage 14B', Compiler::VERSION);
+            ->and($document)->toContain('Stage 14A', 'Stage 14B', 'release/');
     }
 
     $analysis = (string) file_get_contents($root . '/docs/analyzer-independence.md');

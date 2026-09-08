@@ -22,7 +22,7 @@ Release Candidate    YYYY.Q.R-rc-N
 Development          dev-YYYY.Q.R
 ```
 
-The prepared source version is `2026.3.1-rc-2`. Development remains a separate
+The source version is defined by `Compiler::VERSION`. Development remains a separate
 channel from Release Candidate. Release selection defaults to Stable only.
 Release Candidate and Development acquisition requires an explicit channel or
 an exact canonical version. Supplying both requires a channel match, and no

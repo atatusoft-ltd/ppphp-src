@@ -85,7 +85,7 @@ test('the adapter accepts the configured PHP 8.4 grammar', function (): void {
 
 test('the adapter rejects unsupported target versions', function (string $version): void {
     expect(fn (): PhpParserAdapter => new PhpParserAdapter($version))
-        ->toThrow(InvalidArgumentException::class, 'supports only PHP 8.4');
+        ->toThrow(InvalidArgumentException::class, 'does not support the selected project target');
 })->with(['8.3', '8.5']);
 
 test('the parser collects recoverable errors and never reports them as success', function (): void {

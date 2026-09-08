@@ -22,7 +22,7 @@ final readonly class ReleaseAssetBuilder
 
     private string $root;
 
-    public function __construct(?string $root = null)
+    public function __construct(?string $root = null, private string $expectedVersion = Compiler::VERSION)
     {
         $this->root = Path::normalize($root ?? dirname(__DIR__, 2));
     }
@@ -35,10 +35,10 @@ final readonly class ReleaseAssetBuilder
 
         $outputPath = Path::normalize($outputPath);
         $this->validateOutputPath($outputPath);
-        $metadata = (new ReleaseMetadataLoader($this->root))->load()
+        $metadata = (new ReleaseMetadataLoader($this->root, expectedVersion: $this->expectedVersion))->load()
             ?? throw new \RuntimeException('Release assets require committed release metadata.');
         $schema = $this->readRequiredFile('resources/schema/ppphp.schema.json');
-        $releaseNotes = $this->readRequiredFile($metadata->releaseNotes);
+        $releaseNotes = (new ReleaseNotesRenderer())->render($this->readRequiredFile($metadata->releaseNotes), $metadata);
         $thirdPartyNotices = $this->readRequiredFile('THIRD_PARTY_NOTICES.md');
         $assets = [
             'ppphp.schema.json' => $schema,

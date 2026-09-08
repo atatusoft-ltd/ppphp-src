@@ -12,7 +12,7 @@ portable dependency metadata all use the same compiler constant. The internal
 `CompilerBuildIdentity` separately hashes executable compiler inputs so caches,
 manifests, and indexes invalidate between code changes without changing public
 CalVer. None of these paths performs release-network activity. See
-[Versioning](versioning.md). The current compiler version is `2026.3.1-rc-2`.
+[Versioning](versioning.md).
 
 > **Status:** The compiler provides deterministic recoverable production builds, verified mixed PHP/++PHP interoperability, stable catalog-owned diagnostics, structured generic context, process-free compiler-owned type-flow analysis, portable PHP and dependency declarations, content-addressed incremental evidence, and deterministic release assets.
 

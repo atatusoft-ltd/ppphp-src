@@ -14,8 +14,6 @@ use Atatusoft\Ppphp\Support\Path;
 
 final class ProjectConfigLoader
 {
-    private const TARGET_PHP_VERSION = '8.4';
-
     /** @var list<string> */
     private const ALLOWED_PROPERTIES = [
         '$schema',
@@ -141,13 +139,17 @@ final class ProjectConfigLoader
         $stubValues = $this->readStringArray($values, 'stubs', false, $source, $diagnostics) ?? [];
         $excludedValues = $this->readStringArray($values, 'exclude', false, $source, $diagnostics) ?? [];
 
-        if ($targetPhpVersion !== null && $targetPhpVersion !== self::TARGET_PHP_VERSION) {
+        if ($targetPhpVersion !== null) {
+            $targetPhpVersion = (new ComposerPhpTargetResolver())->resolve($projectRoot, $targetPhpVersion, $diagnostics);
+        }
+
+        if ($targetPhpVersion !== null && !in_array($targetPhpVersion, PhpTarget::SUPPORTED, true)) {
             $diagnostics->add($this->createDiagnostic(
                 DiagnosticCode::UnsupportedTargetPhpVersion,
                 sprintf('The target PHP version "%s" is not supported.', $targetPhpVersion),
                 $source,
                 'targetPhpVersion',
-                'Use targetPhpVersion "8.4".',
+                'Use a compiler release that supports your project target.',
             ));
         }
 

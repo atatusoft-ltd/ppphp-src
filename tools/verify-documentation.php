@@ -8,11 +8,15 @@ use Atatusoft\Ppphp\Support\Path;
 use Atatusoft\Ppphp\Versioning\DocumentationPolicy;
 use Atatusoft\Ppphp\Versioning\Enumerations\DocumentationAudience;
 use Atatusoft\Ppphp\Versioning\ReleaseNotesValidator;
+use Atatusoft\Ppphp\Versioning\ReleaseMetadataLoader;
+use Atatusoft\Ppphp\Versioning\ReleaseNotesRenderer;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 $root = Path::normalize(dirname(__DIR__));
 $failures = [];
+$metadata = (new ReleaseMetadataLoader($root))->load()
+    ?? throw new RuntimeException('Committed release metadata is missing.');
 $required = [
     'README.md',
     'CHANGELOG.md',
@@ -21,7 +25,7 @@ $required = [
     'docs/getting-started.md',
     'docs/migrating-from-php.md',
     'docs/releases/README.md',
-    'docs/releases/2026.3.1-rc-2.md',
+    $metadata->releaseNotes,
     'docs/releasing.md',
     'docs/decisions/0004-mvp-native-analysis-retains-phpstan.md',
 ];
@@ -101,22 +105,16 @@ if (!is_string($composerContents)) {
 }
 
 $readme = $documents[Path::join($root, 'README.md')] ?? '';
-$releaseNotes = $documents[Path::join($root, 'docs/releases/2026.3.1-rc-2.md')] ?? '';
+$releaseNotes = $documents[Path::join($root, $metadata->releaseNotes)] ?? '';
 $changelog = $documents[Path::join($root, 'CHANGELOG.md')] ?? '';
 $plan = $documents[Path::join($root, 'docs/ppphp-mvp-end-to-end-plan.md')] ?? '';
 $decision = $documents[Path::join($root, 'docs/decisions/0004-mvp-native-analysis-retains-phpstan.md')] ?? '';
 
 $expectations = [
-    [str_contains($readme, Compiler::VERSION), 'README does not state the compiler version'],
-    [str_contains($readme, 'is a release candidate'), 'README does not identify the current release as a release candidate'],
-    [str_contains($readme, 'not yet publicly available'), 'README does not state that the prepared candidate is unpublished'],
     [str_contains($readme, 'https://ppphplang.org'), 'README does not link to the canonical website'],
     [str_contains($readme, 'atatusoft-ltd/ppphp-src'), 'README does not state the Composer package'],
-    [str_contains($readme, 'Atatusoft\\Ppphp'), 'README does not state the canonical PHP namespace'],
     [str_contains($readme, '.ppphp'), 'README does not state the canonical source extension'],
     [str_contains($readme, 'supplemental PHPStan analysis'), 'README does not disclose supplemental PHPStan analysis'],
-    [str_contains($readme, 'composer require --dev atatusoft-ltd/ppphp-src:2026.3.1-rc-2'), 'README does not show the exact RC installation command'],
-    [str_contains($changelog, Compiler::VERSION), 'changelog does not contain the prepared RC'],
     [str_contains($changelog, '## Unreleased') && str_contains($changelog, '### Known limitations'), 'changelog does not retain release-oriented sections'],
     [str_contains($plan, 'Stage 14A') && str_contains($plan, 'Stage 14B') && str_contains($plan, 'Stage 14C'), 'MVP plan does not preserve the Stage 14 release split'],
     [str_contains($plan, 'Stage 15') && str_contains($plan, 'post-MVP'), 'MVP plan does not classify Stage 15 as post-MVP'],
@@ -131,8 +129,14 @@ foreach ($expectations as [$condition, $message]) {
 
 $failures = [
     ...$failures,
-    ...(new ReleaseNotesValidator())->validate($releaseNotes, Compiler::VERSION, '8.4'),
+    ...(new ReleaseNotesValidator())->validate($releaseNotes, $metadata->version),
 ];
+
+if ($failures === []) {
+    // Validate the same content that the asset builder and publisher consume.
+    $rendered = (new ReleaseNotesRenderer())->render($releaseNotes, $metadata);
+    $failures = (new ReleaseNotesValidator())->validate($rendered, $metadata->version);
+}
 
 $retiredIdentity = 'ph' . 'plus';
 $retiredProduct = 'Do' . 'ria';

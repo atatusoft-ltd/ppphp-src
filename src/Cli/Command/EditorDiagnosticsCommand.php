@@ -13,9 +13,12 @@ use Atatusoft\Ppphp\Diagnostics\JsonRenderer;
 use Atatusoft\Ppphp\Editor\EditorDiagnosticsAnalyzer;
 use Atatusoft\Ppphp\Editor\EditorDiagnosticsRequest;
 use Atatusoft\Ppphp\Editor\EditorDiagnosticsRequestDecoder;
+use Atatusoft\Ppphp\Editor\EditorDiagnosticsServer;
 use Atatusoft\Ppphp\Editor\Exceptions\EditorDocumentNotOwned;
 use Atatusoft\Ppphp\Project\ProjectLoader;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class EditorDiagnosticsCommand extends ProjectCommand
@@ -34,13 +37,34 @@ final class EditorDiagnosticsCommand extends ProjectCommand
     protected function configure(): void
     {
         $this->setDescription('Check an unsaved editor document for ++PHP errors.')
-            ->setHelp('Reads one bounded JSON request from stdin and returns JSON. Does not save buffers or run the additional PHP analysis used by check and build.');
+            ->setHelp('Reads one bounded JSON request from stdin and returns JSON, or keeps a versioned JSON-lines worker with --server. Does not save buffers or run the additional PHP analysis used by check and build.');
         $this->addProjectOptions();
+        $this->addOption('server', null, InputOption::VALUE_NONE, 'Keep a versioned diagnostic worker on standard input/output.');
         $this->getDefinition()->getOption('format')->setDefault('json');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        if ($input->getOption('server')) {
+            if ($input->getOption('format') !== 'json') {
+                return $this->renderError($output, 'invalid-request', 'The editor diagnostics output format must be json.');
+            }
+            try {
+                return (new EditorDiagnosticsServer())->run(STDIN, STDOUT, function (string $json) use ($input): string {
+                    $buffer = new BufferedOutput();
+                    try {
+                        $this->handleRequest($input, $buffer, $json);
+                    } catch (\Throwable) {
+                        $this->renderError($buffer, 'internal-error', 'The compiler could not complete editor diagnostics.', ExitCode::InternalCompilerFailure->value);
+                    }
+
+                    return $buffer->fetch();
+                });
+            } catch (\Throwable) {
+                // EOF without a response is a transport failure, never an empty diagnostic result.
+                return ExitCode::InternalCompilerFailure->value;
+            }
+        }
         try {
             return $this->handleRequest($input, $output);
         } catch (\Throwable) {
@@ -48,13 +72,13 @@ final class EditorDiagnosticsCommand extends ProjectCommand
         }
     }
 
-    private function handleRequest(InputInterface $input, OutputInterface $output): int
+    private function handleRequest(InputInterface $input, OutputInterface $output, ?string $json = null): int
     {
         if ($input->getOption('format') !== 'json') {
             return $this->renderError($output, 'invalid-request', 'The editor diagnostics output format must be json.');
         }
 
-        $json = stream_get_contents(STDIN, EditorDiagnosticsRequest::MAXIMUM_REQUEST_BYTES + 1);
+        $json ??= stream_get_contents(STDIN, EditorDiagnosticsRequest::MAXIMUM_REQUEST_BYTES + 1);
 
         if ($json === false) {
             return $this->renderError($output, 'request-read-failed', 'The editor diagnostics request could not be read.');
@@ -66,6 +90,7 @@ final class EditorDiagnosticsCommand extends ProjectCommand
             return $this->renderError($output, 'invalid-request', $exception->getMessage());
         }
 
+        clearstatcache(true);
         $configuration = $this->configLoader->load($this->resolveWorkingDirectory($input), $this->resolveConfigurationPath($input), true);
 
         if (!$configuration->isSuccessful || $configuration->configuration === null) {
