@@ -14,6 +14,8 @@ use Atatusoft\Ppphp\Frontend\Ast\Enumerations\ForeachBindingPosition;
 use Atatusoft\Ppphp\Semantic\Binding\Enumerations\BindingInitialization;
 use Atatusoft\Ppphp\Semantic\Binding\Enumerations\BindingMutability;
 use Atatusoft\Ppphp\Semantic\Binding\LocalBinding;
+use Atatusoft\Ppphp\Semantic\Binding\MissingLocalTypeReporter;
+use Atatusoft\Ppphp\Semantic\Binding\RejectedLocalBinding;
 use Atatusoft\Ppphp\Semantic\Call\CallArgumentBinder;
 use Atatusoft\Ppphp\Semantic\Call\CallableContract;
 use Atatusoft\Ppphp\Semantic\Call\CallableContractResolver;
@@ -66,6 +68,12 @@ final class CheckBindingsPass implements SemanticPass
 
     private SemanticContext $context;
 
+    /** @var list<RejectedLocalBinding> */
+    private array $rejectedBindings = [];
+
+    /** @var array<int, Span> */
+    private array $standaloneAssignments = [];
+
     /** @var array<int, TypedLocalDeclaration> */
     private array $declarationsByVariableOffset = [];
 
@@ -107,6 +115,8 @@ final class CheckBindingsPass implements SemanticPass
     public function execute(SemanticContext $context): void
     {
         $this->context = $context;
+        $this->rejectedBindings = [];
+        $this->standaloneAssignments = [];
         $this->callables = new CallableContractResolver($context);
         $this->expressionTypes = $this->configuredExpressionTypes ?? new ExpressionTypeResolver($context, $this->sourceTypes);
         $this->declarationsByVariableOffset = [];
@@ -136,10 +146,16 @@ final class CheckBindingsPass implements SemanticPass
         }
 
         $this->leaveScope();
+        foreach ($this->rejectedBindings as $recovery) {
+            $context->model->diagnostics->add($recovery->createDiagnostic());
+        }
     }
 
     private function processNode(Node $node, Scope $scope): void
     {
+        if ($node instanceof Stmt\Expression && $node->expr instanceof Expr\Assign) {
+            $this->standaloneAssignments[spl_object_id($node->expr)] = $this->createNodeSpan($node);
+        }
         if ($node instanceof Stmt\Function_) {
             $this->processNamedFunction($node);
 
@@ -185,6 +201,62 @@ final class CheckBindingsPass implements SemanticPass
         if ($node instanceof Stmt\If_) {
             $this->processIf($node, $scope);
 
+            return;
+        }
+
+        if ($node instanceof Stmt\While_) {
+            $this->processNode($node->cond, $scope);
+            $this->processOptionalNodes($node->stmts, $scope);
+            return;
+        }
+
+        if ($node instanceof Stmt\Do_) {
+            // A break may bypass a rejected declaration even in the first iteration.
+            $this->processOptionalNodes([...$node->stmts, $node->cond], $scope);
+            return;
+        }
+
+        if ($node instanceof Stmt\TryCatch && $node->catches !== []) {
+            $this->processOptionalNodes($node->stmts, $scope);
+            foreach ($node->catches as $catch) {
+                $this->processOptionalNodes([$catch], $scope);
+            }
+            if ($node->finally !== null) {
+                $this->processNode($node->finally, $scope);
+            }
+            return;
+        }
+
+        if ($node instanceof Stmt\Switch_) {
+            $this->processNode($node->cond, $scope);
+            foreach ($node->cases as $case) {
+                $this->processOptionalNodes([$case], $scope);
+            }
+            return;
+        }
+
+        if ($node instanceof Expr\Ternary) {
+            $this->processNode($node->cond, $scope);
+            if ($node->if !== null) {
+                $this->processOptionalNodes([$node->if], $scope);
+            }
+            $this->processOptionalNodes([$node->else], $scope);
+            return;
+        }
+
+        if ($node instanceof Expr\Match_) {
+            $this->processNode($node->cond, $scope);
+            foreach ($node->arms as $arm) {
+                $this->processOptionalNodes([$arm], $scope);
+            }
+            return;
+        }
+
+        if ($node instanceof Expr\BinaryOp\BooleanAnd || $node instanceof Expr\BinaryOp\BooleanOr
+            || $node instanceof Expr\BinaryOp\LogicalAnd || $node instanceof Expr\BinaryOp\LogicalOr
+            || $node instanceof Expr\BinaryOp\Coalesce) {
+            $this->processNode($node->left, $scope);
+            $this->processOptionalNodes([$node->right], $scope);
             return;
         }
 
@@ -278,6 +350,18 @@ final class CheckBindingsPass implements SemanticPass
                 }
             }
         }
+    }
+
+    /** @param array<Node> $nodes */
+    private function processOptionalNodes(array $nodes, Scope $scope): void
+    {
+        // Recovery is causal evidence, not a declaration that exists on every path.
+        // Keep real declarations under the existing binding rules.
+        $entry = $scope->recoverySymbols;
+        foreach ($nodes as $node) {
+            $this->processNode($node, $scope);
+        }
+        $scope->restoreRecoveries($entry);
     }
 
     private function processNamedFunction(Stmt\Function_ $function): void
@@ -463,9 +547,7 @@ final class CheckBindingsPass implements SemanticPass
             $declaredBindings[] = $binding;
         }
 
-        foreach ($foreach->stmts as $statement) {
-            $this->processNode($statement, $scope);
-        }
+        $this->processOptionalNodes($foreach->stmts, $scope);
 
         foreach ($declaredBindings as $declaredBinding) {
             $declaredBinding->markMaybeUninitialized();
@@ -482,13 +564,7 @@ final class CheckBindingsPass implements SemanticPass
             $this->processNode($condition, $scope);
         }
 
-        foreach ($for->stmts as $statement) {
-            $this->processNode($statement, $scope);
-        }
-
-        foreach ($for->loop as $update) {
-            $this->processNode($update, $scope);
-        }
+        $this->processOptionalNodes([...$for->stmts, ...$for->loop], $scope);
     }
 
     private function processIf(Stmt\If_ $if, Scope $scope): void
@@ -502,6 +578,7 @@ final class CheckBindingsPass implements SemanticPass
             $guarded->markInitialized();
         }
 
+        $entryRecoveries = $scope->recoverySymbols;
         foreach ($if->stmts as $statement) {
             $this->processNode($statement, $scope);
         }
@@ -510,12 +587,17 @@ final class CheckBindingsPass implements SemanticPass
             $guarded->markMaybeUninitialized();
         }
 
+        $branchRecoveries = [$scope->recoverySymbols];
+        $scope->restoreRecoveries($entryRecoveries);
         foreach ($if->elseifs as $elseif) {
             $this->processNode($elseif->cond, $scope);
+            $entryRecoveries = $scope->recoverySymbols;
 
             foreach ($elseif->stmts as $statement) {
                 $this->processNode($statement, $scope);
             }
+            $branchRecoveries[] = $scope->recoverySymbols;
+            $scope->restoreRecoveries($entryRecoveries);
         }
 
         $elseStatements = $if->else === null ? [] : $if->else->stmts;
@@ -523,6 +605,11 @@ final class CheckBindingsPass implements SemanticPass
         foreach ($elseStatements as $statement) {
             $this->processNode($statement, $scope);
         }
+        $common = $scope->recoverySymbols;
+        foreach ($branchRecoveries as $recoveries) {
+            $common = array_intersect_key($common, $recoveries);
+        }
+        $scope->restoreRecoveries($common);
     }
 
     private function resolvePositiveIssetBinding(Expr $condition, Scope $scope): ?LocalBinding
@@ -589,7 +676,7 @@ final class CheckBindingsPass implements SemanticPass
 
         $existing = $scope->resolve($name);
 
-        if ($existing !== null) {
+        if ($existing !== null && $existing->recovery === null) {
             $this->addDiagnostic(
                 DiagnosticCode::DuplicateLocalDeclaration,
                 sprintf('%s is already declared in this variable scope.', $name),
@@ -656,6 +743,9 @@ final class CheckBindingsPass implements SemanticPass
                 return;
             }
 
+            if ($symbol->recovery !== null) {
+                $symbol->recovery->hasSubsequentWrite = true;
+            }
             if ($symbol->mutability === BindingMutability::Readonly) {
                 $this->addReadonlyDiagnostic(
                     DiagnosticCode::ReadonlyLocalCannotBeMutated,
@@ -720,7 +810,20 @@ final class CheckBindingsPass implements SemanticPass
             return;
         }
 
+        // Visit the initializer before recovery, so self-reads still fail.
         $this->processNode($assignment->expr, $scope);
+        if ($assignment->var instanceof Expr\Variable && is_string($assignment->var->name)
+            && $scope->resolve('$' . $assignment->var->name) === null) {
+            $recovery = (new MissingLocalTypeReporter())->createRecovery(
+                $assignment, $scope, $this->context, $this->standaloneAssignments[spl_object_id($assignment)] ?? null,
+            );
+            $this->rejectedBindings[] = $recovery;
+            $scope->declare(new VariableSymbol(
+                $recovery->name, LocalType::createUnknown(), BindingMutability::Mutable,
+                recovery: $recovery,
+            ));
+            return;
+        }
         $this->processAssignmentTarget($assignment->var, $assignment->expr, $scope);
     }
 
@@ -748,7 +851,7 @@ final class CheckBindingsPass implements SemanticPass
 
         $existing = $scope->resolve($name);
 
-        if ($existing !== null) {
+        if ($existing !== null && $existing->recovery === null) {
             $this->addDiagnostic(
                 DiagnosticCode::DuplicateLocalDeclaration,
                 sprintf('%s is already declared in this variable scope.', $name),
@@ -807,7 +910,7 @@ final class CheckBindingsPass implements SemanticPass
 
         $existing = $scope->resolve($name);
 
-        if ($existing !== null) {
+        if ($existing !== null && $existing->recovery === null) {
             $related = $existing->declarationSpan === null
                 ? []
                 : [new DiagnosticLabel($existing->declarationSpan, 'The existing binding is declared here.')];
@@ -860,6 +963,9 @@ final class CheckBindingsPass implements SemanticPass
                 return;
             }
 
+            if ($symbol->recovery !== null) {
+                $symbol->recovery->hasSubsequentWrite = true;
+            }
             if ($symbol->mutability === BindingMutability::Readonly) {
                 $this->addReadonlyDiagnostic(
                     DiagnosticCode::ReadonlyLocalCannotBeReassigned,
@@ -943,6 +1049,9 @@ final class CheckBindingsPass implements SemanticPass
             return;
         }
 
+        if ($symbol->recovery !== null) {
+            $symbol->recovery->hasSubsequentWrite = true;
+        }
         if ($symbol->mutability === BindingMutability::Readonly) {
             $this->addReadonlyDiagnostic(
                 DiagnosticCode::ReadonlyLocalCannotBeReassigned,
@@ -995,6 +1104,9 @@ final class CheckBindingsPass implements SemanticPass
             return;
         }
 
+        if ($symbol->recovery !== null) {
+            $symbol->recovery->hasSubsequentWrite = true;
+        }
         if ($symbol->mutability === BindingMutability::Readonly) {
             $this->addReadonlyDiagnostic(
                 DiagnosticCode::ReadonlyLocalCannotBeReassigned,
@@ -1054,6 +1166,9 @@ final class CheckBindingsPass implements SemanticPass
             return;
         }
 
+        if ($symbol->recovery !== null) {
+            $symbol->recovery->hasSubsequentWrite = true;
+        }
         if ($symbol->mutability === BindingMutability::Readonly) {
             $this->addReadonlyDiagnostic(
                 DiagnosticCode::ReadonlyLocalCannotBeMutated,
@@ -1099,6 +1214,9 @@ final class CheckBindingsPass implements SemanticPass
             return;
         }
 
+        if ($symbol->recovery !== null) {
+            $symbol->recovery->hasSubsequentWrite = true;
+        }
         if ($symbol->mutability === BindingMutability::Readonly) {
             $this->addReadonlyDiagnostic(
                 DiagnosticCode::ReadonlyLocalCannotBeReassigned,
@@ -1749,6 +1867,9 @@ final class CheckBindingsPass implements SemanticPass
                     $name = $this->resolveVariableName($root);
                     $symbol = $name === null ? null : $scope->resolve($name);
                     $span = $this->createNodeSpan($argument->value);
+                    if ($symbol?->recovery !== null) {
+                        $symbol->recovery->hasSubsequentWrite = true;
+                    }
 
                     if ($symbol?->mutability === BindingMutability::Readonly) {
                         $this->addReadonlyDiagnostic(

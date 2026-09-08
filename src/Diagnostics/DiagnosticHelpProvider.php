@@ -11,6 +11,13 @@ final class DiagnosticHelpProvider
 {
     public static function resolve(DiagnosticCode $code): string
     {
+        if ($code === DiagnosticCode::LocalVariableNotDeclared) {
+            return 'Declare and initialize this local with an explicit type before the read, or correct its name if you intended an existing variable.';
+        }
+        if ($code === DiagnosticCode::AssignmentCannotDeclareVariable) {
+            return 'Add an explicit type to the local declaration. An assignment expression requires a separate declaration before it.';
+        }
+
         return match (DiagnosticCatalog::definition($code)->family) {
             DiagnosticFamily::Project => 'Correct the project path, configuration, or command input described above, then run the command again.',
             DiagnosticFamily::Syntax => 'Correct the highlighted source syntax, then run the command again.',

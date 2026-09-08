@@ -1,0 +1,117 @@
+{
+    "version": 1,
+    "diagnostics": [
+        {
+            "code": "P4004",
+            "severity": "error",
+            "title": "Exception Not Permitted By Inherited Contract",
+            "message": "InMemoryRepository::create() declares \\InvalidArgumentException, but Repository::create() does not declare any checked exceptions.",
+            "location": {
+                "file": "src/InMemoryRepository.ppphp",
+                "range": {
+                    "start": {
+                        "offset": 411,
+                        "line": 20,
+                        "column": 16
+                    },
+                    "end": {
+                        "offset": 436,
+                        "line": 20,
+                        "column": 41
+                    }
+                },
+                "label": "\\InvalidArgumentException is not permitted by Repository::create()."
+            },
+            "related": [
+                {
+                    "message": "Repository::create() does not declare any checked exceptions.",
+                    "location": {
+                        "file": "src/Repository.ppphp",
+                        "range": {
+                            "start": {
+                                "offset": 125,
+                                "line": 9,
+                                "column": 5
+                            },
+                            "end": {
+                                "offset": 163,
+                                "line": 9,
+                                "column": 43
+                            }
+                        },
+                        "label": "Repository::create() does not declare any checked exceptions."
+                    }
+                },
+                {
+                    "message": "InMemoryRepository::create() declares the additional exception here.",
+                    "location": {
+                        "file": "src/InMemoryRepository.ppphp",
+                        "range": {
+                            "start": {
+                                "offset": 358,
+                                "line": 19,
+                                "column": 5
+                            },
+                            "end": {
+                                "offset": 436,
+                                "line": 20,
+                                "column": 41
+                            }
+                        },
+                        "label": "InMemoryRepository::create() declares the additional exception here."
+                    }
+                }
+            ],
+            "help": "If this exception belongs to the public contract, add `throws \\InvalidArgumentException` to Repository::create(). This changes the public API; callers must handle or declare the exception. Every other inherited contract must also permit it.\n\nOtherwise, handle \\InvalidArgumentException inside InMemoryRepository::create() so it does not escape. Removing the throws declaration alone does not handle an escaping exception."
+        },
+        {
+            "code": "P2002",
+            "severity": "error",
+            "title": "Missing Local Variable Type",
+            "message": "The local variable $id is missing its explicit type.",
+            "location": {
+                "file": "src/InMemoryRepository.ppphp",
+                "range": {
+                    "start": {
+                        "offset": 451,
+                        "line": 22,
+                        "column": 9
+                    },
+                    "end": {
+                        "offset": 454,
+                        "line": 22,
+                        "column": 12
+                    }
+                },
+                "label": "Add a type before $id."
+            },
+            "related": [
+                {
+                    "message": "The initializer uses this declared return contract.",
+                    "location": {
+                        "file": "src/InMemoryRepository.ppphp",
+                        "range": {
+                            "start": {
+                                "offset": 596,
+                                "line": 29,
+                                "column": 22
+                            },
+                            "end": {
+                                "offset": 601,
+                                "line": 29,
+                                "column": 27
+                            }
+                        },
+                        "label": "The initializer uses this declared return contract."
+                    }
+                }
+            ],
+            "help": "InMemoryRepository::getId() is declared to return string. This suggestion uses its declaration, independently of checking its body. Write:\n\n    string $id = $this->getId($item);"
+        }
+    ],
+    "summary": {
+        "errors": 2,
+        "warnings": 0,
+        "notes": 0
+    }
+}

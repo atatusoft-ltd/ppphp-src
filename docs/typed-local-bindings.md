@@ -134,7 +134,7 @@ Files without activated syntax are emitted byte-identically. Typed loop declarat
 Typed-local diagnostics use:
 
 ~~~text
-P2002  Assignment Cannot Declare Variable
+P2002  Missing Local Variable Type
 P2003  Local Variable Is Not Declared
 P2004  Duplicate Local Declaration
 P2005  Readonly Local Cannot Be Reassigned
@@ -152,3 +152,32 @@ Composite local diagnostics use P2030–P2032. Generic and typed-array diagnosti
 ## Bindings Inside `when`
 
 A `when` may initialize a typed local or supply an assignment value. Each branch creates a child analysis scope that imports visible outer bindings. Its declarations are available later in that branch and nested scopes, but not in siblings or after the expression. Sibling branches may reuse a local name; a branch may not shadow a visible outer local. Assignments to mutable outer bindings retain their fixed-type checks, while writes, references, unsets, or structural mutations through readonly outer storage remain invalid. Generated result temporaries are compiler-owned and do not alter the user binding model.
+
+## Missing-Type Assistance And Recovery
+
+`P2002` identifies the local token and explains that its explicit type is missing.
+For a standalone assignment, a resolved initializer or callable return contract
+can supply a source-valid declaration example. Callable evidence comes from its
+declaration even when its body has an independent error. Suggestions retain
+imports, visible type parameters, nullable/composite types and native typed-array
+syntax (`array<T>`, not PHPDoc `list<T>`). The correction inserts only the type
+prefix; keep the initializer, comments, indentation and line endings unchanged.
+
+Unknown or broad initializers do not receive an invented type or a universal
+`mixed` recommendation. Later writes cause the compiler to ask for a type that
+also accepts those values. An assignment nested in another expression requires
+a separate declaration; the compiler does not suggest invalid inline syntax.
+
+A rejected declaration establishes only scoped diagnostic recovery, with an
+unknown type and its own rejection identity. It is never a valid `LocalBinding`.
+The initializer is visited first, preserving self-reference and undeclared
+initializer diagnostics. Subsequent reads of that recovery symbol do not repeat
+`P2003`; earlier reads, unrelated locals, other callable scopes, invalid calls,
+readonly violations and independent type errors remain visible. `P2002` still
+blocks analysis preparation and production output. A real later declaration can
+replace the recovery state, and its normal storage checks apply.
+
+Recovery also respects optional control flow: a rejected declaration inside a
+loop, conditional expression or try/catch path cannot hide an undeclared read
+on a path that bypasses that attempt. Real declarations retain their existing
+binding and initialization rules.

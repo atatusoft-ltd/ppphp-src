@@ -71,7 +71,7 @@ Existing descriptions, attributes, and unrelated PHPDoc tags remain intact. Matc
 ~~~text
 P4002  Error Type Is Not Throwable
 P4003  Checked Error Is Not Handled
-P4004  Checked Error Declaration Is Not Covariant
+P4004  Exception Not Permitted By Inherited Contract
 P4005  Unchecked Call Boundary
 P4006  Native Throws Clause Is Required
 P4007  Throws Documentation Conflicts With Native Clause
@@ -88,3 +88,20 @@ Diagnostics use original source paths and spans. Backend checked-exception findi
 ## Errors In `when`
 
 Calls and throws in every condition, branch statement, branch result, nested `when`, catch, and finally block contribute to the enclosing executable error flow. Catch clauses remove matching errors normally. A throwing branch has result type `never` and does not widen the value union. A `finally` result may supersede a pending branch result or exception, while a finally throw supersedes both. Lowering introduces no callable boundary and no exception solely for compiler control flow, so the native checked-error contract and emitted `@throws` metadata remain intact.
+
+## Inherited Contract Guidance
+
+`P4004` names both matching methods, the additional checked exception, and the
+inherited method's permitted checked set (including an explicitly empty set).
+Original-source frames show the implementation and each rejecting interface or
+parent declaration. A different method's `throws` clause cannot authorize this
+method. Allowed narrower contracts retain their existing behavior.
+
+For project-owned declarations, help explains the API-changing option of adding
+the exception to the matching public contract and the implementation-side option
+of handling it before it escapes. Ordinary PHP contracts use `@throws` metadata.
+All applicable inherited contracts must permit an escaping exception; changing
+one of several rejecting interfaces is not necessarily enough. Dependency-owned
+contracts receive implementation-side guidance, without a vendor-edit quick fix.
+Deleting `throws` alone leaves an escaping-error diagnostic. The compiler never
+automatically broadens an interface or changes which throwable hierarchy is checked.

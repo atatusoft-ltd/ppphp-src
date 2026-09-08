@@ -1,0 +1,10 @@
+<?php
+
+namespace Atatusoft\Showcase\Contracts;
+
+interface Repository<T>
+{
+    public function findById(string $id): ?T;
+
+    public function create(T $item): void;
+}

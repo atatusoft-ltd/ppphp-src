@@ -803,7 +803,7 @@
                         "start": 187,
                         "end": 194
                     },
-                    "identity": null
+                    "identity": "childservice::run:parentservice:failure"
                 }
             ],
             "fullDiagnostics": [
@@ -814,7 +814,7 @@
                         "start": 187,
                         "end": 194
                     },
-                    "identity": null
+                    "identity": "childservice::run:parentservice:failure"
                 }
             ],
             "requiredCompilerDiagnostics": [
@@ -825,7 +825,7 @@
                         "start": 187,
                         "end": 194
                     },
-                    "identity": null
+                    "identity": "childservice::run:parentservice:failure"
                 }
             ],
             "requiredFullDiagnostics": [
@@ -836,7 +836,7 @@
                         "start": 187,
                         "end": 194
                     },
-                    "identity": null
+                    "identity": "childservice::run:parentservice:failure"
                 }
             ],
             "supplementalFullDiagnostics": [],
@@ -931,7 +931,7 @@
                         "start": 33,
                         "end": 39
                     },
-                    "identity": null
+                    "identity": "missing-local-type:33"
                 }
             ],
             "fullDiagnostics": [
@@ -942,7 +942,7 @@
                         "start": 33,
                         "end": 39
                     },
-                    "identity": null
+                    "identity": "missing-local-type:33"
                 }
             ],
             "requiredCompilerDiagnostics": [
@@ -953,7 +953,7 @@
                         "start": 33,
                         "end": 39
                     },
-                    "identity": null
+                    "identity": "missing-local-type:33"
                 }
             ],
             "requiredFullDiagnostics": [
@@ -964,7 +964,7 @@
                         "start": 33,
                         "end": 39
                     },
-                    "identity": null
+                    "identity": "missing-local-type:33"
                 }
             ],
             "supplementalFullDiagnostics": [],

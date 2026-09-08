@@ -769,14 +769,65 @@ final class CheckErrorEffectsPass implements SemanticPass
             );
 
             foreach ($incompatible as $childError) {
-                $this->addDiagnostic(
+                $implementation = $this->renderMethodName($class->fullyQualifiedName, $method->name);
+                $parent = $this->renderMethodName($inherited->owner, $inherited->name);
+                // Disambiguate equal short class names across namespaces.
+                if ($implementation === $parent) {
+                    $implementation = $class->fullyQualifiedName . '::' . $method->name . '()';
+                    $parent = $inherited->owner . '::' . $inherited->name . '()';
+                }
+                $permitted = [];
+                foreach ($inherited->errorContract->filterCheckedErrors($this->hierarchy) as $error) {
+                    $permitted[] = '\\' . $error->canonicalType;
+                }
+                $permission = $permitted === [] ? 'does not declare any checked exceptions'
+                    : 'permits only ' . implode(', ', $permitted) . ' and their subclasses';
+                $exception = '\\' . $childError->canonicalType;
+                $origin = $inherited->declarationSpan->sourceFile->declarationOrigin;
+                $editable = in_array($origin, [
+                    \Atatusoft\Ppphp\Analysis\Declaration\DeclarationOrigin::ProjectPpphp,
+                    \Atatusoft\Ppphp\Analysis\Declaration\DeclarationOrigin::ProjectPhp,
+                ], true);
+                $help = sprintf('Handle %s inside %s so it does not escape. Removing the throws declaration alone does not handle an escaping exception.', $exception, $implementation);
+                if ($editable) {
+                    $syntax = $origin === \Atatusoft\Ppphp\Analysis\Declaration\DeclarationOrigin::ProjectPpphp
+                        ? 'throws ' . $exception : '@throws ' . $exception;
+                    $help = sprintf('If this exception belongs to the public contract, add `%s` to %s%s. This changes the public API; callers must handle or declare the exception. Every other inherited contract must also permit it.',
+                        $syntax, $parent, $origin === \Atatusoft\Ppphp\Analysis\Declaration\DeclarationOrigin::ProjectPhp ? "'s PHPDoc" : '')
+                        . "\n\nOtherwise, " . lcfirst($help);
+                } else {
+                    $help .= sprintf(' %s is dependency-owned; changing that boundary requires a dependency API change, not a local vendor edit.', $parent);
+                }
+                $this->context->model->diagnostics->add(new Diagnostic(
                     DiagnosticCode::CheckedErrorDeclarationNotCovariant,
-                    sprintf('%s is not permitted by the inherited %s::%s() contract.', $childError->canonicalType, $inherited->owner, $inherited->name),
-                    $childError->span,
-                    [new DiagnosticLabel($inherited->declarationSpan, 'The inherited contract is declared here.')],
-                );
+                    sprintf('%s declares %s, but %s %s.', $implementation, $exception, $parent, $permission),
+                    new DiagnosticLabel($childError->span, sprintf('%s is not permitted by %s.', $exception, $parent)),
+                    [
+                        new DiagnosticLabel($this->createContractSpan($inherited), sprintf('%s %s.', $parent, $permission)),
+                        new DiagnosticLabel($this->createContractSpan($method), sprintf('%s declares the additional exception here.', $implementation)),
+                    ],
+                    $help,
+                    identity: strtolower($class->fullyQualifiedName . '::' . $method->name . ':' . $inherited->owner . ':' . $childError->canonicalType),
+                ));
             }
         }
+    }
+
+    private function createContractSpan(MethodSymbol $method): Span
+    {
+        $clause = $method->errorContract->nativeClause;
+        if ($clause !== null) {
+            return $method->declarationSpan->sourceFile->createSpan(
+                $method->declarationSpan->start->offset, $clause->span->end->offset,
+            );
+        }
+        return $method->hasBody ? $method->selectionSpan : $method->declarationSpan;
+    }
+
+    private function renderMethodName(string $owner, string $method): string
+    {
+        $parts = explode('\\', $owner);
+        return end($parts) . '::' . $method . '()';
     }
 
     /** @return list<MethodSymbol> */
@@ -844,7 +895,11 @@ final class CheckErrorEffectsPass implements SemanticPass
                 );
             }
 
-            $this->addDiagnostic($code, $message, $error->span, $related);
+            $help = sprintf('Catch \\%s around this operation so it cannot escape.', $error->canonicalType);
+            if ($code === DiagnosticCode::CheckedErrorNotHandled) {
+                $help .= sprintf(' If propagation is part of this callable\'s contract, add `throws \\%s` to its declaration and handle the exception at its callers.', $error->canonicalType);
+            }
+            $this->addDiagnostic($code, $message, $error->span, $related, $help);
         }
     }
 
@@ -1079,15 +1134,16 @@ final class CheckErrorEffectsPass implements SemanticPass
         string $message,
         Span $span,
         array $related = [],
+        ?string $help = null,
     ): void {
         $this->context->model->diagnostics->add(new Diagnostic(
             $code,
             $message,
             new DiagnosticLabel($span, $message),
             $related,
-            $code === DiagnosticCode::CheckedErrorNotHandled
+            $help ?? ($code === DiagnosticCode::CheckedErrorNotHandled
                 ? 'Catch the checked error or add it to the enclosing callable throws clause.'
-                : null,
+                : null),
         ));
     }
 

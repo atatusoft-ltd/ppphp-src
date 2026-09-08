@@ -167,7 +167,7 @@
                 "label": "Primary label."
             },
             "related": [],
-            "help": "Correct the highlighted declaration or expression so it satisfies the stated type contract."
+            "help": "Declare and initialize this local with an explicit type before the read, or correct its name if you intended an existing variable."
         },
         {
             "code": "P5002",

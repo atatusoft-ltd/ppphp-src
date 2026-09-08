@@ -82,7 +82,7 @@ Representative P2003 diagnostic.
   | ^^^^
 5 |
 
-Help: Correct the highlighted declaration or expression so it satisfies the stated type contract.
+Help: Declare and initialize this local with an explicit type before the read, or correct its name if you intended an existing variable.
 
 Error[P5002]: When Branch Does Not Produce A Value
 

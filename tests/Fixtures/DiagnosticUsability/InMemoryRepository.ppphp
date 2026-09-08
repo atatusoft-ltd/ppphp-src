@@ -1,0 +1,55 @@
+<?php
+
+namespace Atatusoft\Showcase\Infrastructure;
+
+use Atatusoft\Showcase\Contracts\Repository;
+
+final class InMemoryRepository<T> implements Repository<T>
+{
+    public function __construct(
+        private array<string, T> $items = [],
+    ) {
+    }
+
+    public function findById(string $id): ?T
+    {
+        return $this->items[$id] ?? null;
+    }
+
+    public function create(T $item): void
+        throws \InvalidArgumentException
+    {
+        $id = $this->getId($item);
+
+        if (isset($this->items[$id])) {
+            $this->items[$id] = $item;
+        }
+    }
+
+    private function getId(T $item): string
+        throws \InvalidArgumentException
+    {
+        if (!is_object($item)) {
+            throw new \InvalidArgumentException(
+                'Item must be an object with an id property.',
+            );
+        }
+
+        mixed $id = match (true) {
+            property_exists($item, 'id') => $item->id,
+            property_exists($item, 'sku') => $item->sku,
+            property_exists($item, 'name') => $item->name,
+            default => throw new \InvalidArgumentException(
+                'Item does not have a valid id property.',
+            ),
+        };
+
+        if (!is_string($id)) {
+            throw new \InvalidArgumentException(
+                'Item id property must be a string.',
+            );
+        }
+
+        return $id;
+    }
+}

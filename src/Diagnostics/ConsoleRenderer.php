@@ -52,7 +52,7 @@ final readonly class ConsoleRenderer
             $lines[] = $this->style('Help:', '32;1', $options) . ' ' . array_shift($help);
 
             foreach ($help as $helpLine) {
-                $lines[] = '      ' . $helpLine;
+                $lines[] = $helpLine === '' ? '' : '      ' . $helpLine;
             }
         }
 

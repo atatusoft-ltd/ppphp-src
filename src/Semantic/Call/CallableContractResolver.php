@@ -48,17 +48,16 @@ final readonly class CallableContractResolver
             );
             $namespaced = $namespace === '' ? $rawName : $namespace . '\\' . $rawName;
             $imported = strcasecmp($resolvedName, $rawName) === 0 ? null : $resolvedName;
-            $symbol = ($imported === null ? null : $this->context->symbols->findFunction($imported))
-                ?? $this->context->symbols->findFunction($namespaced)
-                ?? $this->context->symbols->findFunction($rawName);
+            $symbol = $imported !== null
+                ? $this->context->symbols->findFunction($imported)
+                : ($this->context->symbols->findFunction($namespaced)
+                    ?? $this->context->symbols->findFunction($rawName));
             $lexicalName = $imported ?? $namespaced;
         } else {
             $symbol = $this->context->symbols->findFunction($resolvedName);
         }
 
-        $intrinsic = $name->isUnqualified() || $name->isFullyQualified()
-            ? $this->intrinsics->find($name->toString())
-            : null;
+        $intrinsic = $this->intrinsics->find($symbol->fullyQualifiedName ?? $resolvedName);
 
         if ($symbol !== null) {
             if ($symbol->sourceFile->declarationOrigin === DeclarationOrigin::PhpPlatform
