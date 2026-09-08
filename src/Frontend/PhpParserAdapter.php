@@ -10,7 +10,6 @@ use Atatusoft\Ppphp\Frontend\Ast\ExtensionSyntaxIndex;
 use Atatusoft\Ppphp\Frontend\Enumerations\ParseMode;
 use Atatusoft\Ppphp\Frontend\Normalization\NormalizationPlan;
 use Atatusoft\Ppphp\Frontend\Normalization\NormalizedSource;
-use Atatusoft\Ppphp\Frontend\Token\Lexer;
 use Atatusoft\Ppphp\Frontend\Token\TokenStream;
 use Atatusoft\Ppphp\Source\SourceFile;
 use PhpParser\ErrorHandler\Collecting;
@@ -22,6 +21,8 @@ final readonly class PhpParserAdapter
 {
     private NativeParser $parser;
 
+    private PhpVersion $phpVersion;
+
     public function __construct(
         string $targetPhpVersion = PhpTarget::DEFAULT,
         private PhpParserDiagnosticMapper $diagnosticMapper = new PhpParserDiagnosticMapper(),
@@ -30,7 +31,8 @@ final readonly class PhpParserAdapter
             throw new \InvalidArgumentException('The ordinary PHP frontend does not support the selected project target.');
         }
 
-        $this->parser = (new ParserFactory())->createForVersion(PhpVersion::fromString($targetPhpVersion));
+        $this->phpVersion = PhpVersion::fromString($targetPhpVersion);
+        $this->parser = (new ParserFactory())->createForVersion($this->phpVersion);
     }
 
     public function parse(
@@ -41,7 +43,7 @@ final readonly class PhpParserAdapter
         ?NormalizationPlan $normalizationPlan = null,
         ?NormalizedSource $normalizedSource = null,
     ): ParseResult {
-        $tokens ??= (new Lexer())->tokenize($sourceFile);
+        $tokens ??= new TokenStream($sourceFile);
         $extensionSyntax ??= ExtensionSyntaxIndex::createEmpty();
         $normalizationPlan ??= new NormalizationPlan($sourceFile);
         $normalizedSource ??= $normalizationPlan->normalize();
@@ -55,7 +57,6 @@ final readonly class PhpParserAdapter
             $errorHandler->handleError($error);
         }
 
-        $phpTokens = array_values($this->parser->getTokens());
         foreach ($errorHandler->getErrors() as $index => $error) {
             $missingSemicolon = $index === 0 && PhpSyntaxMessage::checkMissingSemicolon($error, $normalizedSource->contents, $this->parser);
             $diagnostics->add($this->diagnosticMapper->map($error, $sourceFile, $normalizedSource->sourceMap, $missingSemicolon));
@@ -72,7 +73,7 @@ final readonly class PhpParserAdapter
                 $normalizedSource,
                 $normalizedSource->sourceMap,
                 array_values($statements),
-                $phpTokens,
+                $this->phpVersion,
             );
 
         return new ParseResult($parsedFile, $diagnostics);

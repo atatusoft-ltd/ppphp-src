@@ -4,6 +4,10 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 
 ## Unreleased
 
+### Fixed
+
+- Reduced memory use when checking and building Composer projects by deferring unused token streams and releasing dependency implementation bodies after discovery. Small mixed projects are regression-tested with a `128M` PHP memory limit, including uncached builds.
+
 ## 2026.3.1-rc-2
 
 ### Added

@@ -32,6 +32,22 @@ configuration and discovery
 
 ## Project Loading And Selection
 
+Ordinary-PHP token streams are materialized only when an editor or output
+consumer requests them; declaration analysis retains syntax trees without a
+second set of tokens and per-token locations. Native parser tokens are likewise
+reconstructed on demand using the original parser target. Composer discovery
+still examines complete dependency sources for references, includes, guards and
+aliases before releasing named function and method implementation bodies.
+Declaration signatures, defaults, PHPDoc, property hooks and source coordinates
+are preserved. Project source trees are not pruned, and PHPStan still reads the
+original dependency sources. Temporary bootstrap symbols are released after final
+declaration contracts have been constructed.
+
+The supplemental analyzer receives the compiler process's configured PHP memory
+limit rather than a hard-coded larger allowance. A cached successful check does
+not stand in for the semantic model needed by a cold build; memory regressions
+exercise both cold and warm commands.
+
 ProjectConfigLoader reads ppphp.json from an explicit project root and validates normalized paths, source ownership, exclusions, and compiler-owned output and cache boundaries.
 
 FileDiscovery recursively indexes case-insensitive .php and .ppphp files beneath configured source roots. It applies exclusions before selection, avoids directory-symlink traversal, rejects escaping file symlinks, deduplicates physical files, and assigns overlapping roots to the most-specific owner deterministically.

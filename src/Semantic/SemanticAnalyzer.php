@@ -98,6 +98,8 @@ final readonly class SemanticAnalyzer
             array_fill_keys(array_keys($parseResult->parsedFiles), true),
         );
         $this->declareSymbols->execute($projectContext, $preliminaryGenerics);
+        // The bootstrap symbol graph is no longer needed once final contracts exist.
+        unset($preliminaryContext, $preliminarySymbols, $preliminaryGenerics);
         $genericDeclarations = (new GenericDeclarationIndexer())->build($projectParseResult, $symbols);
         $this->errorResolver->prepare($projectContext);
         foreach ($parseResult->parsedFiles as $parsedFile) {

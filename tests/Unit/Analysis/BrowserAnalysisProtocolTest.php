@@ -57,7 +57,7 @@ PHP);
         ->and($prepared->diagnostics['summary'])->toBe(['errors' => 0, 'warnings' => 0, 'notes' => 0])
         ->and($continuation)->not->toBeNull()
         ->and($prepared->phpStanCommand[0] ?? null)->toBe('php')
-        ->and($prepared->phpStanCommand)->toContain('--error-format=json', '--no-progress', '--memory-limit=1G', '--debug')
+        ->and($prepared->phpStanCommand)->toContain('--error-format=json', '--no-progress', '--memory-limit=' . ini_get('memory_limit'), '--debug')
         ->and($prepared->phpStanWorkingDirectory)->toBe($projectRoot . '/.ppphp-cache/analysis')
         ->and($prepared->phpStanResultPath)->toBe($projectRoot . '/.ppphp-cache/analysis/result.json')
         ->and($continuation?->compiler)->toBe([

@@ -60,7 +60,7 @@ final readonly class PhpStanAnalysisPlanBuilder
             '--configuration=' . $configuration,
             '--error-format=json',
             '--no-progress',
-            '--memory-limit=1G',
+            '--memory-limit=' . ini_get('memory_limit'),
         ];
 
         if ($debug) {

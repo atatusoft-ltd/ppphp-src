@@ -4,11 +4,29 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Frontend\Token;
 
+use Atatusoft\Ppphp\Source\SourceFile;
+
 /** @implements \IteratorAggregate<int, Token> */
-final readonly class TokenStream implements \Countable, \IteratorAggregate
+final class TokenStream implements \Countable, \IteratorAggregate
 {
-    /** @param list<Token> $tokens */
-    public function __construct(public array $tokens) {}
+    /** @var list<Token>|null */
+    private ?array $materializedTokens = null;
+
+    /** @var list<Token>|SourceFile */
+    private readonly array|SourceFile $tokensSource;
+
+    /** @param list<Token>|SourceFile $tokens */
+    public function __construct(array|SourceFile $tokens)
+    {
+        $this->tokensSource = $tokens;
+    }
+
+    /** @var list<Token> */
+    public array $tokens {
+        get => is_array($this->tokensSource)
+            ? $this->tokensSource
+            : ($this->materializedTokens ??= (new Lexer())->tokenize($this->tokensSource)->tokens);
+    }
 
     public function count(): int
     {
