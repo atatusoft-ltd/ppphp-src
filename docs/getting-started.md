@@ -14,7 +14,7 @@ Create a project and request the Stable package. For a Release Candidate or Deve
 mkdir hello-ppphp
 cd hello-ppphp
 composer init --name=example/hello-ppphp --no-interaction
-composer require --dev atatusoft-ltd/ppphp-src
+composer require --dev atatusoft/ppphp
 vendor/bin/ppphp init
 ```
 

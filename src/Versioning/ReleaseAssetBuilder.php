@@ -49,7 +49,7 @@ final readonly class ReleaseAssetBuilder
             'channel' => $metadata->channel->value,
             'compiler' => Compiler::NAME,
             'compilerBuildIdentity' => (new CompilerBuildIdentity($this->root))->calculate(),
-            'composerPackage' => 'atatusoft-ltd/ppphp-src',
+            'composerPackage' => Compiler::COMPOSER_PACKAGE,
             'formatVersion' => 1,
             'hostPhp' => '^8.4',
             'prerelease' => $metadata->prerelease,

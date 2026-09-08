@@ -25,7 +25,7 @@ php build/ppphp/console.php
 Once a public package release is available, an application can install the compiler as a development dependency:
 
 ```bash
-composer require --dev atatusoft-ltd/ppphp-src
+composer require --dev atatusoft/ppphp
 vendor/bin/ppphp init
 vendor/bin/ppphp composer:configure
 vendor/bin/ppphp check

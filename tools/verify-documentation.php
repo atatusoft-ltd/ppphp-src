@@ -112,7 +112,7 @@ $decision = $documents[Path::join($root, 'docs/decisions/0004-mvp-native-analysi
 
 $expectations = [
     [str_contains($readme, 'https://ppphplang.org'), 'README does not link to the canonical website'],
-    [str_contains($readme, 'atatusoft-ltd/ppphp-src'), 'README does not state the Composer package'],
+    [str_contains($readme, 'composer require --dev ' . Compiler::COMPOSER_PACKAGE), 'README does not state the Composer installation command'],
     [str_contains($readme, '.ppphp'), 'README does not state the canonical source extension'],
     [str_contains($readme, 'supplemental PHPStan analysis'), 'README does not disclose supplemental PHPStan analysis'],
     [str_contains($changelog, '## Unreleased') && str_contains($changelog, '### Known limitations'), 'changelog does not retain release-oriented sections'],

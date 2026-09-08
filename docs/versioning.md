@@ -77,7 +77,7 @@ Stable is the default Composer acquisition channel. The ordinary command request
 a Stable version without falling back to prereleases:
 
 ```bash
-composer require --dev atatusoft-ltd/ppphp-src
+composer require --dev atatusoft/ppphp
 ```
 
 `dev-2026.3.1` is an immutable ++PHP Development-channel release identity,

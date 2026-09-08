@@ -23,7 +23,9 @@ test('the canonical project identity is complete', function (): void {
     $application = new Application();
     $retiredNamespace = implode('', ['Ama', 'siye', '\\', 'Ppphp']);
 
-    expect($composer['name'])->toBe('atatusoft-ltd/ppphp-src')
+    expect($composer['name'])->toBe('atatusoft/ppphp')->toBe(Compiler::COMPOSER_PACKAGE)
+        ->and($composer['replace'])->toBe(['atatusoft-ltd/ppphp-src' => 'self.version'])
+        ->and($composer['support']['source'])->toBe('https://github.com/atatusoft-ltd/ppphp-src')
         ->and($composer['autoload']['psr-4'])->toBe(['Atatusoft\\Ppphp\\' => 'src/'])
         ->and($composer['bin'])->toBe(['bin/ppphp'])
         ->and(class_exists(PpphpParser::class))->toBeTrue()

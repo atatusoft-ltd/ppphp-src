@@ -88,7 +88,7 @@ Generated code targets PHP 8.4.
 For Stable package resolution, use:
 
 ~~~bash
-composer require --dev atatusoft-ltd/ppphp-src
+composer require --dev atatusoft/ppphp
 ~~~
 
 This selects Stable only and does not fall back to a prerelease if none is available. To evaluate a Release Candidate or Development release, choose an exact version from its release instructions. From a repository checkout, install locked dependencies and run the compiler directly:
@@ -98,7 +98,7 @@ composer install
 php bin/ppphp --help
 ~~~
 
-The Composer package is `atatusoft-ltd/ppphp-src`; its command is `ppphp`.
+The Composer package is `atatusoft/ppphp`; its command is `ppphp`.
 
 ## Quick Start
 

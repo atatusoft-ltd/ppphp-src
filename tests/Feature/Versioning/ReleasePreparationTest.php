@@ -29,10 +29,13 @@ test('offline preparation and documentation work across channels without release
     $output = $this->createTemporaryDirectory() . '/assets';
     (new ReleaseAssetBuilder($root, $identity))->build($output, $commit);
     (new ReleaseAssetVerifier($root, $identity))->verify($output, $commit);
+    $manifest = json_decode((string) file_get_contents($output . '/ppphp-release.json'), true, flags: JSON_THROW_ON_ERROR);
+    expect($manifest['composerPackage'])->toBe('atatusoft/ppphp')
+        ->and($manifest['repository'])->toBe('atatusoft-ltd/ppphp-src');
     $rendered = (string) file_get_contents($output . '/RELEASE_NOTES.md');
     expect($rendered)->toBe((new ReleaseNotesRenderer())->render(
         (string) file_get_contents($root . '/' . $metadata->releaseNotes), $metadata,
-    ))->toContain('atatusoft-ltd/ppphp-src:' . $identity, '/blob/' . $identity . '/SECURITY.md');
+    ))->toContain('atatusoft/ppphp:' . $identity, '/blob/' . $identity . '/SECURITY.md');
     expect((new Process(['git', 'for-each-ref'], $root))->mustRun()->getOutput())->toBe($refsBefore)->toBe('');
 })->with(['2031.4.7-rc-3', '2031.4.7', 'dev-2031.4.7']);
 

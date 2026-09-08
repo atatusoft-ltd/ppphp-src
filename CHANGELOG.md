@@ -12,6 +12,7 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 
 ### Changed
 
+- Composer installation uses `atatusoft/ppphp` from RC-2 onward. Existing users should follow the [package migration instructions](docs/releases/2026.3.1-rc-2.md#upgrade-notes); the CLI and PHP namespace are unchanged.
 - A private property that is assigned but never read now reports non-blocking warning `P2046`; the signal remains visible without treating incomplete or obsolete stored state as a correctness failure.
 
 ### Fixed

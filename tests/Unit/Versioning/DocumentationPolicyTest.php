@@ -66,7 +66,7 @@ test('the public README is durable without current-release bookkeeping', functio
             'https://ppphplang.org',
             'atatusoft-ltd/ppphp-src',
             '.ppphp',
-            'composer require --dev atatusoft-ltd/ppphp-src',
+            'composer require --dev atatusoft/ppphp',
             'docs/releases/README.md',
         )
         ->and($readme)->not->toContain('not yet publicly available', 'After publication', Atatusoft\Ppphp\Compiler\Compiler::VERSION);
