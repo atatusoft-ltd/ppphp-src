@@ -72,6 +72,8 @@ Run `composer verify:benchmark-harness` for the bounded small-fixture structural
 derived metadata between requests. It does not reuse old diagnostic results or
 project semantic models. Project files, configuration, dependencies, and overlays
 are reloaded for each request; platform resource hashes are checked before reuse.
+The worker also rechecks compiler build identity before analysis and retires if
+its installation has changed, including same-version compiler source changes.
 See [the worker contract](editor-protocol.md#retained-worker-transport) for
 cancellation, recycling, and single-shot fallback requirements.
 
@@ -92,14 +94,14 @@ On the development Mac mini with PHP 8.5.6, the ten-file showcase measured:
 
 | Transition | Median ms | p95 ms |
 | --- | ---: | ---: |
-| Syntax error, 20 samples | 18.6 | 21.1 |
-| Repaired buffer, 20 samples | 142.2 | 147.7 |
+| Syntax error, 20 samples | 46.5 | 51.4 |
+| Repaired buffer, 20 samples | 174.7 | 186.4 |
 
-Worker startup took 117.9 ms and the first valid analysis took a further 739.3 ms
+Worker startup took 139.2 ms and the first valid analysis took a further 784.5 ms
 (one cold sample). These measurements are not a universal 200 ms guarantee: larger
 projects, cold starts, recycling, editor scheduling, and machine load add costs.
 An additional five-cycle run on the same machine using the supported PHP 8.4 host
-measured repaired buffers at 199.8 ms median / 215.2 ms p95, with a 1,163.8 ms first
+measured repaired buffers at 218.4 ms median / 226.8 ms p95, with a 1,117.2 ms first
 analysis, further illustrating host-dependent costs.
 Integrations must measure actual valid → error → repaired editor transitions before
 claiming end-to-end latency. There is no CI wall-clock timing threshold.

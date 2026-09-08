@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Editor;
 
+use Atatusoft\Ppphp\Cache\CompilerBuildIdentity;
 use Atatusoft\Ppphp\Compiler\Compiler;
 
 /** Serial, bounded transport; diagnostic semantics remain in the single-shot handler. */
@@ -27,13 +28,17 @@ final readonly class EditorDiagnosticsServer
      * @param resource $input
      * @param resource $output
      * @param callable(string): string $diagnose Returns the existing single-shot JSON response.
+     * @param (callable(): string)|null $readInstallationIdentity Reads current on-disk identity without memoization.
      */
-    public function run($input, $output, callable $diagnose): int
+    public function run($input, $output, callable $diagnose, ?callable $readInstallationIdentity = null): int
     {
+        $readInstallationIdentity ??= static fn (): string => (new CompilerBuildIdentity())->calculate();
+        $installationIdentity = $readInstallationIdentity();
         $this->write($output, [
             'version' => self::VERSION,
             'type' => 'ready',
             'compilerVersion' => Compiler::VERSION,
+            'compilerBuildIdentity' => $installationIdentity,
             'capabilities' => [
                 'diagnosticsVersion' => EditorDiagnosticsRequest::VERSION,
                 'maxInFlight' => 1,
@@ -78,6 +83,19 @@ final readonly class EditorDiagnosticsServer
                         ? 'Worker frames must contain valid UTF-8 JSON.' : $error->getMessage()], 'recycle' => true]);
 
                 return 2;
+            }
+
+            clearstatcache(true);
+            try {
+                $installationChanged = $readInstallationIdentity() !== $installationIdentity;
+            } catch (\Throwable) {
+                $installationChanged = true;
+            }
+            if ($installationChanged) {
+                $this->write($output, ['version' => self::VERSION, 'id' => $id,
+                    'error' => ['code' => 'installation-changed', 'message' => 'The compiler installation changed or became unavailable. Start a new worker.'], 'recycle' => true]);
+
+                return 0;
             }
 
             $json = $diagnose($request);

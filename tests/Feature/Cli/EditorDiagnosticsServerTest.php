@@ -34,6 +34,7 @@ test('retained diagnostics match fresh single-shot results across source and con
     try {
         $read(1);
         expect($frames[0]['type'])->toBe('ready');
+        expect($frames[0]['compilerBuildIdentity'])->toMatch('/^sha256:[a-f0-9]{64}$/');
         $cases = ['valid', 'native-edit', 'overlay-repair', 'missing-tag', 'config-error', 'restore',
             'delete-native', 'restore-native', 'rename-native', 'stub-add', 'stub-edit', 'stub-delete',
             'exclude-target', 'restore-config', 'vendor-add', 'vendor-edit', 'vendor-metadata-error', 'vendor-repair'];

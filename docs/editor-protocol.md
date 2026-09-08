@@ -16,7 +16,8 @@ Use one worker per project/configuration-path/compiler installation. Restart it
 when changing those launch settings or replacing the compiler installation.
 
 The worker immediately writes one UTF-8 JSON line with `version: 1`, `type: "ready"`,
-`compilerVersion`, and `capabilities`. Capabilities advertise `diagnosticsVersion: 1`,
+`compilerVersion`, `compilerBuildIdentity` (an opaque `sha256:` identity), and
+`capabilities`. Capabilities advertise `diagnosticsVersion: 1`,
 `maxInFlight: 1`, `cancellation: "client-discard"`, `maxFrameBytes: 16778240`,
 `maxResponseBytes: 4195328`, `maxRequests: 1000`, and `singleShotFallback: true`.
 Read and validate this handshake before sending requests. It means transport-ready,
@@ -52,6 +53,16 @@ an `error` envelope with `code: "invalid-frame"`, `recycle: true`, and exit 2.
 Unexpected transport failures may exit 70 without a response. No unbounded input
 queue or additional files, sockets, project bootstrap, or background child process
 is created by the compiler worker.
+
+Before each analysis the worker rechecks its compiler source, lockfile, and
+identity-bearing resources against `compilerBuildIdentity`. A same-version
+replacement or unavailable identity input produces an `error` envelope with
+`code: "installation-changed"`, `recycle: true`, and exit 0, without analysis.
+Retire that worker and retry the latest non-superseded snapshot on a fresh one;
+do not clear diagnostics. Identity failures before the handshake exit 70.
+Clients need not reproduce the compiler's fingerprint algorithm. Installation
+updates are not atomic analysis snapshots: clients must still restart on known
+installation-change events and avoid editing compiler files during a request.
 
 After 1,000 requests or when allocated memory reaches 256 MiB, the final normal
 response has `recycle: true` and the worker exits; start another before sending more.

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Atatusoft\Ppphp\Editor\EditorDiagnosticsServer;
 
-function runDiagnosticFrames(string $frames, int $maximumRequests = 1000, string $result = '{"diagnostics":[],"error":null}', int $memoryLimit = PHP_INT_MAX): array
+function runDiagnosticFrames(string $frames, int $maximumRequests = 1000, string $result = '{"diagnostics":[],"error":null}', int $memoryLimit = PHP_INT_MAX, ?Closure $readIdentity = null): array
 {
     $input = fopen('php://temp', 'w+');
     $output = fopen('php://temp', 'w+');
@@ -15,7 +15,7 @@ function runDiagnosticFrames(string $frames, int $maximumRequests = 1000, string
         static function (string $json) use (&$calls, $result): string {
             $calls[] = json_decode($json, true);
             return $result;
-        });
+        }, $readIdentity ?? static fn (): string => 'test-installation');
     rewind($output);
     $responses = array_map(static fn ($line) => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
         explode("\n", trim(stream_get_contents($output))));
@@ -36,6 +36,26 @@ test('worker advertises its serial cancellation contract and preserves ordered r
         ->and($responses[1])->toMatchArray(['id' => 1, 'result' => ['diagnostics' => [], 'error' => null], 'recycle' => false])
         ->and($responses[2])->toMatchArray(['id' => 2, 'result' => null, 'recycle' => true]);
 });
+
+test('worker retires before analysis when its same-version installation changes or disappears', function (bool $unavailable): void {
+    $reads = 0;
+    $readIdentity = static function () use (&$reads, $unavailable): string {
+        if (++$reads === 1) {
+            return 'original-installation';
+        }
+        if ($unavailable) {
+            throw new RuntimeException('Installation unreadable');
+        }
+        return 'replacement-installation';
+    };
+    [$exit, $responses, $calls] = runDiagnosticFrames(
+        "{\"version\":1,\"id\":1,\"method\":\"diagnostics\",\"params\":{}}\n", readIdentity: $readIdentity,
+    );
+    expect($exit)->toBe(0)->and($calls)->toBe([])
+        ->and($responses[0]['compilerBuildIdentity'])->toBe('original-installation')
+        ->and($responses[1]['error']['code'])->toBe('installation-changed')
+        ->and($responses[1]['recycle'])->toBeTrue();
+})->with([false, true]);
 
 test('worker rejects malformed ambiguous and oversized framing before diagnostics', function (string $frame): void {
     [$exit, $responses, $calls] = runDiagnosticFrames($frame);
