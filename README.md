@@ -85,10 +85,10 @@ Generated code targets PHP 8.4.
 
 ## Installation
 
-For Stable package resolution, use:
+The following command requires a published Stable release of `atatusoft/ppphp`. Check [available releases](https://github.com/atatusoft-ltd/ppphp-src/releases) first; for a prerelease, use its exact installation instructions instead. RC-1 uses the original package name recorded in its release notes.
 
 ~~~bash
-composer require --dev atatusoft-ltd/ppphp-src
+composer require --dev atatusoft/ppphp
 ~~~
 
 This selects Stable only and does not fall back to a prerelease if none is available. To evaluate a Release Candidate or Development release, choose an exact version from its release instructions. From a repository checkout, install locked dependencies and run the compiler directly:
@@ -98,7 +98,7 @@ composer install
 php bin/ppphp --help
 ~~~
 
-The Composer package is `atatusoft-ltd/ppphp-src`; its command is `ppphp`.
+The Composer package is `atatusoft/ppphp`; its command is `ppphp`.
 
 ## Quick Start
 

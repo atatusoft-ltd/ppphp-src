@@ -131,7 +131,7 @@ try {
         'repositories' => [[
             'options' => [
                 'symlink' => false,
-                'versions' => ['atatusoft-ltd/ppphp-src' => Compiler::VERSION],
+                'versions' => [Compiler::COMPOSER_PACKAGE => Compiler::VERSION],
             ],
             'type' => 'path',
             'url' => $package,
@@ -141,12 +141,12 @@ try {
     ];
     distributionWrite(Path::join($consumer, 'composer.json'), CanonicalJson::encode($consumerComposer));
     distributionRun(
-        ['composer', 'require', '--dev', 'atatusoft-ltd/ppphp-src:' . Compiler::VERSION, '--no-scripts', '--no-progress', '--no-ansi'],
+        ['composer', 'require', '--dev', Compiler::COMPOSER_PACKAGE . ':' . Compiler::VERSION, '--no-scripts', '--no-progress', '--no-ansi'],
         $consumer,
         $environment,
     );
 
-    $installedPackage = Path::join($consumer, 'vendor/atatusoft-ltd/ppphp-src');
+    $installedPackage = Path::join($consumer, 'vendor/' . Compiler::COMPOSER_PACKAGE);
     $installedRealPath = realpath($installedPackage);
 
     if (

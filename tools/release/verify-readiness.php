@@ -83,7 +83,7 @@ try {
     $composer = readinessJson(Path::join($root, 'composer.json'));
 
     if (
-        ($composer['name'] ?? null) !== 'atatusoft-ltd/ppphp-src'
+        ($composer['name'] ?? null) !== Compiler::COMPOSER_PACKAGE
         || ($composer['homepage'] ?? null) !== 'https://ppphplang.org'
         || ($composer['license'] ?? null) !== 'Apache-2.0'
         || ($composer['autoload']['psr-4'] ?? null) !== ['Atatusoft\\Ppphp\\' => 'src/']

@@ -12,7 +12,7 @@ test('the project configuration template contains valid JSON', function (): void
 
     expect($configuration)->toBeArray()
         ->and($configuration)->not->toHaveKey('$schema')
-        ->and($contents)->not->toContain('vendor/atatusoft-ltd/ppphp-src')
+        ->and($contents)->not->toContain('vendor/atatusoft/ppphp')
         ->and($configuration['source'])->toBe(['src'])
         ->and($configuration['targetPhpVersion'])->toBe('8.4');
 });

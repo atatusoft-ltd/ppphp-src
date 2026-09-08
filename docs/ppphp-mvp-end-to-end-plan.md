@@ -107,7 +107,7 @@ php bin/ppphp check
 php bin/ppphp build
 ```
 
-The equivalent `composer require --dev atatusoft-ltd/ppphp-src` installation
+The equivalent `composer require --dev atatusoft/ppphp` installation
 workflow begins with the public package release in Stage 14.
 
 The build output must:
@@ -1928,7 +1928,7 @@ Required documentation:
 - Versioned `ppphp.schema.json` release artifact
 ```
 
-The canonical product identity is ++PHP, with the `ppphp` compiler, `.ppphp` source extension, `Atatusoft\Ppphp` namespace, and `atatusoft-ltd/ppphp-src` Composer package.
+The canonical product identity is ++PHP, with the `ppphp` compiler, `.ppphp` source extension, `Atatusoft\Ppphp` namespace, and `atatusoft/ppphp` Composer package.
 
 ### Release And Acquisition Contract
 

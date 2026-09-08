@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Versioning;
 
+use Atatusoft\Ppphp\Compiler\Compiler;
+
 final readonly class ReleaseNotesRenderer
 {
     public function render(string $authoredNotes, ReleaseMetadata $metadata): string
@@ -22,8 +24,9 @@ final readonly class ReleaseNotesRenderer
         };
 
         return rtrim($authoredNotes) . sprintf(
-            "\n\n## Install This Release\n\nChannel: %s. Select this exact version explicitly:\n\n```bash\ncomposer require --dev atatusoft-ltd/ppphp-src:%s\n```\n\n## Documentation\n\n- [Getting Started](%s/docs/getting-started.md)\n- [Migrating From PHP](%s/docs/migrating-from-php.md)\n- [Security Policy](%s/SECURITY.md)\n- [Configuration Schema](%s)\n",
+            "\n\n## Install This Release\n\nChannel: %s. Select this exact version explicitly:\n\n```bash\ncomposer require --dev %s:%s\n```\n\n## Documentation\n\n- [Getting Started](%s/docs/getting-started.md)\n- [Migrating From PHP](%s/docs/migrating-from-php.md)\n- [Security Policy](%s/SECURITY.md)\n- [Configuration Schema](%s)\n",
             $channel,
+            Compiler::COMPOSER_PACKAGE,
             $metadata->version->canonical,
             $documentation,
             $documentation,

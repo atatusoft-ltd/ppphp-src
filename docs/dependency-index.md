@@ -21,6 +21,8 @@ Each package shard records package identity and ordered production autoload meta
 
 ## Generation and verification
 
+The format's producer `identity` remains `atatusoft-ltd/ppphp-src`, identifying the unchanged compiler repository. It is not the Composer installation name (`atatusoft/ppphp` from RC-2 onward); the rename does not change the declaration-compatibility contract or require regenerating an otherwise compatible index.
+
 Dependencies must already be installed. The builder does not invoke Composer, load target `vendor/autoload.php`, download packages, run plugins/scripts, or execute `autoload.files`:
 
 ```bash

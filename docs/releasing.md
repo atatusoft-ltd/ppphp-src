@@ -35,6 +35,14 @@ Preparation needs no release branch or tag, and never publishes. Ordinary featur
 9. Install the exact version from the public package index into a clean consumer project. Run `init`, Composer configuration and autoload regeneration, `check`, `build`, PHP lint, and generated code. Confirm the installed configuration's schema URL and bytes match the published artifact. Local path-package tests do not establish public availability.
 10. Delete the release branch when obsolete. Reconcile any release-only fixes through the normal development workflow; retaining the branch is not required for history.
 
+## Composer Package Migration
+
+RC-2 and later source uses `atatusoft/ppphp`, separately from the unchanged GitHub repository `atatusoft-ltd/ppphp-src`. `Compiler::COMPOSER_PACKAGE`, root Composer metadata, release assets, installation docs, and distribution verification must agree. The dependency index's producer identity remains stable repository provenance; a packaging rename must not invalidate its format.
+
+Before public acquisition, the owner must register `atatusoft/ppphp` on Packagist using the existing repository, confirm access to the protected `atatusoft` vendor, and verify its update hook and exact tagged version. A local path installation is not proof of registration or public availability. Do not publish RC-2 merely to complete the rename.
+
+Keep the published RC-1 tag, release assets, notes, and old package entry intact. Once the new package is publicly installable, mark the old Packagist entry abandoned with `atatusoft/ppphp` as its replacement; do not delete it or rewrite old tags. Existing root requirements and locks need an explicit migration, described in the RC-2 notes. The new package replaces only `self.version` of the old name, not every old or future version; this supports equivalent-version dependencies without claiming compatibility with arbitrary constraints.
+
 ## Historical Verification And Reconstruction
 
 Use a clean checkout of the immutable tag/source commit, install its locked dependencies, and use the tooling from that commit. The asset verifier checks release metadata, source identity, and all hashes. Reconstruction with `build-assets.php --commit=<recorded-commit>` requires no surviving release branch.

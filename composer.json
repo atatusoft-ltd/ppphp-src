@@ -1,6 +1,6 @@
 {
     "$schema": "https://raw.githubusercontent.com/composer/composer/main/res/composer-schema.json",
-    "name": "atatusoft-ltd/ppphp-src",
+    "name": "atatusoft/ppphp",
     "description": "++PHP is a superset of PHP that compiles to clean PHP output.",
     "homepage": "https://ppphplang.org",
     "keywords": [
@@ -61,6 +61,9 @@
         "symfony/console": "^8.1",
         "symfony/process": "^8.1",
         "phpstan/phpdoc-parser": "^2.3"
+    },
+    "replace": {
+        "atatusoft-ltd/ppphp-src": "self.version"
     },
     "require-dev": {
         "pestphp/pest": "^5.1"

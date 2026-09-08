@@ -89,7 +89,7 @@ test('active authored notes and rendered assets use metadata without publication
         ->and($notes)->not->toContain('After publication', 'Until then', 'has not yet been published', '## Major Features')
         ->and($rendered)->toBe($renderer->render($notes, $metadata))
         ->and($rendered)->toContain(
-            'composer require --dev atatusoft-ltd/ppphp-src:' . $metadata->version->canonical,
+            'composer require --dev atatusoft/ppphp:' . $metadata->version->canonical,
             '/blob/' . $metadata->tag . '/SECURITY.md',
             $metadata->schemaUrl,
         );

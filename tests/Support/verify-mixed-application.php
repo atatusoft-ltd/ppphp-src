@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Atatusoft\Ppphp\Compiler\Compiler;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
@@ -199,14 +200,17 @@ function verifyStageElevenComposerProjection(string $project): void
         ],
         'source Composer metadata was not preserved.',
     );
-    assertStageEleven(
-        !isset(($composer['require'] ?? [])['atatusoft-ltd/ppphp-src'])
-        && !isset(($composer['require-dev'] ?? [])['atatusoft-ltd/ppphp-src']),
-        'application runtime metadata depends on the ++PHP compiler.',
-    );
+    $compilerPackages = [Compiler::COMPOSER_PACKAGE, 'atatusoft-ltd/ppphp-src'];
+    foreach ($compilerPackages as $compilerPackage) {
+        assertStageEleven(
+            !isset(($composer['require'] ?? [])[$compilerPackage])
+            && !isset(($composer['require-dev'] ?? [])[$compilerPackage]),
+            'application runtime metadata depends on the ++PHP compiler.',
+        );
+    }
     foreach ([...($lock['packages'] ?? []), ...($lock['packages-dev'] ?? [])] as $package) {
         assertStageEleven(
-            !is_array($package) || ($package['name'] ?? null) !== 'atatusoft-ltd/ppphp-src',
+            !is_array($package) || !in_array($package['name'] ?? null, $compilerPackages, true),
             'application lock metadata contains the ++PHP compiler.',
         );
     }

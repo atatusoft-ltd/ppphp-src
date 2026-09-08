@@ -216,6 +216,7 @@ final readonly class DependencyDeclarationIndexWriter
         $compatibilityIdentity = DeclarationCompatibilityIdentity::calculate();
         $producer = [
             'buildIdentity' => $this->buildIdentity->calculate(),
+            // Stable repository provenance, independent of the Composer distribution name.
             'identity' => 'atatusoft-ltd/ppphp-src',
             'version' => Compiler::VERSION,
         ];

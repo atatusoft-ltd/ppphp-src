@@ -22,10 +22,10 @@ php build/ppphp/console.php
 
 ## Package Workflow After A Release Exists
 
-Once a public package release is available, an application can install the compiler as a development dependency:
+Once a Stable release of `atatusoft/ppphp` is publicly available, an application can use the following workflow. For a prerelease, substitute the exact installation command from its [published release instructions](https://github.com/atatusoft-ltd/ppphp-src/releases):
 
 ```bash
-composer require --dev atatusoft-ltd/ppphp-src
+composer require --dev atatusoft/ppphp
 vendor/bin/ppphp init
 vendor/bin/ppphp composer:configure
 vendor/bin/ppphp check
