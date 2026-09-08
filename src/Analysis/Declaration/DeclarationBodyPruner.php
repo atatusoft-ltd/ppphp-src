@@ -38,6 +38,23 @@ final readonly class DeclarationBodyPruner
                 return $copy;
             }
 
+            if ($statement instanceof Stmt\If_) {
+                $copy = clone $statement;
+                $copy->stmts = $this->pruneStatements(array_values($statement->stmts));
+                $copy->elseifs = array_map(function (Stmt\ElseIf_ $branch): Stmt\ElseIf_ {
+                    $pruned = clone $branch;
+                    $pruned->stmts = $this->pruneStatements(array_values($branch->stmts));
+
+                    return $pruned;
+                }, $statement->elseifs);
+                if ($statement->else !== null) {
+                    $copy->else = clone $statement->else;
+                    $copy->else->stmts = $this->pruneStatements(array_values($statement->else->stmts));
+                }
+
+                return $copy;
+            }
+
             return $statement;
         }, $statements);
     }

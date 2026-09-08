@@ -78,6 +78,37 @@ PHP);
         ->and($clock->sourceFile->contents)->toContain('new \Acme\Support\Value()');
 });
 
+test('guarded dependency bodies are released from original and conditional trees after discovery', function (): void {
+    $root = $this->createTemporaryDirectory();
+    foreach (portableComposerFixture() as $path => $contents) {
+        $this->writeFile($root . '/' . $path, $contents);
+    }
+    $this->writeFile($root . '/vendor/acme/contracts/functions.php', <<<'PHP'
+<?php
+if (!function_exists('acme_guarded')) {
+    function acme_guarded(): object { return new \Acme\Support\Value(); }
+}
+if (!class_exists('GuardedClock')) {
+    class GuardedClock {
+        public function value(): object { return new \Acme\Support\Value(); }
+    }
+}
+PHP);
+    $composer = (new ComposerResolver())->resolve($root)->project;
+    $result = (new ComposerDependencyDeclarationLoader())->load($composer, []);
+    expect($result->isSuccessful)->toBeTrue()
+        ->and($result->findParsedFile($root . '/vendor/acme/support/src/Value.php'))->not->toBeNull();
+    $conditional = 0;
+    foreach ($result->parsedFiles as $file) {
+        $conditional += $file->sourceFile->declarationOrigin === DeclarationOrigin::ConditionalComposerDependency ? 1 : 0;
+        $bodies = (new \PhpParser\NodeFinder())->find($file->statements, static fn ($node): bool =>
+            ($node instanceof \PhpParser\Node\Stmt\Function_ || $node instanceof \PhpParser\Node\Stmt\ClassMethod)
+            && $node->stmts !== null && $node->stmts !== []);
+        expect($bodies)->toBe([]);
+    }
+    expect($conditional)->toBeGreaterThan(0);
+});
+
 test('compiler-only analysis consumes dependency classes methods functions and constants', function (): void {
     $root = $this->createTemporaryDirectory();
     foreach (portableComposerFixture() as $path => $contents) {
