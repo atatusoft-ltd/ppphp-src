@@ -268,6 +268,11 @@ applicable. The browser sequence uses the actual production command except for a
 fixed, test-only invalid-emitter entrypoint under `tools/web-spike`. That seam
 injects invalid compiler emission through `ProductionEmitter`, retaining the same
 analysis, protocol and real PHP lint path. No public request flag enables it.
+The sequential B fixture reaches retained PHPStan before returning a type error.
+Acceptance requires replayed completions from both A and B after C, rejection
+without current-output authority, and preservation of C against an independent
+native Build reference. A fixture rejected before analysis cannot establish the
+stale-B completion requirement.
 
 ## Concrete BP-5 handoff
 

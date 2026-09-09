@@ -4,8 +4,8 @@
 > Date: 2026-09-06
 > Status: Implementation plan; delivery gates are NOT RUN until backed by recorded evidence.
 
-BP-3 is approved. Protocol 3 Check/Build is implemented for BP-4; final
-qualification is in progress. See the [implemented workflow](browser/bp4-workflow.md)
+BP-3 is approved. Protocol 3 Check/Build is implemented for BP-4 and its recorded
+native/Chrome qualification passed. See the [implemented workflow](browser/bp4-workflow.md)
 and [current evidence](browser/bp4-evidence.md). BP-5 through BP-9 remain unimplemented
 by this delivery; no production Run or website routes are enabled.
 > Product outcome: Enable the production playground and interactive Learn routes with complete browser-side Check, Build PHP and Run.
