@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { probes, assess, validCleanPhpStanResult } from '../src/baseline-probes.js';
 import { nativeProbe, launchChrome, createOutput, sha256, collectObservation } from './run-baseline.mjs';
 
@@ -35,7 +36,7 @@ test('lint needs compiler diagnostics and no executed side effects', () => {
   assert.equal(assess(probe, { kind: 'completed', exitCode: 0, stdout: '', stderr: '', sideEffect: false }), 'FAIL');
 });
 test('report creation rejects workspaces, existing files and symlinks', () => {
-  assert.throws(() => createOutput('/mnt/bp0-report'), /temporary/);
+  assert.throws(() => createOutput(fileURLToPath(new URL('./bp0-report', import.meta.url))), /temporary/);
   const path = mkdtempSync(join(tmpdir(), 'ppphp-output-test-'));
   try {
     assert.throws(() => createOutput(path));

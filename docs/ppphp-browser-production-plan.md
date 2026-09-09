@@ -173,6 +173,11 @@ Classify platform differences explicitly, including PHP version, extensions, fil
 
 The current complete required corpus receives equivalent diagnostic meaning, source locations and pass/fail outcomes after only documented nonsemantic normalization. The old expected PHPStan crash becomes a positive regression test. No analyzer timeout, missing output or backend crash is reported as a clean check.
 
+The [2026-09-09 BP-3 qualification](browser/bp3-analyzer-parity.md) records 48 real
+native/Chromium project comparisons, including all 18 exported teaching cases,
+and the retained runtime controls. Its recorded host profiles and scope do not
+close the separate cross-browser, production resource or earlier provenance gates.
+
 ## BP-4 — Complete the compiler-owned browser workflow
 
 ### Work
