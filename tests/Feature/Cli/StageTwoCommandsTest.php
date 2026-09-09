@@ -43,7 +43,7 @@ test('check maps syntax failures to the original source and emits no PHP', funct
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P1001]: Invalid PHP Syntax')
+        ->and($tester->getDisplay())->toContain('ERROR P1001 · ')
         ->and($tester->getDisplay())->toContain('src/Invalid.ppphp:')
         ->and($tester->getDisplay())->not->toContain('build/ppphp')
         ->and(file_exists($root . '/build/ppphp/Invalid.php'))->toBeFalse();
@@ -71,7 +71,7 @@ test('focused checking accepts files directories and the complete project while 
     expect($tester->getStatusCode())->toBe($status);
 
     if ($code !== null) {
-        expect($tester->getDisplay())->toContain('Error[' . $code . ']');
+        expect($tester->getDisplay())->toContain('ERROR ' . $code);
     }
 })->with([
     'missing argument' => [null, ExitCode::Success->value, null],
@@ -95,7 +95,7 @@ test('an explicit source symlink cannot resolve outside the project', function (
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::InvalidProject->value)
-        ->and($tester->getDisplay())->toContain('Error[P0016]: File Is Outside Project Root');
+        ->and($tester->getDisplay())->toContain('ERROR P0016 · ');
 });
 
 test('check JSON output uses the diagnostic envelope for success and failure', function (bool $valid): void {
@@ -185,7 +185,7 @@ test('an invalid rebuild preserves the previous generated PHP', function (): voi
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P1001]')
+        ->and($tester->getDisplay())->toContain('ERROR P1001')
         ->and(file_get_contents($outputPath))->toBe("<?php echo 'previous';\n");
 });
 
@@ -201,7 +201,7 @@ test('build write failures become structured output diagnostics', function (): v
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($tester->getDisplay())->toContain('Error[P7005]: Build Could Not Be Staged')
+        ->and($tester->getDisplay())->toContain('ERROR P7005 · ')
         ->and($tester->getDisplay())->not->toContain('mkdir(');
 });
 
@@ -220,7 +220,7 @@ test('build refuses an output root symbolic link that could escape the project',
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($tester->getDisplay())->toContain('Error[P7005]')
+        ->and($tester->getDisplay())->toContain('ERROR P7005')
         ->and(file_exists($outside . '/Example.php'))->toBeFalse();
 });
 
@@ -277,7 +277,7 @@ test('dump ast emits diagnostics instead of a partial success dump', function ()
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P1001]')
+        ->and($tester->getDisplay())->toContain('ERROR P1001')
         ->and($tester->getDisplay())->not->toContain('Position Attributes:');
 });
 
@@ -330,6 +330,6 @@ test('extension syntax in an unsupported binding context receives a precise exte
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P1009]')
-        ->and($tester->getDisplay())->not->toContain('Error[P1001]');
+        ->and($tester->getDisplay())->toContain('ERROR P1009')
+        ->and($tester->getDisplay())->not->toContain('ERROR P1001');
 });

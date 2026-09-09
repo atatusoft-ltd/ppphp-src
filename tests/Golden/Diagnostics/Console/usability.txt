@@ -1,0 +1,53 @@
+src/InMemoryRepository.ppphp:20:16
+ERROR P4004 · InMemoryRepository::create() declares \InvalidArgumentException, but Repository::create() does not declare any checked exceptions.
+
+  19      public function create(T $item): void
+  20          throws \InvalidArgumentException
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  21      {
+
+\InvalidArgumentException is not permitted by Repository::create().
+
+src/Repository.ppphp:9:5
+NOTE · Repository::create() does not declare any checked exceptions.
+
+   8
+   9      public function create(T $item): void;
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  10  }
+
+src/InMemoryRepository.ppphp:19:5
+NOTE · InMemoryRepository::create() declares the additional exception here.
+
+  18
+  19      public function create(T $item): void
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  20          throws \InvalidArgumentException
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  21      {
+
+If this exception belongs to the public contract, add `throws \InvalidArgumentException` to Repository::create(). This changes the public API; callers must handle or declare the exception. Every other inherited contract must also permit it.
+
+Otherwise, handle \InvalidArgumentException inside InMemoryRepository::create() so it does not escape. Removing the throws declaration alone does not handle an escaping exception.
+
+src/InMemoryRepository.ppphp:22:9
+ERROR P2002 · The local variable $id is missing its explicit type.
+
+  21      {
+  22          $id = $this->getId($item);
+              ^^^
+  23
+
+Add a type before $id.
+
+src/InMemoryRepository.ppphp:29:22
+NOTE · The initializer uses this declared return contract.
+
+  28
+  29      private function getId(T $item): string
+                           ^^^^^
+  30          throws \InvalidArgumentException
+
+InMemoryRepository::getId() is declared to return string. This suggestion uses its declaration, independently of checking its body. Write:
+
+    string $id = $this->getId($item);

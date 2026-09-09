@@ -3,6 +3,13 @@
 > Revision: 1
 > Date: 2026-09-06
 > Status: Implementation plan; delivery gates are NOT RUN until backed by recorded evidence.
+
+BP-3 is approved. Protocol 3 Check/Build is implemented for BP-4 and its recorded
+native/Chrome qualification passed. See the [implemented workflow](browser/bp4-workflow.md)
+and [current evidence](browser/bp4-evidence.md). BP-5 now implements the shared website
+client and isolated Run, with complete qualification on its recorded Chrome profile;
+see the [application handoff](browser/bp5-handoff.md). BP-6 through BP-9 remain
+unimplemented by this delivery. Production editor integration and routes remain guarded.
 > Product outcome: Enable the production playground and interactive Learn routes with complete browser-side Check, Build PHP and Run.
 > Canonical home: `atatusoft-ltd/ppphp-src`, `docs/ppphp-browser-production-plan.md`.
 
@@ -173,11 +180,16 @@ Classify platform differences explicitly, including PHP version, extensions, fil
 
 The current complete required corpus receives equivalent diagnostic meaning, source locations and pass/fail outcomes after only documented nonsemantic normalization. The old expected PHPStan crash becomes a positive regression test. No analyzer timeout, missing output or backend crash is reported as a clean check.
 
+The [2026-09-09 BP-3 qualification](browser/bp3-analyzer-parity.md) records 48 real
+native/Chromium project comparisons, including all 18 exported teaching cases,
+and the retained runtime controls. Its recorded host profiles and scope do not
+close the separate cross-browser, production resource or earlier provenance gates.
+
 ## BP-4 — Complete the compiler-owned browser workflow
 
 ### Work
 
-Preserve existing version 1 preparation and version 2 compiler-core analysis behavior. Introduce a new versioned full-workflow contract where necessary; version 3 is the proposed next version, subject to checking the implementation at stage start. Do not mutate version 2 into a different promise.
+Preserve existing version 1 preparation and version 2 compiler-core analysis behavior. Version 3 now implements the full-workflow contract through the hidden `browser:analysis` command; its actual actions and schemas are documented in [the BP-4 workflow](browser/bp4-workflow.md). Do not mutate version 2 into a different promise.
 
 The host orchestrates a fixed set of compiler-approved operations, not arbitrary shell commands:
 

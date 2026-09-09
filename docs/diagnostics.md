@@ -33,9 +33,60 @@ Every `.ppphp` file needs a PHP opening tag. A missing tag produces `P1011` with
 
 The stable sort order is severity (`Error`, `Warning`, `Note`), source presence and project-relative display path, byte range, code, identity, and message. Source offsets are zero-based bytes. Lines and columns are one-based, and columns count Unicode code points.
 
+## Actionable Local And Inherited-Contract Errors
+
+`P2002` (Missing Local Variable Type) explains the missing type at the local
+variable token. Reliable initializer evidence supplies a concrete declaration in
+`help`, with a related callable declaration when relevant. This is suggested
+source assistance, not implicit declaration or an automatic fix command.
+Scoped semantic recovery removes dependent undeclared-local repetition while
+preserving independently invalid reads, calls, declarations and contracts.
+
+`P4004` (Exception Not Permitted By Inherited Contract) identifies the implementation,
+the exact inherited method, the additional exception and the permitted set.
+Related frames and help distinguish a deliberate public API change from handling
+the exception inside the implementation. Dependency-owned contracts do not
+receive a local vendor-edit suggestion.
+
+These findings use the existing message, primary/related labels and help fields
+across console, JSON, unsaved-buffer diagnostics and verified cache replay. The
+cache's compiler-source identity invalidates old wording without a version change.
+Invalid compiler results block supplemental preparation and production builds;
+recovery never authorizes output or hides backend findings by variable-name matching.
+
 ## Console output
 
-Console diagnostics include a severity/code/title heading, message, project-relative source location, contextual source frame, primary underline, related source frames, and optional help. Tabs use four-column stops, long lines are clipped to terminal width, multiline spans highlight at most four source lines, and control bytes are escaped.
+Console diagnostics put the project-relative location first, followed by the severity,
+stable code, and specific cause. For example:
+
+```text
+src/main.ppphp:3:1
+ERROR P1001 · Expected a semicolon before `return`.
+
+  2  int $value = 1
+  3  return $value;
+     ^^^^^^
+```
+
+The source excerpt uses line numbers and precise underlines without an arrow or
+pipe frame. The catalog title is not repeated above the explanation. A primary
+label that adds information appears below the excerpt; identical message/label
+text is shown once. Related locations have their own location, `NOTE` explanation,
+and excerpt. Concrete remedies appear as plain text, without a `Help:` wrapper;
+repeated advice and generic family fallback guidance are omitted from the console.
+Project-wide errors start with the severity/code/cause line and do not acquire an
+invented source location. Internal failures retain instructions for reporting with
+`--debug`.
+
+Tabs use four-column stops, long lines are clipped to terminal width, multiline
+spans highlight at most four source lines, and control bytes are escaped.
+Color adds emphasis but is not needed to identify severity or source ranges.
+
+Syntax diagnostics `P1001` and `P1008` share the language-neutral catalog title
+`Syntax Error`; their codes still distinguish the parsing layers. JSON and editor
+consumers retain the same versioned fields, messages, labels, guidance and ranges.
+Use those structured protocols for integration, not the human-readable console
+layout. Titles are presentation text, not machine identifiers.
 
 Diagnostics use standard error when the terminal exposes a separate error channel. Command results, build summaries, AST data, and editor protocol responses use standard output. `--ansi` forces semantic decoration, `--no-ansi` disables it, and explicit flags override the environment. Automatic decoration is disabled when `NO_COLOR` is nonempty or `TERM=dumb`.
 
@@ -101,19 +152,19 @@ The table below is generated from `DiagnosticCatalog`. Reserved codes preserve s
 | `P0024` | `project` | `active` | `error` | Selected Path Excluded |
 | `P0025` | `project` | `active` | `error` | Selected Path Not Readable |
 | `P0026` | `project` | `active` | `error` | Conflicting PHP Target Configuration |
-| `P1001` | `syntax` | `active` | `error` | Invalid PHP Syntax |
+| `P1001` | `syntax` | `active` | `error` | Syntax Error |
 | `P1002` | `syntax` | `active` | `error` | Explicit Source File Is Required |
 | `P1003` | `syntax` | `reserved` | `error` | Directory Compilation Unavailable |
 | `P1004` | `syntax` | `active` | `error` | Unsupported Source File |
 | `P1005` | `syntax` | `active` | `error` | Selected Path Is Outside Configured Source Roots |
 | `P1006` | `syntax` | `active` | `error` | Source File Not Readable |
 | `P1007` | `syntax` | `reserved` | `error` | PHP Source Is Not Build Target |
-| `P1008` | `syntax` | `active` | `error` | Invalid Extension Syntax |
+| `P1008` | `syntax` | `active` | `error` | Syntax Error |
 | `P1009` | `syntax` | `active` | `error` | Unsupported Extension Syntax |
 | `P1010` | `syntax` | `active` | `error` | Extension Normalization Failed |
 | `P1011` | `syntax` | `active` | `error` | Missing PHP Opening Tag |
 | `P2001` | `type` | `reserved` | `error` | Typed Local Syntax Not Active |
-| `P2002` | `type` | `active` | `error` | Assignment Cannot Declare Variable |
+| `P2002` | `type` | `active` | `error` | Missing Local Variable Type |
 | `P2003` | `type` | `active` | `error` | Local Variable Is Not Declared |
 | `P2004` | `type` | `active` | `error` | Duplicate Local Declaration |
 | `P2005` | `type` | `active` | `error` | Readonly Local Cannot Be Reassigned |
@@ -179,7 +230,7 @@ The table below is generated from `DiagnosticCatalog`. Reserved codes preserve s
 | `P4001` | `checked-error` | `reserved` | `error` | Throws Syntax Not Active |
 | `P4002` | `checked-error` | `active` | `error` | Error Type Is Not Throwable |
 | `P4003` | `checked-error` | `active` | `error` | Checked Error Is Not Handled |
-| `P4004` | `checked-error` | `active` | `error` | Checked Error Declaration Is Not Covariant |
+| `P4004` | `checked-error` | `active` | `error` | Exception Not Permitted By Inherited Contract |
 | `P4005` | `checked-error` | `active` | `warning` | Unchecked Call Boundary |
 | `P4006` | `checked-error` | `active` | `error` | Native Throws Clause Is Required |
 | `P4007` | `checked-error` | `active` | `error` | Throws Documentation Conflicts With Native Clause |

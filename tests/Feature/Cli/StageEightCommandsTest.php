@@ -89,14 +89,14 @@ PPP);
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P2016]: Return Type Does Not Match')
-        ->toContain('Error[P3015]: Operation Would Break List Shape')
-        ->toContain('Error[P3013]: Typed Array Value Type Does Not Match')
+        ->and($tester->getDisplay())->toContain('ERROR P2016 · ')
+        ->toContain('ERROR P3015 · ')
+        ->toContain('ERROR P3013 · ')
         ->not->toContain('P3099')
         ->not->toContain('method.templateTypeNotInParameter')
         ->not->toContain('return.type')
         ->not->toContain('.ppphp-cache')
-        ->and(substr_count($tester->getDisplay(), 'Error[P2016]: Return Type Does Not Match'))->toBeGreaterThanOrEqual(2);
+        ->and(substr_count($tester->getDisplay(), 'ERROR P2016 · '))->toBeGreaterThanOrEqual(2);
 });
 
 test('generic construction mismatch blocks checking and building before backend lowering', function (): void {
@@ -120,7 +120,7 @@ PPP);
     ]);
 
     expect($check->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($check->getDisplay())->toContain('Error[P3016]: Generic Type Is Invariant')
+        ->and($check->getDisplay())->toContain('ERROR P3016 · ')
         ->not->toContain('.ppphp-cache')
         ->and($build->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
         ->and(file_exists($root . '/build/ppphp/InvalidConstruction.php'))->toBeFalse();
@@ -192,5 +192,5 @@ PPP);
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P3006]: Generic Type Arguments Are Required');
+        ->and($tester->getDisplay())->toContain('ERROR P3006 · ');
 });

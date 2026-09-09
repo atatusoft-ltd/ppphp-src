@@ -33,6 +33,21 @@ Generator-specific yield and return contracts remain the explicit optional `flow
 
 The pass narrows supported locals through null comparisons, `is_null`, `isset`, `instanceof`, and the reviewed `is_*` intrinsics. `&&` analyzes its right operand with the true facts from the left; `||` uses the false facts. Branch joins restore the union of reachable alternatives. Assignments and by-reference calls update or conservatively invalidate affected local facts.
 
+Negation reverses the branch polarity through the same narrowing operation,
+including repeated negation and supported compound conditions. A terminating
+`if (!is_string($value))` branch leaves a string on the surviving path. A branch
+that continues, or an exception caught before continuing, does not establish that
+guarantee. Catch inputs conservatively include reachable states observed in the
+try body, so a caught exception cannot resurrect a narrowing invalidated by an
+assignment or reference. Unreachable statements and unrelated callable bodies do
+not contribute predecessor states. Joins and subsequent writes/references retain the declared storage
+contract independently of narrowed reads.
+
+Predicate semantics depend on resolved built-in callable identity. Global
+fallback, fully qualified names and imported aliases work; same-named project
+functions do not gain built-in guard semantics. Predicate intersections preserve
+known class/generic identity and typed-array element contracts.
+
 ## Calls and generic inference
 
 `CallableContractResolver` is the single resolution path for source functions, methods, constructors, ordinary-PHP declarations, configured stubs, Composer dependency declarations, target-PHP declarations, and reviewed intrinsics. A contract retains parameter order and names, effective native/PHPDoc types, defaults, variadics, reference requirements, return type, owner, visibility, static form, generic declaration, receiver substitutions, checked errors, origin, and source spans.

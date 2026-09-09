@@ -4,9 +4,15 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 
 ## Unreleased
 
+### Changed
+
+- Console diagnostics now lead with the source location and specific cause, with simpler excerpts and no repeated explanation or generic repair advice. Syntax errors use a language-neutral title; diagnostic codes and editor ranges are unchanged.
+- Native compiler commands now allow 512 MiB by default without editing `php.ini`. Set `PPPHP_COMPILER_MEMORY_LIMIT_MEGABYTES` once to choose another ceiling; editor integrations and supplemental analysis share that setting.
+
 ### Fixed
 
 - Reduced memory use when checking and building Composer projects by deferring unused token streams and releasing dependency implementation bodies after discovery. Small mixed projects are regression-tested with a `128M` PHP memory limit, including uncached builds.
+- Dependency discovery follows declaration contracts instead of recursively loading unrelated implementation internals, preventing unnecessary memory and index-limit failures in projects with test-tool dependencies. Index-limit diagnostics identify the exhausted resource and its bound.
 
 ## 2026.3.1-rc-2
 

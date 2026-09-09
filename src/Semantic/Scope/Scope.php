@@ -18,9 +18,21 @@ final class Scope
         get => $this->declaredSymbols;
     }
 
+    /** @var array<string, VariableSymbol> */
+    public array $recoverySymbols {
+        get => array_filter($this->declaredSymbols, static fn (VariableSymbol $symbol): bool => $symbol->recovery !== null);
+    }
+
+    /** @param array<string, VariableSymbol> $symbols */
+    public function restoreRecoveries(array $symbols): void
+    {
+        $this->declaredSymbols = array_filter($this->declaredSymbols, static fn (VariableSymbol $symbol): bool => $symbol->recovery === null);
+        $this->declaredSymbols += $symbols;
+    }
+
     public function declare(VariableSymbol $symbol): bool
     {
-        if (isset($this->declaredSymbols[$symbol->name])) {
+        if (isset($this->declaredSymbols[$symbol->name]) && $this->declaredSymbols[$symbol->name]->recovery === null) {
             return false;
         }
 

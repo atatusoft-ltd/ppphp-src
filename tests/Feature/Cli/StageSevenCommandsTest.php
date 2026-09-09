@@ -100,7 +100,7 @@ PPP);
     ]);
 
     expect($check->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($check->getDisplay())->toContain('Error[P4003]: Checked Error Is Not Handled')
+        ->and($check->getDisplay())->toContain('ERROR P4003 · ')
         ->toContain('src/Invalid.ppphp:')
         ->not->toContain('.ppphp-cache/analysis')
         ->and($build->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
@@ -127,7 +127,7 @@ PPP);
     ]);
 
     expect($check->getStatusCode())->toBe(ExitCode::Success->value)
-        ->and($check->getDisplay())->toContain('Warning[P4005]: Unchecked Call Boundary')
+        ->and($check->getDisplay())->toContain('WARNING P4005 · ')
         ->and($build->getStatusCode())->toBe(ExitCode::Success->value)
         ->and(file_exists($root . '/build/ppphp/Dynamic.php'))->toBeTrue();
 });
@@ -158,7 +158,7 @@ PPP);
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P4003]: Checked Error Is Not Handled')
+        ->and($tester->getDisplay())->toContain('ERROR P4003 · ')
         ->toContain('src/Caller.ppphp:')
         ->not->toContain('Unrelated.ppphp')
         ->not->toContain('.ppphp-cache/analysis');
@@ -187,7 +187,7 @@ PPP);
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P4003]: Checked Error Is Not Handled')
+        ->and($tester->getDisplay())->toContain('ERROR P4003 · ')
         ->toContain('BoundaryFailure');
 });
 
@@ -216,7 +216,7 @@ PPP);
         ->and($tester->getDisplay())
         ->not->toContain('ContextContract.ppphp')
         ->not->toContain('ContextType.ppphp')
-        ->not->toContain('Error[P4002]');
+        ->not->toContain('ERROR P4002');
 });
 
 test('focused and complete checks resolve hello-shaped generic call boundaries consistently', function (): void {

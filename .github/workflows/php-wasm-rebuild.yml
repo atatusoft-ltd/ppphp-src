@@ -1,0 +1,76 @@
+name: PHP-WASM experimental rebuild
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop]
+    paths:
+      - 'tools/php-wasm-runtime/**'
+      - '.github/workflows/php-wasm-rebuild.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: php-wasm-rebuild-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rebuild:
+    name: Compare symbol baseline and experimental Fiber backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      COMPOSER_NO_INTERACTION: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: composer:2.10.3@sha256:7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.16.0'
+          cache: npm
+          cache-dependency-path: tools/web-spike/package-lock.json
+      - name: Test rebuild tooling
+        run: |
+          python3 -m unittest discover -s tools/php-wasm-runtime -p 'test_*.py' -v
+          node --test tools/php-wasm-runtime/verify-built.test.mjs
+          bash -n tools/php-wasm-runtime/rebuild.sh
+      - name: Install locked compiler and harness dependencies
+        run: |
+          composer install --prefer-dist --no-progress --no-ansi
+          npm ci --prefix tools/web-spike --no-audit --no-fund
+      - name: Build and compare both explicit Asyncify profiles
+        run: bash tools/php-wasm-runtime/rebuild.sh --output "/tmp/ppphp-runtime-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+      - name: Retain evidence and source provenance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: php-wasm-rebuild-evidence-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            /tmp/ppphp-runtime-build-${{ github.run_id }}-${{ github.run_attempt }}/artifacts/*.json
+            /tmp/ppphp-runtime-build-${{ github.run_id }}-${{ github.run_attempt }}/artifacts/*.txt
+            /tmp/ppphp-runtime-build-${{ github.run_id }}-${{ github.run_attempt }}/artifacts/*.Dockerfile
+            /tmp/ppphp-runtime-build-${{ github.run_id }}-${{ github.run_attempt }}/artifacts/*/*.json
+            /tmp/ppphp-runtime-build-${{ github.run_id }}-${{ github.run_attempt }}/artifacts/*/*.txt
+            /tmp/ppphp-runtime-build-${{ github.run_id }}-${{ github.run_attempt }}/artifacts/*/zend_fibers.c
+            /tmp/ppphp-runtime-build-${{ github.run_id }}-${{ github.run_attempt }}/*-evidence/report.json
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Retain built diagnostic runtimes
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: php-wasm-diagnostic-binaries-${{ github.sha }}-${{ github.run_attempt }}
+          path: /tmp/ppphp-runtime-build-${{ github.run_id }}-${{ github.run_attempt }}/artifacts/*/asyncify/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Verify compiler inputs remain unchanged
+        if: always()
+        run: git diff --exit-code

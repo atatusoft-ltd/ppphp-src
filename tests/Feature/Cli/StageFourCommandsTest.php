@@ -32,8 +32,8 @@ test('generic extension syntax checks and builds without raw PHP errors', functi
     ]);
 
     expect($check->getStatusCode())->toBe(ExitCode::Success->value)
-        ->and($check->getDisplay())->not->toContain('Error[P3001]')
-        ->and($check->getDisplay())->not->toContain('Error[P1001]')
+        ->and($check->getDisplay())->not->toContain('ERROR P3001')
+        ->and($check->getDisplay())->not->toContain('ERROR P1001')
         ->and($build->getStatusCode())->toBe(ExitCode::Success->value)
         ->and(file_exists($root . '/build/ppphp/Feature.php'))->toBeTrue();
 });
@@ -52,10 +52,10 @@ test('dump ast exposes active when nodes normalized PHP and hierarchical source 
     ]);
 
     expect($dump->getStatusCode())->toBe(ExitCode::Success->value)
-        ->and($dump->getDisplay())->not->toContain('Error[P5001]: When Syntax Is Not Active')
+        ->and($dump->getDisplay())->not->toContain('ERROR P5001 · ')
         ->and($dump->getDisplay())->toContain('WhenExpression')
         ->and($dump->getDisplay())->toContain('depth=0 parent=none')
         ->and($dump->getDisplay())->toContain('Normalized PHP AST:')
         ->and($dump->getDisplay())->toContain('Normalization:')
-        ->and($dump->getDisplay())->not->toContain('Error[P1001]');
+        ->and($dump->getDisplay())->not->toContain('ERROR P1001');
 });

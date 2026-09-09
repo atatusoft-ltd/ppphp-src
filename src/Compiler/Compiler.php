@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Compiler;
 
 use Atatusoft\Ppphp\Cache\CompilerCache;
+use Atatusoft\Ppphp\Cache\ProjectInputSnapshot;
 use Atatusoft\Ppphp\Compiler\Enumerations\CompilationFailureKind;
 use Atatusoft\Ppphp\Compiler\Output\AtomicBuildCommitter;
 use Atatusoft\Ppphp\Compiler\Output\BuildOutputException;
@@ -17,9 +18,11 @@ use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
 use Atatusoft\Ppphp\Interop\Composer\ComposerRuntimeConfigurator;
 use Atatusoft\Ppphp\Project\Project;
 use Atatusoft\Ppphp\Project\ProjectChecker;
+use Atatusoft\Ppphp\Project\ProjectCheckResult;
 use Atatusoft\Ppphp\Project\ProjectSelection;
 use Atatusoft\Ppphp\Project\Enumerations\SelectionKind;
 use Atatusoft\Ppphp\Transpilation\Emission\ProductionPhpEmitter;
+use Atatusoft\Ppphp\Transpilation\Emission\Interfaces\ProductionEmitter;
 
 final readonly class Compiler
 {
@@ -34,7 +37,7 @@ final readonly class Compiler
     public function __construct(
         private ProjectChecker $checker = new ProjectChecker(),
         private OutputPlanner $outputPlanner = new OutputPlanner(),
-        private ProductionPhpEmitter $emitter = new ProductionPhpEmitter(),
+        private ProductionEmitter $emitter = new ProductionPhpEmitter(),
         private AtomicBuildCommitter $committer = new AtomicBuildCommitter(),
         private ComposerRuntimeConfigurator $composerRuntimeConfigurator = new ComposerRuntimeConfigurator(),
         private ProjectBuildLock $buildLock = new ProjectBuildLock(),
@@ -134,18 +137,14 @@ final readonly class Compiler
                 return new CompilationResult([], null, 0, false, CompilationFailureKind::Source, $diagnostics, $this->cache->statistics);
             }
 
-            $plan = $this->outputPlanner->plan($project, $selection->outputSources);
-            $diagnostics->addAll($plan->diagnostics);
+            $production = $this->prepareProduction($project, $selection, $check, $snapshot);
+            $diagnostics->addAll($production->diagnostics);
 
-            if (!$plan->isSuccessful || $plan->plan === null) {
+            if ($production->diagnostics->hasErrors) {
                 return new CompilationResult([], null, 0, false, CompilationFailureKind::Output, $diagnostics, $this->cache->statistics);
             }
 
-            $this->addComposerWarnings($project, $diagnostics);
-            $reusedArtifacts = $snapshot === null
-                ? []
-                : $this->cache->loadReusableArtifacts($project, $snapshot, $check, $plan->plan);
-            $artifacts = $this->emitter->emit($project, $check, $plan->plan, $reusedArtifacts);
+            $artifacts = $production->artifacts;
             $commit = $this->committer->commit($project, $selection, $artifacts);
             $diagnostics->addAll($commit->diagnostics);
 
@@ -177,6 +176,31 @@ final readonly class Compiler
         } finally {
             $this->buildLock->release();
         }
+    }
+
+    /** Shared production boundary. The check contains live compiler-owned models. */
+    public function prepareProduction(
+        Project $project,
+        ProjectSelection $selection,
+        ProjectCheckResult $check,
+        ?ProjectInputSnapshot $snapshot = null,
+    ): ProductionPreparation {
+        if (!$check->isSuccessful) {
+            throw new \LogicException('Production preparation requires a completed full check.');
+        }
+
+        $plan = $this->outputPlanner->plan($project, $selection->outputSources);
+        $diagnostics = new DiagnosticBag();
+        $diagnostics->addAll($plan->diagnostics);
+
+        if (!$plan->isSuccessful || $plan->plan === null) {
+            return new ProductionPreparation([], $diagnostics);
+        }
+
+        $this->addComposerWarnings($project, $diagnostics);
+        $reused = $snapshot === null ? [] : $this->cache->loadReusableArtifacts($project, $snapshot, $check, $plan->plan);
+
+        return new ProductionPreparation($this->emitter->emit($project, $check, $plan->plan, $reused), $diagnostics);
     }
 
     private function addComposerWarnings(Project $project, DiagnosticBag $diagnostics): void

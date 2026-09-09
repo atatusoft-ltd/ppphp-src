@@ -152,7 +152,7 @@ test('complex diagnostic layout retains stable plain and decorated output', func
         (new JsonRenderer())->render($bag),
     );
 
-    expect($decorated)->toContain("\e[31;1m", "\e[33;1m", "\e[32;1mHelp:\e[0m")
+    expect($decorated)->toContain("\e[31;1m", "\e[33;1m", "\e[32mReturn a compatible value.")
         ->and(preg_replace('/\e\[[0-9;]*m/', '', $decorated))->toBe($plain);
 });
 

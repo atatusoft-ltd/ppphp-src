@@ -1,0 +1,66 @@
+name: Browser runtime baseline (diagnostic)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop]
+    paths:
+      - 'tools/web-spike/**'
+      - '.github/workflows/browser-baseline.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-baseline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  observe:
+    name: Capture BP-0 runtime evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      COMPOSER_NO_INTERACTION: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: composer:2.10.3@sha256:7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.16.0'
+          cache: npm
+          cache-dependency-path: tools/web-spike/package-lock.json
+      - name: Install locked compiler dependencies
+        run: composer install --prefer-dist --no-progress --no-ansi
+      - name: Install locked browser dependencies
+        working-directory: tools/web-spike
+        run: npm ci --no-audit --no-fund
+      - name: Check harness and native references
+        id: harness
+        run: |
+          node --test tools/web-spike/scripts/*.test.mjs
+          php -l tools/web-spike/scripts/inspect-phpstan-fibers.php
+      - name: Observe unchanged spike and independent browser probes
+        run: node tools/web-spike/scripts/run-baseline.mjs --output "/tmp/ppphp-bp0-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+      - name: Inspect explicitly selected runtimes and retained symbols
+        if: ${{ !cancelled() && steps.harness.outcome == 'success' }}
+        run: node tools/web-spike/scripts/inspect-runtime-modes.mjs --output "/tmp/ppphp-modes-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+      - name: Preserve diagnostic evidence outside the checkout
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bp0-runtime-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            /tmp/ppphp-bp0-${{ github.run_id }}-${{ github.run_attempt }}/report.json
+            /tmp/ppphp-modes-${{ github.run_id }}-${{ github.run_attempt }}/modes-report.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Verify tracked inputs are unchanged
+        if: ${{ !cancelled() }}
+        run: git diff --exit-code

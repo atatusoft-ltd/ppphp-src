@@ -86,11 +86,14 @@ final class DiagnosticCatalog
     private static function resolveTitle(DiagnosticCode $code): string
     {
         $canonical = match ($code) {
+            DiagnosticCode::InvalidPhpSyntax,
+            DiagnosticCode::InvalidExtensionSyntax => 'Syntax Error',
+            DiagnosticCode::AssignmentCannotDeclareVariable => 'Missing Local Variable Type',
             DiagnosticCode::AnalysisWorkspacePreparationFailed => 'Code Could Not Be Prepared For Analysis',
             DiagnosticCode::DependencyDeclarationContextUnavailable => 'Dependency Source Unavailable',
             DiagnosticCode::AssignmentNotAssignableToDeclaredType => 'Assignment Is Not Assignable To Declared Type',
             DiagnosticCode::CaughtErrorNeverThrown => 'Caught Error Is Never Thrown',
-            DiagnosticCode::CheckedErrorDeclarationNotCovariant => 'Checked Error Declaration Is Not Covariant',
+            DiagnosticCode::CheckedErrorDeclarationNotCovariant => 'Exception Not Permitted By Inherited Contract',
             DiagnosticCode::CheckedErrorNotHandled => 'Checked Error Is Not Handled',
             DiagnosticCode::CompilerFrontendNotAvailable => 'Compiler Frontend Is Not Available',
             DiagnosticCode::ConfiguredStubPathInvalid => 'Configured Stub Path Is Invalid',

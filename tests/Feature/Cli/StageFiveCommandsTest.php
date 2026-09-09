@@ -75,7 +75,7 @@ test('semantic failure prevents every output write in a project build', function
     ]);
 
     expect($build->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($build->getDisplay())->toContain('Error[P2009]: Assignment Is Not Assignable To Declared Type')
+        ->and($build->getDisplay())->toContain('ERROR P2009 · ')
         ->and(file_exists($root . '/build/ppphp/AValid.php'))->toBeFalse()
         ->and(file_exists($root . '/build/ppphp/ZInvalid.php'))->toBeFalse();
 });

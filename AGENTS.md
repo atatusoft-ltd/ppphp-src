@@ -40,3 +40,8 @@ The project owner may revise the grouping, order and identifiers of unimplemente
 - Explain the tradeoff before adding a dependency.
 - Do not add empty future scaffolds without an immediate need.
 - Before reporting completion, run composer validate --strict, composer verify:version, composer analyse, and composer test.
+
+Diagnostic acceptance requires a specific cause, useful source locations,
+and actionable guidance where evidence supports it. Test suggested fixes
+and causal recovery, not just the presence of an error code. A false positive
+is a compiler defect, not a source-style requirement for users.

@@ -60,6 +60,9 @@ final class AnalyzeTypeFlowPass implements SemanticPass
 {
     private SemanticContext $context;
 
+    /** @var list<array{scope: Scope, states: array<string, FlowState>}> */
+    private array $exceptionInputs = [];
+
     private ExpressionTypeResolver $expressions;
 
     private CallableContractResolver $callables;
@@ -94,6 +97,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
     public function execute(SemanticContext $context): void
     {
         $this->context = $context;
+        $this->exceptionInputs = [];
         $this->expressions = new ExpressionTypeResolver($context, $this->sourceTypes);
         $this->callables = new CallableContractResolver($context);
         $this->members = new MemberTypeResolver($context->symbols);
@@ -329,7 +333,17 @@ final class AnalyzeTypeFlowPass implements SemanticPass
         $reachable = true;
 
         foreach ($statements as $statement) {
+            // Diagnose unreachable source without treating it as a predecessor
+            // of an enclosing catch. Nested callable bodies still analyze normally.
+            $suspendedInputs = null;
+            if (!$reachable) {
+                $suspendedInputs = $this->exceptionInputs;
+                $this->exceptionInputs = [];
+            }
             $outcome = $this->analyzeStatement($statement, $scope, $current, $returnType, $class);
+            if ($suspendedInputs !== null) {
+                $this->exceptionInputs = $suspendedInputs;
+            }
 
             if (!$reachable) {
                 $current = $outcome->normalState ?? $current;
@@ -481,10 +495,17 @@ final class AnalyzeTypeFlowPass implements SemanticPass
         ?Type $returnType,
         ?ClassSymbol $class,
     ): FlowOutcome {
+        // A catch can be reached before or after a write in the try body.
+        // Retain those states instead of resurrecting the pre-try narrowing.
+        $this->exceptionInputs[] = ['scope' => $scope, 'states' => []];
+        $this->recordExceptionInput($scope, $state);
         $outcomes = [$this->analyzeStatements($try->stmts, $scope, $state->copy(), $returnType, $class)];
+        $exceptionInputs = array_pop($this->exceptionInputs);
+        $catchEntry = $exceptionInputs === null || $exceptionInputs['states'] === []
+            ? $state : FlowState::join(array_values($exceptionInputs['states']));
 
         foreach ($try->catches as $catch) {
-            $catchState = $state->copy();
+            $catchState = $catchEntry->copy();
 
             if ($catch->var instanceof Expr\Variable && is_string($catch->var->name)) {
                 $types = array_map(
@@ -705,7 +726,26 @@ final class AnalyzeTypeFlowPass implements SemanticPass
             $resolution,
         );
 
+        $this->recordExceptionInput($scope, $state);
         return $resolution;
+    }
+
+    private function recordExceptionInput(Scope $scope, FlowState $state): void
+    {
+        if ($this->exceptionInputs === []) {
+            return;
+        }
+        $identity = serialize([
+            array_map(static fn (Type $type): string => $type->canonical, $state->locals),
+            $state->initializedPropertyNames,
+        ]);
+        foreach ($this->exceptionInputs as &$input) {
+            // Analyzing a closure or named function body does not execute it.
+            if ($input['scope'] === $scope) {
+                $input['states'][$identity] ??= $state->copy();
+            }
+        }
+        unset($input);
     }
 
     private function analyzeClosure(Expr\Closure $closure, Scope $outer, FlowState $outerState, ?ClassSymbol $class): void
@@ -1312,7 +1352,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
                 $this->returnMismatchCode($declared, $actual->type),
                 sprintf('Returned type %s is not compatible with declared return type %s.', $actual->type->renderPhpDoc(), $declared->renderPhpDoc()),
                 $this->span($return->expr ?? $return),
-                help: 'Return a value compatible with the callable return type.',
+                help: sprintf('Return a value of type %s. If the value can have another type, validate it and handle every other case before returning.', $declared->renderPhpDoc()),
             );
         }
     }
@@ -1389,6 +1429,10 @@ final class AnalyzeTypeFlowPass implements SemanticPass
 
     private function narrow(Expr $condition, FlowState $state, bool $positive): FlowState
     {
+        if ($condition instanceof Expr\BooleanNot) {
+            return $this->narrow($condition->expr, $state, !$positive);
+        }
+
         if ($condition instanceof Expr\BinaryOp\BooleanAnd && $positive) {
             return $this->narrow($condition->right, $this->narrow($condition->left, $state, true), true);
         }
@@ -1408,7 +1452,14 @@ final class AnalyzeTypeFlowPass implements SemanticPass
             && isset($condition->args[0]) && $condition->args[0] instanceof Arg
             && $condition->args[0]->value instanceof Expr\Variable
             && is_string($condition->args[0]->value->name)) {
-            $type = match (strtolower($condition->name->toString())) {
+            $contract = $this->callables->resolveFunction($condition->name)->contract;
+            if ($contract === null || !in_array($contract->origin, [
+                CallableOrigin::IntrinsicOverride,
+                CallableOrigin::PhpPlatform,
+            ], true) || count($condition->args) !== 1 || $condition->args[0]->unpack) {
+                return $state;
+            }
+            $type = match (strtolower(ltrim($contract->identity, '\\'))) {
                 'is_null' => 'null',
                 'is_int' => 'int',
                 'is_string' => 'string',
@@ -1467,21 +1518,37 @@ final class AnalyzeTypeFlowPass implements SemanticPass
             return;
         }
 
-        if ($keep) {
-            $state->recordLocal($name, new AtomicType($typeName));
-            return;
-        }
-
-        if ($type instanceof UnionType) {
-            $remaining = array_values(array_filter(
-                $type->members,
-                static fn (Type $member): bool => $member->canonical !== strtolower($typeName),
-            ));
-
-            if ($remaining !== []) {
-                $state->recordLocal($name, $this->combine($remaining));
+        $predicate = new AtomicType($typeName);
+        $members = $type instanceof UnionType ? $type->members : [$type];
+        $remaining = [];
+        foreach ($members as $member) {
+            $contained = $this->compatibility->compare($predicate, $member, $this->context->symbols)
+                === TypeCompatibilityResult::Compatible;
+            // Generic object identity is more precise than the object predicate.
+            $contained = $contained || ($typeName === 'object' && $member instanceof GenericType);
+            if (!$keep) {
+                if (!$contained) {
+                    $remaining[] = $member;
+                }
+                continue;
+            }
+            if ($contained) {
+                $remaining[] = $member;
+            } elseif ($typeName === 'callable') {
+                // Strings, arrays and invokable objects overlap callable without
+                // being assignable to it as a whole. Do not treat them as bottom.
+                $remaining[] = new IntersectionType([$member, $predicate]);
+            } elseif ($member->isUnknown || $member->canonical === 'mixed') {
+                $remaining[] = $predicate;
+            } elseif ($this->compatibility->compare($member, $predicate, $this->context->symbols)
+                !== TypeCompatibilityResult::Incompatible) {
+                $remaining[] = $member instanceof TypeParameter
+                    ? new IntersectionType([$member, $predicate])
+                    : $predicate;
             }
         }
+        // An empty intersection is unreachable; never is the bottom flow type.
+        $state->recordLocal($name, $remaining === [] ? new AtomicType('never') : $this->combine($remaining));
     }
 
     /** @param list<FlowOutcome> $outcomes */
@@ -2157,6 +2224,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
                 sprintf('Initializer of type %s is not assignable to declared type %s.', $actualType->text, $declaredType->text),
                 $this->span($value),
                 related: [new DiagnosticLabel($typeSpan, 'The local type is declared here.')],
+                help: sprintf('Initialize %s with a value of type %s, or correct its declared type if that contract is unintended.', $name, $declaredType->text),
             );
             return;
         }
@@ -2176,6 +2244,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
             sprintf('Value of type %s is not assignable to %s of type %s.', $actualType->text, $name, $declaredType->text),
             $this->span($value),
             related: $related,
+            help: sprintf('Assign a value of type %s to %s; its declared storage type remains fixed.', $declaredType->text, $name),
         );
     }
 

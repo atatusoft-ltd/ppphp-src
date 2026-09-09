@@ -1,0 +1,1050 @@
+{
+  "format": "ppphp.browser-projects",
+  "version": 1,
+  "cases": [
+    {
+      "id": "calls-arguments-positive",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nfunction take(string $name, int $times = 1): void {}\nfunction valid(): void { take('Andrew', 2); }",
+          "sha256": "3471bcb7eefd37ba86d3650023c75fb95e69c5c55e80ccbd3dec0ec52ee3c960"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Existing analyzer parity scenario: calls.arguments",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      },
+      "fixtureReference": "tests/Fixtures/AnalyzerParity/scenarios.php#calls-arguments-positive"
+    },
+    {
+      "id": "generics-substitution",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nfinal class Product {}\nclass Box<T>\n{\n    public function __construct(public T $value) {}\n    public function get(): T { return $this->value; }\n}\nfunction valid(Box<Product> $box): void { Product $value = $box->get(); }",
+          "sha256": "1291a0dad71890585cea4fecd32f7b86fd3e026e48909614b19ec0862b10354b"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Existing analyzer parity scenario: generics.substitution",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      },
+      "fixtureReference": "tests/Fixtures/AnalyzerParity/scenarios.php#generics-substitution"
+    },
+    {
+      "id": "flow-generators",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nfunction values(): iterable\n{\n    yield 1;\n}",
+          "sha256": "bd81084415714f714ee3bf7f7e094b73299e6652894250a0129e0ff4de1cae68"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Existing analyzer parity scenario: flow.generators",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      },
+      "fixtureReference": "tests/Fixtures/AnalyzerParity/scenarios.php#flow-generators"
+    },
+    {
+      "id": "flow-locals",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nfunction invalid(): void { $value = 1; }",
+          "sha256": "16d00d225329d82b1682004882c7881e2a56c045b15658e1d10ea3f4b8da1b05"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Existing analyzer parity scenario: flow.locals",
+      "expected": {
+        "status": 1,
+        "codes": [
+          "P2002"
+        ],
+        "analyzer": false
+      },
+      "fixtureReference": "tests/Fixtures/AnalyzerParity/scenarios.php#flow-locals"
+    },
+    {
+      "id": "types-assignability",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nfunction invalid(): void { int $value = 'wrong'; }",
+          "sha256": "3758f6d1df3fbe215ba8fbeaa1c3e049240a80c44ef518bcd0519e78a41152fc"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Existing analyzer parity scenario: types.assignability",
+      "expected": {
+        "status": 1,
+        "codes": [
+          "P2008"
+        ],
+        "analyzer": false
+      },
+      "fixtureReference": "tests/Fixtures/AnalyzerParity/scenarios.php#types-assignability"
+    },
+    {
+      "id": "errors-propagation",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nfinal class Failure extends RuntimeException {}\nfunction load(): void throws Failure { throw new Failure(); }\nfunction invalid(): void { load(); }",
+          "sha256": "de7f2577f112cf740fb87b21614dfdea6d45a10b7a74ccf29c343c28f1783f37"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Existing analyzer parity scenario: errors.propagation",
+      "expected": {
+        "status": 1,
+        "codes": [
+          "P4003"
+        ],
+        "analyzer": false
+      },
+      "fixtureReference": "tests/Fixtures/AnalyzerParity/scenarios.php#errors-propagation"
+    },
+    {
+      "id": "flow-when",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nfunction invalid(bool $value): int\n{\n    return when ($value) { if (true) { return 1; } } else { return 0; };\n}",
+          "sha256": "9dea8bfcd2d62fa6c3e1dae0e81e83cdd8bd25b53b2e6e7282dc8cfb5693e04c"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Existing analyzer parity scenario: flow.when",
+      "expected": {
+        "status": 1,
+        "codes": [
+          "P5002"
+        ],
+        "analyzer": false
+      },
+      "fixtureReference": "tests/Fixtures/AnalyzerParity/scenarios.php#flow-when"
+    },
+    {
+      "id": "interop-ordinary-php-bodies",
+      "files": [
+        {
+          "path": "main.php",
+          "source": "<?php\nfunction invalid(int $value): int { return 'wrong'; }\ninvalid('wrong');",
+          "sha256": "8b6bf25df562a64187d1b543589f28da3590187c8a35218c44500b384ce5c6bb"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Existing analyzer parity scenario: interop.ordinary-php-bodies",
+      "expected": {
+        "status": 1,
+        "codes": [
+          "P2016",
+          "P2015",
+          "P2099"
+        ],
+        "analyzer": true
+      },
+      "fixtureReference": "tests/Fixtures/AnalyzerParity/scenarios.php#interop-ordinary-php-bodies",
+      "expectationBasis": "Reviewed native source order: bad return on line 2, bad argument and unused pure call on line 3; the existing parity fixture lists the same findings without location order."
+    },
+    {
+      "id": "binding-recovery-invalid",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\n$value = 1;\necho $value;\n",
+          "sha256": "075a98e4f137ca27470885cfccf6a7b0ce726f6435750241b1fd997b7e6e66a6"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Minimal causal recovery pair: adding only int fixes the binding declaration",
+      "expected": {
+        "status": 1,
+        "codes": [
+          "P2002"
+        ],
+        "analyzer": false
+      },
+      "corrects": null
+    },
+    {
+      "id": "binding-corrected",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nint $value = 1;\necho $value;\n",
+          "sha256": "e0e8333dcf37cabdcc8f2aef5c130c88b6a3495161f7775c387ff944a0692287"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Correction of flow-locals, same logical file and name",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      },
+      "corrects": "binding-recovery-invalid"
+    },
+    {
+      "id": "type-corrected",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nfunction valid(): int { int $value = 1; return $value; }\n",
+          "sha256": "4a50cee9c76bd693e9b2399c409e1b74d36b1d67bfbb99c704f6036f27a69a6b"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Correction of the local initializer type error",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "effect-corrected",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nfinal class Failure extends RuntimeException {}\nfunction load(): void throws Failure { throw new Failure(); }\nfunction valid(): void throws Failure { load(); }\n",
+          "sha256": "a3bb3fe02f7bf0c1546430852c5ce5c48172f20999446a328fae27e770333963"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Correction by declaring the propagated checked error",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "branch-corrected",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nfunction valid(bool $value): int { return when ($value) { int $sum = 1; $sum = $sum + 1; return $sum; } else { return 0; }; }\n",
+          "sha256": "a9484a4ac6d4974f3f267262b80aa52fcb3e52ea11c2979b36aa88358aabd456"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Complete when branch with processing before its result",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "supplemental-corrected",
+      "files": [
+        {
+          "path": "main.php",
+          "source": "<?php\nfunction valid(int $value): int { return $value; }\necho valid(42);\n",
+          "sha256": "8d0709c573cd2de90dc47bae71ab8a0bce3b0ed9449453c6d71a4861f103ad06"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Ordinary PHP body correction removes the real PHPStan argument/return findings",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "supplemental-generated-location",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\r\n// café 🧪: source mapping after generated declarations\r\nnamespace App;\r\nfinal class Known {}\r\nfunction boundary(\\Vendor\\DeferredType $value): void {}\r\n",
+          "sha256": "714c8e6c301bd54df0df7bb1bef3087ff04cd37bd665b8b8721b68263722b165"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Existing deferred name-resolution scenario, adapted only with CRLF and multibyte comment; real supplemental mapping to generated ++PHP source",
+      "expected": {
+        "status": 1,
+        "codes": [
+          "P2020"
+        ],
+        "analyzer": true
+      },
+      "corrects": null
+    },
+    {
+      "id": "supplemental-generated-corrected",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\r\n// café 🧪: source mapping after generated declarations\r\nnamespace App;\r\nfinal class Known {}\r\nfunction boundary(Known $value): void {}\r\n",
+          "sha256": "66d1b8c6ff0a355101cb939409b5c125620844d6984085e87c0ca522905396b1"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Replace only the unavailable boundary type with the declared type; recover on the same original source lines",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      },
+      "corrects": "supplemental-generated-location"
+    },
+    {
+      "id": "multi-findings",
+      "files": [
+        {
+          "path": "Alpha.php",
+          "source": "<?php\nnamespace Alpha;\nfunction number(): int { return 'alpha'; }\n",
+          "sha256": "fbc30b019782205c5552ec2d5e67b6622a6c524c57288d115d5bf56bd32f62f1"
+        },
+        {
+          "path": "Beta.php",
+          "source": "<?php\nnamespace Beta;\nfunction number(): int { return 'beta'; }\n",
+          "sha256": "07251d888793744d95050b27c68340b5facc4d04eeccdf4c702e9ce12d6cd89c"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Independent real supplemental findings in two source files",
+      "expected": {
+        "status": 1,
+        "codes": [
+          "P2016",
+          "P2016"
+        ],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "multifile-generics-trait",
+      "files": [
+        {
+          "path": "Library.ppphp",
+          "source": "<?php\nnamespace App;\ninterface Reader<T> { public function read(): T; }\ntrait Named { public function name(): string { return 'box'; } }\nfinal class Box<T> implements Reader<T> { use Named; public function __construct(public T $value) {} public function read(): T { return $this->value; } }\n",
+          "sha256": "ba312c3d295d242a5a9a4d6fc1dafe9efc2b5830ce34fccd2f388847770a65a1"
+        },
+        {
+          "path": "Use.ppphp",
+          "source": "<?php\nnamespace Consumer;\nuse App\\Box;\nfunction consume(Box<string> $box): string { return $box->name() . $box->read(); }\n",
+          "sha256": "8a69e06b756d39b7ce257bb0c5806dbdf68d14c075b47d57c2d7c2a630fb5582"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Cross-file imported generic interface implementation and trait members",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "mixed-phpdoc",
+      "files": [
+        {
+          "path": "Boundary.php",
+          "source": "<?php\nnamespace Boundary;\n/** @template T */\nfinal class Box { /** @param T $value */ public function __construct(public mixed $value) {} /** @return T */ public function read(): mixed { return $this->value; } }\nfunction loose($value) { return $value; }\n",
+          "sha256": "034cf0548baed0b9da2f0ce18c4738c964b7349c2a7f623969a1e2b14e72337e"
+        },
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nuse Boundary\\Box;\nfunction read(Box<string> $box): string { return $box->read(); }\n",
+          "sha256": "c63f058d79baf902a021cbcc2a7c9be0818c329a77ab75b4b343bbe97d8518ea"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "PHPDoc generic boundary and ordinary untyped PHP remain supported",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "selection-file",
+      "files": [
+        {
+          "path": "Use/main.ppphp",
+          "source": "<?php\nnamespace Consumer;\nuse App\\Value;\nfunction read(Value $value): string { return $value->name; }\n",
+          "sha256": "34f3eb99eb8ef0a1e7f61fac2f94f7fa8e757ff53c4b55a12157ec1b3216a58e"
+        },
+        {
+          "path": "Context/Value.ppphp",
+          "source": "<?php\nnamespace App;\nfinal class Value { public function __construct(public string $name) {} }\n",
+          "sha256": "a83ee15d6add6babbe4478acda86e3494ec36eb0e034250209b159363b6e410f"
+        },
+        {
+          "path": "Unrelated/broken.ppphp",
+          "source": "<?php\nfunction broken(\n",
+          "sha256": "35b7005686f771d62a6f325c2b67cc90a17138f7e8091b0f6ac99af1268b8ed2"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": "src/Use/main.ppphp",
+      "purpose": "Valid unselected class context and isolated unrelated invalid syntax",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "selection-directory",
+      "files": [
+        {
+          "path": "Use/main.ppphp",
+          "source": "<?php\nnamespace Consumer;\nuse App\\Value;\nfunction read(Value $value): string { return $value->name; }\n",
+          "sha256": "34f3eb99eb8ef0a1e7f61fac2f94f7fa8e757ff53c4b55a12157ec1b3216a58e"
+        },
+        {
+          "path": "Context/Value.ppphp",
+          "source": "<?php\nnamespace App;\nfinal class Value { public function __construct(public string $name) {} }\n",
+          "sha256": "a83ee15d6add6babbe4478acda86e3494ec36eb0e034250209b159363b6e410f"
+        },
+        {
+          "path": "Unrelated/broken.ppphp",
+          "source": "<?php\nfunction broken(\n",
+          "sha256": "35b7005686f771d62a6f325c2b67cc90a17138f7e8091b0f6ac99af1268b8ed2"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": "src/Use",
+      "purpose": "Directory check isolates unrelated invalid syntax",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "selection-pathless",
+      "files": [
+        {
+          "path": "Use/main.ppphp",
+          "source": "<?php\nnamespace Consumer;\nuse App\\Value;\nfunction read(Value $value): string { return $value->name; }\n",
+          "sha256": "34f3eb99eb8ef0a1e7f61fac2f94f7fa8e757ff53c4b55a12157ec1b3216a58e"
+        },
+        {
+          "path": "Context/Value.ppphp",
+          "source": "<?php\nnamespace App;\nfinal class Value { public function __construct(public string $name) {} }\n",
+          "sha256": "a83ee15d6add6babbe4478acda86e3494ec36eb0e034250209b159363b6e410f"
+        },
+        {
+          "path": "Unrelated/broken.ppphp",
+          "source": "<?php\nfunction broken(\n",
+          "sha256": "35b7005686f771d62a6f325c2b67cc90a17138f7e8091b0f6ac99af1268b8ed2"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Pathless check includes the invalid source",
+      "expected": {
+        "status": 1,
+        "codes": [
+          "P1001"
+        ],
+        "analyzer": false
+      }
+    },
+    {
+      "id": "empty-selection",
+      "files": [],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Empty project skips supplemental analysis",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": false
+      }
+    },
+    {
+      "id": "empty-directory",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\necho 'context';\n",
+          "sha256": "cdc87a9db5d595a7734d4ee33bfe2b6a2e2d8fe856dda98fddb63f36259a5e14"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": "src/Empty",
+      "purpose": "Existing empty selected directory skips analysis",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": false
+      },
+      "directories": [
+        "src/Empty"
+      ]
+    },
+    {
+      "id": "locations-crlf-unicode",
+      "files": [
+        {
+          "path": "métrique file.php",
+          "source": "<?php\r\n// café 🧪\r\nfunction value(): int { return 'café'; }\r\n",
+          "sha256": "45e8974ba4de701103ec8c4367595d50813f360f12180779e001a583802cc232"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Exact CRLF bytes, multibyte text and source path in a real mapped finding",
+      "expected": {
+        "status": 1,
+        "codes": [
+          "P2016"
+        ],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "locations-generated-map",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nfunction value(bool $condition): int {\n return when ($condition) {\n  int $sum = 1;\n  $sum = $sum + 1;\n  return $sum;\n } else { return 0; };\n}\n",
+          "sha256": "225059bc902c0c05d2715b27ad6e75f25dfa1819ca72586f6b76197c7c2f6f64"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Generated when analysis map identity and complete branch processing",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "warning-only",
+      "files": [
+        {
+          "path": "Warning.php",
+          "source": "<?php\nfinal class Warning { private int $value; public function __construct() { $this->value = 1; } }\n",
+          "sha256": "f56e5ecbd4fbb6d9036bbd1b5e9a0304f27c73b9a1926d467ea7bcc37d745f7a"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "PHPStan property.onlyWritten maps to nonblocking warning",
+      "expected": {
+        "status": 0,
+        "codes": [
+          "P2046"
+        ],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "analyzer-failure",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nint $value = 42;\necho $value;\n",
+          "sha256": "777c291f5ca25cde116446f14f218d0b192a65e297f432095eb9a5a1f322bc6a"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Synthetic missing configuration fault using the actual analyzer process",
+      "expected": {
+        "status": 1,
+        "codes": [
+          "P6006"
+        ],
+        "analyzer": true
+      },
+      "fault": "missing-configuration",
+      "expectationBasis": "Actual missing-configuration PHPStan invocation exits 1 with empty stdout and the cause on stderr. Existing compiler completion reports missing analyzer JSON (P6006), not a source finding."
+    },
+    {
+      "id": "post-failure-control",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nint $value = 42;\necho $value;\n",
+          "sha256": "777c291f5ca25cde116446f14f218d0b192a65e297f432095eb9a5a1f322bc6a"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Fresh worker succeeds immediately after analyzer failure",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      }
+    },
+    {
+      "id": "repeat-control",
+      "files": [
+        {
+          "path": "main.ppphp",
+          "source": "<?php\nint $value = 42;\necho $value;\n",
+          "sha256": "777c291f5ca25cde116446f14f218d0b192a65e297f432095eb9a5a1f322bc6a"
+        }
+      ],
+      "configuration": {
+        "source": [
+          "src"
+        ],
+        "output": "build",
+        "cache": ".cache",
+        "targetPhpVersion": "8.4",
+        "stubs": [
+          "stubs"
+        ],
+        "exclude": [
+          "build",
+          ".cache"
+        ]
+      },
+      "selection": null,
+      "purpose": "Repeated identical project returns no stale diagnostics",
+      "expected": {
+        "status": 0,
+        "codes": [],
+        "analyzer": true
+      }
+    }
+  ]
+}

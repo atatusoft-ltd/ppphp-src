@@ -35,7 +35,7 @@ test('console diagnostics use stderr while successful data uses stdout', functio
 
     expect($failure->getExitCode())->not->toBe(0)
         ->and($failure->getOutput())->toBe('')
-        ->and($failure->getErrorOutput())->toContain('Error[P0011]: Project Path Does Not Exist')
+        ->and($failure->getErrorOutput())->toContain('ERROR P0011 · ')
         ->and($success->getExitCode())->toBe(0)
         ->and(trim($success->getOutput()))->toBe('ppphp ' . Compiler::VERSION)
         ->and($success->getErrorOutput())->toBe('');
@@ -51,7 +51,7 @@ test('console diagnostics fall back to the primary stream for embedded outputs',
         $output,
     );
 
-    expect($output->fetch())->toContain('Error[P0022]: Invalid Invocation', 'Help:');
+    expect($output->fetch())->toBe("ERROR P0022 · Bad input.\n");
 });
 
 test('JSON diagnostics write exactly one undecorated stdout document', function (): void {
@@ -72,6 +72,41 @@ test('JSON diagnostics write exactly one undecorated stdout document', function 
         ->and($payload['version'])->toBe(1)
         ->and($payload['diagnostics'])->toHaveCount(1);
 });
+
+test('real syntax failures share the cause-first layout and retain editor fields', function (string $extension, string $contents, string $code, string $message): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $path = 'src/Invalid.' . $extension;
+    $this->writeFile($root . '/' . $path, $contents);
+    $arguments = ['check', $path, '--working-directory=' . $root, '--no-ansi'];
+    $console = runDiagnosticProcess($arguments);
+    $json = runDiagnosticProcess([...$arguments, '--format=json']);
+    $payload = json_decode($json->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    $diagnostic = $payload['diagnostics'][0];
+    $location = $diagnostic['location'];
+
+    expect($console->getExitCode())->toBe(1)
+        ->and($json->getExitCode())->toBe(1)
+        ->and($console->getErrorOutput())->toStartWith(sprintf(
+            "%s:%d:%d\nERROR %s · %s\n",
+            $path,
+            $location['range']['start']['line'],
+            $location['range']['start']['column'],
+            $code,
+            $message,
+        ))
+        ->and(substr_count($console->getErrorOutput(), $message))->toBe(1)
+        ->and($console->getErrorOutput())->not->toContain('Invalid PHP', 'Invalid Extension', '-->', 'Help:')
+        ->and($diagnostic['title'])->toBe('Syntax Error')
+        ->and($diagnostic['message'])->toBe($message)
+        ->and($diagnostic['code'])->toBe($code)
+        ->and($location['file'])->toBe($path)
+        ->and(file_get_contents($root . '/' . $path))->toBe($contents);
+})->with([
+    'ordinary PHP' => ['php', "<?php\necho 1\nreturn 2;\n", 'P1001', 'Expected a semicolon before `return`.'],
+    'PHP-shaped source' => ['ppphp', "<?php\necho 1\nreturn 2;\n", 'P1001', 'Expected a semicolon before `return`.'],
+    'extension syntax' => ['ppphp', "<?php\nint \$value = ;\n", 'P1008', 'A typed local declaration requires an initializer.'],
+]);
 
 test('explicit ANSI flags override color-related environment variables', function (): void {
     $missing = $this->createTemporaryDirectory() . '/missing';
@@ -163,7 +198,7 @@ test('normal project commands terminate with closed stdin and no interaction', f
     ]);
 
     expect($process->getExitCode())->not->toBeNull()
-        ->and($process->getErrorOutput())->toContain('Error[');
+        ->and($process->getErrorOutput())->toContain('ERROR ');
 })->with([
     'check',
     'build',

@@ -95,7 +95,7 @@ test('init omits schema identity without release metadata and fails closed on co
     $corruptResult = runStageOneIsolatedInit($corrupt, $invalidManifest);
 
     expect($corruptResult->getStatusCode())->toBe(ExitCode::InvalidProject->value)
-        ->and($corruptResult->getDisplay())->toContain('Error[P0021]: Project Initialization Failed')
+        ->and($corruptResult->getDisplay())->toContain('ERROR P0021 · ')
         ->and(file_exists($corrupt . '/ppphp.json'))->toBeFalse();
 });
 
@@ -125,7 +125,7 @@ test('init refuses overwrite unless force is supplied and never prompts', functi
     ]);
 
     expect($refused->getStatusCode())->toBe(ExitCode::InvalidProject->value)
-        ->and($refused->getDisplay())->toContain('Error[P0009]: Project Configuration Already Exists')
+        ->and($refused->getDisplay())->toContain('ERROR P0009 · ')
         ->and(file_get_contents($root . '/ppphp.json'))->toBe("sentinel\n");
 
     $forced = runStageOneCommand([
@@ -161,7 +161,7 @@ test('init refuses configuration and owned-directory symlinks', function (string
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::InvalidProject->value)
-        ->and($tester->getDisplay())->toContain('Error[P0008]: Unsafe Project Path');
+        ->and($tester->getDisplay())->toContain('ERROR P0008 · ');
 
     if ($linkPath === 'ppphp.json') {
         expect(file_get_contents($target . '/configuration.json'))->toBe("preserved\n");
@@ -229,7 +229,7 @@ test('clean refuses project-root source-overlapping and outside owned paths', fu
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::InvalidProject->value)
-        ->and($tester->getDisplay())->toContain('Error[' . $code . ']');
+        ->and($tester->getDisplay())->toContain('ERROR ' . $code);
 })->with([
     'project root' => [['output' => '.'], 'P0008'],
     'source overlap' => [['cache' => 'src/cache'], 'P0013'],
@@ -280,7 +280,7 @@ test('debug controls internal exception details at the CLI boundary', function (
     $tester->run(['command' => 'explode', '--no-ansi' => true]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::InternalCompilerFailure->value)
-        ->and($tester->getDisplay())->toContain('Error[P9001]: Internal Compiler Error')
+        ->and($tester->getDisplay())->toContain('ERROR P9001 · ')
         ->and($tester->getDisplay())->not->toContain('private failure detail');
 
     $debugTester = new ApplicationTester($application);

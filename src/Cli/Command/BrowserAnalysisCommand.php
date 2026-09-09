@@ -10,6 +10,9 @@ use Atatusoft\Ppphp\Analysis\Browser\CompilerAnalysisRequest;
 use Atatusoft\Ppphp\Analysis\Browser\CompilerAnalysisRequestDecoder;
 use Atatusoft\Ppphp\Analysis\Browser\PrepareAnalysisRequest;
 use Atatusoft\Ppphp\Analysis\Browser\PrepareAnalysisRequestDecoder;
+use Atatusoft\Ppphp\Analysis\Browser\WorkflowProtocol;
+use Atatusoft\Ppphp\Analysis\Browser\WorkflowRequest;
+use Atatusoft\Ppphp\Analysis\Browser\WorkflowRequestDecoder;
 use Atatusoft\Ppphp\Cli\Enumerations\ExitCode;
 use Atatusoft\Ppphp\Support\Path;
 use Symfony\Component\Console\Command\Command;
@@ -25,6 +28,7 @@ final class BrowserAnalysisCommand extends Command
         private readonly PrepareAnalysisRequestDecoder $requestDecoder = new PrepareAnalysisRequestDecoder(),
         private readonly CompilerAnalysisProtocol $compilerProtocol = new CompilerAnalysisProtocol(),
         private readonly CompilerAnalysisRequestDecoder $compilerRequestDecoder = new CompilerAnalysisRequestDecoder(),
+        private readonly WorkflowProtocol $workflow = new WorkflowProtocol(),
     ) {
         parent::__construct('browser:analysis');
     }
@@ -70,6 +74,7 @@ final class BrowserAnalysisCommand extends Command
             if ($size === false || $size > max(
                 PrepareAnalysisRequest::MAXIMUM_TRANSPORT_BYTES,
                 CompilerAnalysisRequest::MAXIMUM_TRANSPORT_BYTES,
+                WorkflowRequest::MAXIMUM_BYTES,
             )) {
                 throw new \InvalidArgumentException('The browser analysis request is too large.');
             }
@@ -107,14 +112,27 @@ final class BrowserAnalysisCommand extends Command
                     $workingDirectory,
                     $configurationPath,
                 )->toArray();
+            } elseif ($protocolVersion === WorkflowRequest::VERSION) {
+                if ($configurationPath !== null || $absoluteRequestPath !== Path::join($workingDirectory, WorkflowProtocol::CONTROL, 'request.json')) {
+                    throw new \InvalidArgumentException('Workflow requests must use the fixed session request file and project configuration.');
+                }
+                $response = $this->workflow->handle((new WorkflowRequestDecoder())->decode($json), $workingDirectory);
             } else {
                 throw new \InvalidArgumentException('The browser analysis protocol version is unsupported.');
             }
 
             $output->writeln(json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
 
-            return ExitCode::Success->value;
+            return $protocolVersion === WorkflowRequest::VERSION
+                ? (($response['status'] ?? null) === 'rejected' ? ExitCode::InvalidProject->value
+                    : (($response['compilerStatus'] ?? null) === 70 ? ExitCode::InternalCompilerFailure->value : ExitCode::Success->value))
+                : ExitCode::Success->value;
         } catch (\InvalidArgumentException $exception) {
+            if ($protocolVersion === WorkflowRequest::VERSION) {
+                $output->writeln(json_encode(['version' => 3, 'status' => 'rejected', 'compilerStatus' => 2,
+                    'currentOutput' => null, 'error' => ['code' => 'invalid-request', 'message' => $exception->getMessage()]], JSON_THROW_ON_ERROR));
+                return ExitCode::InvalidProject->value;
+            }
             $version = $protocolVersion === CompilerAnalysisRequest::VERSION
                 ? CompilerAnalysisRequest::VERSION
                 : PrepareAnalysisRequest::VERSION;

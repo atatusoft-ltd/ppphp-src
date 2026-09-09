@@ -18,6 +18,7 @@ final class VariableSymbol
         public readonly BindingMutability $mutability,
         public readonly ?Span $declarationSpan = null,
         public readonly ?LocalBinding $binding = null,
+        public readonly ?\Atatusoft\Ppphp\Semantic\Binding\RejectedLocalBinding $recovery = null,
     ) {}
 
     public BindingInitialization $initialization {

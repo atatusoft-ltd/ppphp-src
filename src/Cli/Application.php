@@ -57,7 +57,7 @@ final class Application extends SymfonyApplication
 
     public const VERSION = Compiler::VERSION;
 
-    public function __construct()
+    public function __construct(private readonly bool $configureMemoryLimit = false)
     {
         parent::__construct(self::NAME, self::VERSION);
 
@@ -162,6 +162,10 @@ final class Application extends SymfonyApplication
     public function doRun(InputInterface $input, OutputInterface $output): int
     {
         try {
+            if ($this->configureMemoryLimit && $this->getCommandName($input) !== 'browser:analysis') {
+                (new CompilerMemoryLimit())->apply();
+            }
+
             return parent::doRun($input, $output);
         } catch (ConsoleException $exception) {
             [$message, $help] = $this->describeInvalidInvocation($input, $exception);

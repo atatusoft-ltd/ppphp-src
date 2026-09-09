@@ -80,9 +80,10 @@ Generics, typed arrays, checked `throws` clauses, and `when` expressions are als
 - PHP `^8.4`
 - Composer 2
 
-Small mixed Composer projects are tested with a `128M` PHP memory limit. Memory
-use grows with the source and dependency declarations being analyzed; the compiler
-does not change your PHP memory setting.
+Native compiler commands allow 512 MiB by default without changing `php.ini`.
+Set `PPPHP_COMPILER_MEMORY_LIMIT_MEGABYTES` once in your shell or launcher to
+choose another allowance. Small mixed projects remain tested at an explicit
+128 MiB limit. See [memory configuration](docs/getting-started.md#compiler-memory).
 
 Generated code targets PHP 8.4.
 

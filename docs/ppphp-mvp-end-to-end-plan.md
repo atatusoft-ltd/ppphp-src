@@ -245,7 +245,7 @@ Every ordinary local variable declaration requires an explicit type and an initi
 Bare assignment never declares a variable:
 
 ```php
-$attempts = 0; // Error: Assignment Cannot Declare Variable
+$attempts = 0; // Error: Missing Local Variable Type
 ```
 
 There is no inferred local declaration form in the MVP.
@@ -1768,6 +1768,38 @@ Focused checks retain safe declaration-only context from unselected sources with
 The Stage 12 catalog and presentation remain intact; valid generic property iteration and callbacks produce no false `P2020`, `P2026`, `P2099`, `P4005`, or `P3015`; true dynamic invocations and list-shape errors remain diagnosed; focused and complete checks expose the appropriate source failures; and the closure itself imports no later analyzer work.
 
 ---
+
+## Diagnostic Usability And Negated-Guard Regression Maintenance
+
+The owner-approved console presentation now uses a location-first, cause-led
+layout across diagnostic families, without arrow/pipe framing, repeated catalog
+titles or duplicate primary explanations. Specific remedies and related locations
+remain visible; generic family advice is omitted from console output. Syntax
+titles are language-neutral, while stable codes, structured protocol fields and
+original source ranges remain unchanged. This supersedes earlier presentation
+preservation requirements without changing completed semantic contracts.
+
+This compiler-correctness work preserves completed stage numbering, the current
+compiler identity, explicit declarations, checked-error contracts and release
+preparation/publication separation. Repository-local regression fixtures exercise
+the reported generic repository through suggested type insertion, wrong-method
+contract edits, the correct inherited contract, checked consumer calls and atomic
+builds. The original `isset` storage behavior and negated validation guard remain.
+
+Acceptance covers specific `P2002`/`P4004` evidence and remedies, scoped rejected
+binding recovery, resolved built-in predicate polarity, unsafe continuation/join
+counterexamples, suggested corrections applied to real source, source locations,
+console/JSON/editor/cache parity and build/lint/runtime behavior. Catalog tables
+and reviewed diagnostic goldens remain maintained outputs. This is release
+quality maintenance, not a new language stage or a publication claim.
+
+The unconstrained generic repository also exposes three independent supplemental
+property-access findings at `id`, `sku` and `name`; these are explicitly retained
+by the end-to-end test. Its executable variant makes the private structural
+validator's input `mixed` (the same native type as erased unbounded `T`) and uses
+concrete objects with declared public initialized properties. Neither negated
+guard nor the `isset` storage condition is rewritten. That separate generic
+property-analysis boundary is not claimed fixed by this work.
 
 ## Stage 13 — Analyzer Independence, Incrementality, Security, And Hardening
 

@@ -42,7 +42,7 @@ test('the catalog defines every code once with canonical metadata', function ():
         ->and($definitions[DiagnosticCode::InvalidInvocation->value]->family)->toBe(DiagnosticFamily::Project)
         ->and($definitions[DiagnosticCode::UncheckedCallBoundary->value]->severity)->toBe(Severity::Warning)
         ->and($definitions[DiagnosticCode::PropertyIsNeverRead->value]->severity)->toBe(Severity::Warning)
-        ->and($definitions[DiagnosticCode::InvalidPhpSyntax->value]->title)->toBe('Invalid PHP Syntax')
+        ->and($definitions[DiagnosticCode::InvalidPhpSyntax->value]->title)->toBe('Syntax Error')
         ->and($definitions[DiagnosticCode::CompilerFrontendNotAvailable->value]->status)->toBe(DiagnosticStatus::Reserved);
 
     foreach ($definitions as $definition) {
@@ -224,12 +224,11 @@ test('console diagnostics render contextual source frames related labels help an
     );
     $rendered = (new ConsoleRenderer())->render(new DiagnosticBag([$diagnostic]));
 
-    expect($rendered)->toContain('Error[P0004]: Unknown Configuration Property')
-        ->and($rendered)->toContain('--> ppphp.json:2:2')
-        ->and($rendered)->toContain('2 |     "bad": true,')
+    expect($rendered)->toStartWith("ppphp.json:2:2\nERROR P0004 · The property \"bad\" is not supported.\nRemove it before continuing.")
+        ->and($rendered)->toContain('  2      "bad": true,')
         ->and($rendered)->toContain('This property is not supported.')
-        ->and($rendered)->toContain('Related: Configuration object.')
-        ->and($rendered)->toContain('Help: Remove "bad".')
+        ->and($rendered)->toContain("ppphp.json:1:1\nNOTE · Configuration object.")
+        ->and($rendered)->toContain("Remove \"bad\".\nKeep supported properties only.")
         ->and($rendered)->not->toContain("\e[");
 });
 
@@ -267,7 +266,7 @@ test('long source lines are clipped around the highlighted region', function ():
         new ConsoleRenderOptions(terminalWidth: 40),
     );
 
-    expect($rendered)->toContain('…', 'TARGET', '^^^^^^ Unknown type.');
+    expect($rendered)->toContain('…', 'TARGET', '^^^^^^', 'Unknown type.');
 });
 
 test('source frames align tabs Unicode CRLF controls and empty EOF spans', function (): void {
@@ -297,9 +296,9 @@ test('source frames align tabs Unicode CRLF controls and empty EOF spans', funct
         ),
     ]));
 
-    expect($aligned)->toContain('    λ\\x1Bvalue();', '^^^^^ Unknown call.')
+    expect($aligned)->toContain('    λ\\x1Bvalue();', '^^^^^', 'Unknown call.')
         ->not->toContain("\r", "\e")
-        ->and($atEof)->toContain('--> src/empty.ppphp:1:1', '^ Insert source here.');
+        ->and($atEof)->toContain('src/empty.ppphp:1:1', '^', 'Insert source here.');
 });
 
 test('invalid UTF-8 and very long lines remain byte exact and render through bounded windows', function (): void {
@@ -327,7 +326,7 @@ test('invalid UTF-8 and very long lines remain byte exact and render through bou
 
     expect(hash('sha256', $source->contents))->toBe(hash('sha256', $contents))
         ->and(strlen($console))->toBeLessThan(2_000)
-        ->and($console)->toContain('TARGET', '^^^^^^ Invalid token.', 'Malformed � token.')
+        ->and($console)->toContain('TARGET', '^^^^^^', 'Invalid token.', 'Malformed � token.')
         ->and($decoded['diagnostics'][0]['location']['range']['start']['offset'])->toBe($start)
         ->and($decoded['diagnostics'][0]['message'])->toBe('Malformed � token.');
 });
@@ -354,8 +353,8 @@ test('long multiline spans retain bounded context and an omission marker', funct
         ),
     ]));
 
-    expect($rendered)->toContain('2 | line two', '3 | line three', '...', '6 | line six', '7 | line seven', '8 | line eight')
-        ->not->toContain('4 | line four', '5 | line five');
+    expect($rendered)->toContain('  2  line two', '  3  line three', '...', '  6  line six', '  7  line seven', '  8  line eight')
+        ->not->toContain('  4  line four', '  5  line five');
 });
 
 test('JSON diagnostics use the stable envelope exact ranges and normalized debug data', function (): void {
@@ -406,10 +405,10 @@ test('portable dependency diagnostics render through both stable presentation co
     $json = json_decode((new JsonRenderer())->render($diagnostics), true, flags: JSON_THROW_ON_ERROR);
 
     expect($console)->toContain(
-        'Error[P6018]: Dependency Source Unavailable',
-        'Error[P6019]: Portable Dependency Index Invalid',
-        'Error[P6020]: Dependency Declaration Ambiguous',
-        'Error[P6021]: Dependency Source Path Unsafe',
+        'ERROR P6018 · ',
+        'ERROR P6019 · ',
+        'ERROR P6020 · ',
+        'ERROR P6021 · ',
     )->and(array_column($json['diagnostics'], 'code'))->toBe(['P6018', 'P6019', 'P6020', 'P6021']);
 });
 
@@ -422,3 +421,57 @@ test('empty JSON diagnostics still produce a valid envelope', function (): void 
         'summary' => ['errors' => 0, 'warnings' => 0, 'notes' => 0],
     ]);
 });
+
+test('console presentation leads with the cause once without changing structured evidence', function (DiagnosticCode $code): void {
+    $source = new SourceFile('/project/main.ppphp', 'src/main.ppphp', FileKind::Ppphp, "<?php\nwrong();\n");
+    $message = 'Specific cause with App\\MyType and "literal PHP" preserved.';
+    $diagnostic = new Diagnostic($code, $message, new DiagnosticLabel($source->createSpan(6, 11), $message));
+    $bag = new DiagnosticBag([$diagnostic]);
+    $before = (new JsonRenderer())->render($bag, true);
+    $console = (new ConsoleRenderer())->render($bag);
+
+    expect($console)->toStartWith("src/main.ppphp:2:1\nERROR {$code->value} · {$message}\n")
+        ->and(substr_count($console, $message))->toBe(1)
+        ->and($console)->toContain('  2  wrong();', '     ^^^^^')
+        ->not->toContain('-->', ' | ', 'Help:', 'Related:', $diagnostic->title)
+        ->and((new JsonRenderer())->render($bag, true))->toBe($before);
+
+    if ($diagnostic->family === DiagnosticFamily::Internal) {
+        expect($console)->toContain('--debug');
+    } else {
+        expect($console)->not->toContain($diagnostic->help);
+    }
+})->with([
+    DiagnosticCode::UnknownConfigurationProperty,
+    DiagnosticCode::InvalidPhpSyntax,
+    DiagnosticCode::InvalidExtensionSyntax,
+    DiagnosticCode::ArgumentTypeDoesNotMatch,
+    DiagnosticCode::GenericTypeArgumentCountDoesNotMatch,
+    DiagnosticCode::CheckedErrorNotHandled,
+    DiagnosticCode::WhenBranchDoesNotProduceValue,
+    DiagnosticCode::InvalidComposerConfiguration,
+    DiagnosticCode::OutputPathCollision,
+    DiagnosticCode::InternalCompilerError,
+]);
+
+test('specific guidance is retained once and generic protocol help is not rewritten', function (): void {
+    $message = 'Add an explicit type before $value.';
+    $bag = new DiagnosticBag([new Diagnostic(DiagnosticCode::AssignmentCannotDeclareVariable, $message, help: $message)]);
+    expect((new ConsoleRenderer())->render($bag))->toBe("ERROR P2002 · {$message}\n");
+
+    $bag = new DiagnosticBag([new Diagnostic(DiagnosticCode::LocalVariableNotDeclared, '$value is not declared.')]);
+    expect((new ConsoleRenderer())->render($bag))->toContain('Declare and initialize this local');
+
+    $bag = new DiagnosticBag([new Diagnostic(DiagnosticCode::InvalidPhpSyntax, 'Expected a semicolon.')]);
+    $json = json_decode((new JsonRenderer())->render($bag), true, flags: JSON_THROW_ON_ERROR);
+    expect($json['diagnostics'][0]['title'])->toBe('Syntax Error')
+        ->and($json['diagnostics'][0]['help'])->toBe('Correct the highlighted source syntax, then run the command again.')
+        ->and((new ConsoleRenderer())->render($bag))->toBe("ERROR P1001 · Expected a semicolon.\n");
+});
+
+test('both syntax layers expose the same language-neutral title with distinct stable codes', function (DiagnosticCode $code): void {
+    $bag = new DiagnosticBag([new Diagnostic($code, 'Expected a semicolon.')]);
+    $json = json_decode((new JsonRenderer())->render($bag), true, flags: JSON_THROW_ON_ERROR);
+    expect($json['diagnostics'][0]['code'])->toBe($code->value)
+        ->and($json['diagnostics'][0]['title'])->toBe('Syntax Error');
+})->with([DiagnosticCode::InvalidPhpSyntax, DiagnosticCode::InvalidExtensionSyntax]);

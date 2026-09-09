@@ -18,7 +18,7 @@ test('the canonical mixed application checks and certifies a complete atomic out
     expect($check->getStatusCode())->toBe(ExitCode::Success->value, $check->getDisplay())
         ->and($check->getDisplay())->not->toContain('P4005')
         ->and($build->getStatusCode())->toBe(ExitCode::Success->value, $build->getDisplay())
-        ->and($build->getDisplay())->toContain('Warning[P6008]: Composer Autoload Does Not Target Build Output')
+        ->and($build->getDisplay())->toContain('WARNING P6008 · ')
         ->and($manifest['completeProject'])->toBeTrue()
         ->and($manifest['files'])->toHaveCount(12)
         ->and($operations)->toContain('compile', 'copy');

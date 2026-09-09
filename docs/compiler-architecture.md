@@ -36,8 +36,10 @@ Ordinary-PHP token streams are materialized only when an editor or output
 consumer requests them; declaration analysis retains syntax trees without a
 second set of tokens and per-token locations. Native parser tokens are likewise
 reconstructed on demand using the original parser target. Composer discovery
-still examines complete dependency sources for references, includes, guards and
-aliases before releasing named function and method implementation bodies.
+examines complete dependency sources for top-level includes, guards and aliases,
+then releases named function and method bodies before collecting declaration
+references. It follows native and PHPDoc contracts, not transitive implementation
+references from dependency bodies. Project-body references still load dependencies.
 Declaration signatures, defaults, PHPDoc, property hooks and source coordinates
 are preserved. Project source trees are not pruned, and PHPStan still reads the
 original dependency sources. Temporary bootstrap symbols are released after final
@@ -47,6 +49,13 @@ The supplemental analyzer receives the compiler process's configured PHP memory
 limit rather than a hard-coded larger allowance. A cached successful check does
 not stand in for the semantic model needed by a cold build; memory regressions
 exercise both cold and warm commands.
+
+The native CLI applies `CompilerMemoryLimit` before command execution. An explicit
+`PPPHP_COMPILER_MEMORY_LIMIT_MEGABYTES` value owns the allowance; otherwise the
+policy raises smaller PHP ceilings to 512 MiB and preserves larger or unlimited
+ceilings. It never writes PHP configuration. Embedded applications and
+`browser:analysis` do not apply the native policy. Editor launchers pass their
+selected allowance through the same environment contract, including lower limits.
 
 ProjectConfigLoader reads ppphp.json from an explicit project root and validates normalized paths, source ownership, exclusions, and compiler-owned output and cache boundaries.
 
