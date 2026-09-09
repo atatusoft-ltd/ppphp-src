@@ -1,17 +1,9 @@
 name: Verify retained PHP-WASM candidate
 
+# Recorded, short-lived artifact comparison. Not an ongoing required CI gate.
+# These exact artifacts expire; use the rebuild workflow for a fresh build.
 on:
   workflow_dispatch:
-  push:
-    branches: [develop]
-    paths:
-      - 'tools/web-spike/src/phpstan-debug-output.mjs'
-      - 'tools/web-spike/src/baseline-worker.js'
-      - 'tools/web-spike/src/baseline.js'
-      - 'tools/web-spike/src/fiber-contract-probes.mjs'
-      - 'tools/web-spike/scripts/phpstan-debug-output.test.mjs'
-      - 'tools/web-spike/scripts/run-fiber-contract*'
-      - '.github/workflows/php-wasm-verify-artifact.yml'
 
 permissions:
   contents: read
