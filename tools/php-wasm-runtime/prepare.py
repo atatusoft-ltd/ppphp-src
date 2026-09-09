@@ -15,6 +15,7 @@ PHP_VERSION = '8.4.23'
 DOCKER_BLOB = '81f85293110155e19e190f7fc27522c6c4851c84'
 FIBERS_BLOB = 'd571a622e476ba2a7f889e1111ee3c309ac71099'
 BASE_BLOB = '893f51c1b543661fbca89d8e9d58c24361ed9ac8'
+BRIDGE_BLOB = 'ba57b40faf97d9432aaeea79d18477ceb5f6cc05'
 
 
 def blob_sha(data: bytes) -> str:
@@ -26,6 +27,22 @@ def replace_exact(source: str, old: str, new: str, count: int = 1) -> str:
     if found != count:
         raise ValueError(f'Patch context changed: expected {count}, found {found}: {old[:100]!r}')
     return source.replace(old, new)
+
+
+def patch_bridge_errno(source: str) -> str:
+    """errno_location returns storage; it never accepts an errno argument."""
+    if blob_sha(source.encode()) != BRIDGE_BLOB:
+        raise ValueError('Unexpected PHP-WASM bridge source')
+    for old, value, count in [
+        ('ERRNO_CODES.EINVAL', 'ERRNO_CODES.EINVAL', 2),
+        ('ERRNO_CODES.ENOSYS', 'ERRNO_CODES.ENOSYS', 1),
+        ('ERRNO_CODES.EBADF', 'ERRNO_CODES.EBADF', 1),
+        ('e.code', 'e.errno', 1),
+        ('e.errno', 'e.errno', 1),
+    ]:
+        source = replace_exact(source, f'___errno_location({old});',
+                               f'HEAP32[___errno_location() >> 2] = {value};', count)
+    return source
 
 
 def patch_fibers(source: str) -> str:
@@ -159,10 +176,17 @@ def main() -> None:
     original = subprocess.check_output(['git', '-C', str(root), 'show', f'{UPSTREAM}:packages/php-wasm/compile/php/Dockerfile'], timeout=10).decode()
     effective = prepare_dockerfile(original, candidate=args.candidate, jobs=args.jobs)
     path.write_text(effective, encoding='utf-8')
+    bridge = compile_root / 'php/phpwasm-emscripten-library.js'
+    original_bridge = subprocess.check_output(['git', '-C', str(root), 'show', f'{UPSTREAM}:packages/php-wasm/compile/php/phpwasm-emscripten-library.js'], timeout=10).decode()
+    patched_bridge = patch_bridge_errno(original_bridge)
+    bridge.write_text(patched_bridge, encoding='utf-8')
     shutil.copyfile(Path(__file__), compile_root / 'ppphp-prepare.py')
     print(json.dumps({'upstream': head, 'phpCommit': PHP_COMMIT, 'phpVersion': PHP_VERSION,
                       'emscripten': '4.0.19', 'profile': 'experimental-fibers' if args.candidate else 'symbol-baseline',
                       'sourceDockerfileBlob': DOCKER_BLOB,
+                      'sourceBridgeBlob': BRIDGE_BLOB,
+                      'effectiveBridgeSha256': hashlib.sha256(patched_bridge.encode()).hexdigest(),
+                      'bridgeErrnoCorrection': True,
                       'effectiveDockerfileSha256': hashlib.sha256(effective.encode()).hexdigest(),
                       'jobs': args.jobs, 'mode': 'asyncify', 'debug': 'function names; assertions; O3; no DWARF',
                       'productionReady': False}, indent=2))

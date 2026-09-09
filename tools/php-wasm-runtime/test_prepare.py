@@ -63,6 +63,27 @@ class PreparationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Patch context changed'):
                 prepare.prepare_dockerfile(source, candidate=False, jobs=2)
 
+    def test_unreviewed_bridge_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'Unexpected PHP-WASM bridge'):
+            prepare.patch_bridge_errno('unreviewed')
+
+    def test_bridge_errno_writes_memory_and_uses_numeric_errno(self):
+        source = '\n'.join('___errno_location(' + arg + ');' for arg in [
+            'ERRNO_CODES.EINVAL', 'ERRNO_CODES.EINVAL', 'ERRNO_CODES.ENOSYS',
+            'ERRNO_CODES.EBADF', 'e.code', 'e.errno'])
+        with patch.object(prepare, 'BRIDGE_BLOB', prepare.blob_sha(source.encode())):
+            result = prepare.patch_bridge_errno(source)
+        self.assertEqual(result.count('HEAP32[___errno_location() >> 2] = '), 6)
+        self.assertEqual(result.count('= e.errno;'), 2)
+        self.assertNotIn('___errno_location(e.', result)
+        self.assertNotIn('___errno_location(ERRNO_CODES', result)
+
+    def test_bridge_changed_context_is_rejected(self):
+        source = '___errno_location(ERRNO_CODES.EINVAL);'
+        with patch.object(prepare, 'BRIDGE_BLOB', prepare.blob_sha(source.encode())):
+            with self.assertRaisesRegex(ValueError, 'Patch context changed'):
+                prepare.patch_bridge_errno(source)
+
 
 if __name__ == '__main__':
     unittest.main()
