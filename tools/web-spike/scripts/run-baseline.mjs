@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { probes, assess } from '../src/baseline-probes.js';
+import { waitForDevTools } from './browser-devtools.mjs';
 
 const spikeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(spikeRoot, '../..');
@@ -85,8 +86,7 @@ export async function launchChrome(binary = process.env.CHROME_BIN) {
       if (launchError || processHandle.exitCode !== null || Date.now() > end) throw new Error(`Browser startup failed: ${launchError?.message || stderr}`);
       await delay(50);
     }
-    const port = Number(readFileSync(activePort, 'utf8').split('\n')[0]);
-    const tabs = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(10000) })).json();
+    const tabs = await waitForDevTools(activePort);
     const tab = tabs.find((item) => item.type === 'page');
     if (!tab) throw new Error('Browser has no page target');
     socket = new WebSocket(tab.webSocketDebuggerUrl);

@@ -42,12 +42,14 @@ jobs:
         working-directory: tools/web-spike
         run: npm ci --no-audit --no-fund
       - name: Check harness and native references
+        id: harness
         run: |
-          node --test tools/web-spike/scripts/run-baseline.test.mjs tools/web-spike/scripts/inspect-runtime-modes.test.mjs
+          node --test tools/web-spike/scripts/*.test.mjs
           php -l tools/web-spike/scripts/inspect-phpstan-fibers.php
       - name: Observe unchanged spike and independent browser probes
         run: node tools/web-spike/scripts/run-baseline.mjs --output "/tmp/ppphp-bp0-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
       - name: Inspect explicitly selected runtimes and retained symbols
+        if: ${{ !cancelled() && steps.harness.outcome == 'success' }}
         run: node tools/web-spike/scripts/inspect-runtime-modes.mjs --output "/tmp/ppphp-modes-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
       - name: Preserve diagnostic evidence outside the checkout
         if: always()
@@ -60,4 +62,5 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
       - name: Verify tracked inputs are unchanged
+        if: ${{ !cancelled() }}
         run: git diff --exit-code
