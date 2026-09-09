@@ -190,7 +190,8 @@ introduced into an ordinary required CI gate.
   includes version/documentation, analysis, Pest, signatures, dependency indexes,
   cache, fuzz smoke, benchmark harness, analyzer promotion, mixed application,
   72-scenario analyzer parity and release-readiness checks.
-- Node browser harness: 81/81 PASS. Runtime verifier Node tests: 4/4 PASS.
+- Node browser harness: 83/83 PASS, including the later CI launcher regressions.
+  Runtime verifier Node tests: 4/4 PASS.
   Python runtime preparation tests: 11/11 PASS; rebuild shell syntax: PASS.
 - Website: focused exporter/content checks and full 75-test suite PASS, 3,783
   assertions; component build PASS. Local Composer validation found the existing
@@ -202,7 +203,7 @@ introduced into an ordinary required CI gate.
 
 | Acceptance dimension | Observed result |
 | --- | --- |
-| Harness correctness | PASS, 81 browser-tool tests plus runtime tooling above |
+| Harness correctness | PASS, 83 browser-tool tests plus runtime tooling above |
 | Runtime controls | PASS, expected baseline failures retained; candidate 15/15 and Fiber 8/8 |
 | Compiler fixture mapped parity and intent | PASS, 30/30 |
 | Website corpus mapped parity and intent | PASS, 18/18 |
@@ -226,6 +227,19 @@ bash -n tools/php-wasm-runtime/rebuild.sh
 Documentation and canonical-version checks were repeated after writing this
 record. The exact compiler push's CI status is a separate handoff observation;
 the historical input CI does not certify the added harness.
+
+The implementation was first pushed at `02f26be58dca68eee30761332b669addbc272690`.
+[Its browser-tool CI run](https://github.com/atatusoft-ltd/ppphp-src/actions/runs/34310851973)
+passed the 13 new BP-3 tests but failed the existing real Chromium startup
+control: process cleanup replaced the startup failure with “Browser did not
+close.” A follow-up launcher fix prefers an available direct Chrome installation
+before Chromium and retains both startup and cleanup errors, including the
+selected executable. Explicit `CHROME_BIN` and Chromium fallback remain supported.
+Two focused regressions and the full 83-test suite passed locally, including a
+real Chrome launch. The original CI did not retain enough startup detail to
+prove the underlying cause; the follow-up CI must verify the selection fix.
+This later launcher change leaves compiler, worker, fixture and runtime bytes
+unchanged; the recorded 48-case macOS execution used the same Chrome executable.
 
 Raw results, runtime artifacts and browser profiles are excluded from source
 control. The transferable `ppphp-bp3-evidence.zip` is 188,433 bytes, SHA-256

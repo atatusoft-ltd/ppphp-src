@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { probes, assess, validCleanPhpStanResult } from '../src/baseline-probes.js';
-import { nativeProbe, launchChrome, createOutput, sha256, collectObservation } from './run-baseline.mjs';
+import { nativeProbe, launchChrome, selectChromeBinary, closeFailedLaunch, createOutput, sha256, collectObservation } from './run-baseline.mjs';
 
 for (const probe of probes) test(`native reference: ${probe.id}`, () => {
   const actual = nativeProbe(probe);
@@ -53,6 +53,24 @@ test('real Chromium control: DevTools connection and JavaScript evaluation', { t
     assert.match(version.product, /Chrome/);
     assert.equal(await browser.evaluate('6 * 7'), 42);
   } finally { await browser.close(); }
+});
+
+test('browser selection prefers direct Chrome, retains Chromium fallback and honors an explicit binary', () => {
+  const both = (path) => ['/usr/bin/google-chrome', '/usr/bin/chromium'].includes(path);
+  assert.equal(selectChromeBinary('', both), '/usr/bin/google-chrome');
+  assert.equal(selectChromeBinary('', (path) => path === '/usr/bin/chromium'), '/usr/bin/chromium');
+  assert.equal(selectChromeBinary('/explicit/browser', both), '/explicit/browser');
+  assert.throws(() => selectChromeBinary('', () => false), /No Chrome/);
+});
+
+test('failed browser startup retains its cause when process cleanup also fails', async () => {
+  const startup = new Error('Selected browser did not publish its DevTools port');
+  const cleanup = new Error('Browser did not close');
+  await assert.rejects(closeFailedLaunch(startup, async () => { throw cleanup; }), (error) => {
+    assert.deepEqual(error.errors, [startup, cleanup]);
+    assert.match(error.message, /DevTools port/); assert.match(error.message, /cleanup failed/); return true;
+  });
+  await assert.rejects(closeFailedLaunch(startup, async () => {}), (error) => error === startup);
 });
 
 test('clean PHPStan JSON accepts empty object and empty array file maps', () => {

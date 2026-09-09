@@ -49,9 +49,23 @@ export function nativeProbe(probe, phpBinary = process.env.PHP_BINARY || 'php') 
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }
 
-export async function launchChrome(binary = process.env.CHROME_BIN) {
-  binary ||= ['/usr/bin/chromium', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find(existsSync);
+export function selectChromeBinary(binary = process.env.CHROME_BIN, exists = existsSync) {
+  // Prefer the direct Chrome installation before Chromium, which may be a package launcher.
+  binary ||= ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find(exists);
   if (!binary) throw new Error('No Chrome/Chromium executable found; set CHROME_BIN');
+  return binary;
+}
+
+export async function closeFailedLaunch(error, close) {
+  try { await close(); }
+  catch (cleanupError) {
+    throw new AggregateError([error, cleanupError], `Browser launch failed: ${error.message}; cleanup failed: ${cleanupError.message}`);
+  }
+  throw error;
+}
+
+export async function launchChrome(binary = process.env.CHROME_BIN) {
+  binary = selectChromeBinary(binary);
   const profile = mkdtempSync(join(tmpdir(), 'ppphp-browser-probe-'));
   const processHandle = spawn(binary, ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
   let launchError;
@@ -83,7 +97,7 @@ export async function launchChrome(binary = process.env.CHROME_BIN) {
     const activePort = join(profile, 'DevToolsActivePort');
     const end = Date.now() + 15000;
     while (!existsSync(activePort)) {
-      if (launchError || processHandle.exitCode !== null || Date.now() > end) throw new Error(`Browser startup failed: ${launchError?.message || stderr}`);
+      if (launchError || processHandle.exitCode !== null || Date.now() > end) throw new Error(`Browser startup failed (${binary}): ${launchError?.message || stderr || 'DevTools port was not published before the deadline'}`);
       await delay(50);
     }
     const tabs = await waitForDevTools(activePort);
@@ -128,7 +142,7 @@ export async function launchChrome(binary = process.env.CHROME_BIN) {
         return value.result.value;
       },
     };
-  } catch (error) { await close(); throw error; }
+  } catch (error) { return closeFailedLaunch(error, close); }
 }
 
 export async function collectObservation(browser, observe) {
