@@ -6,8 +6,10 @@
 
 BP-3 is approved. Protocol 3 Check/Build is implemented for BP-4 and its recorded
 native/Chrome qualification passed. See the [implemented workflow](browser/bp4-workflow.md)
-and [current evidence](browser/bp4-evidence.md). BP-5 through BP-9 remain unimplemented
-by this delivery; no production Run or website routes are enabled.
+and [current evidence](browser/bp4-evidence.md). BP-5 now implements the shared website
+client and isolated Run, with complete qualification on its recorded Chrome profile;
+see the [application handoff](browser/bp5-handoff.md). BP-6 through BP-9 remain
+unimplemented by this delivery. Production editor integration and routes remain guarded.
 > Product outcome: Enable the production playground and interactive Learn routes with complete browser-side Check, Build PHP and Run.
 > Canonical home: `atatusoft-ltd/ppphp-src`, `docs/ppphp-browser-production-plan.md`.
 
