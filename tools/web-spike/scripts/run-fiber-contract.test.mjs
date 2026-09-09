@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fiberContractProbes } from '../src/fiber-contract-probes.mjs';
-import { assessFiberContract } from './run-fiber-contract.mjs';
+import { assessFiberContract, FIBER_CONTRACT_ORIGIN } from './run-fiber-contract.mjs';
 const complete = () => ({ suite: 'fiber-contract', done: true, cases: fiberContractProbes.map((p) => ({
   id: p.id, kind: 'completed', computeStarted: true, stdout: p.stdout, stderr: '', exitCode: p.exitCode, semantics: 'PASS',
 })) });
@@ -20,4 +20,13 @@ test('PASS labels cannot conceal traps, wrong output, exit status or stderr', ()
     const data = complete(); Object.assign(data.cases[0], patch);
     assert.equal(assessFiberContract(data), false);
   }
+});
+
+test('preview uses the artifact verifier loopback origin', () => {
+  const origin = new URL(FIBER_CONTRACT_ORIGIN);
+  assert.equal(origin.origin, 'http://127.0.0.1:4173');
+  assert.equal(origin.hostname, '127.0.0.1');
+  assert.equal(Number(origin.port), 4173);
+  assert.equal(new URL('/baseline.html?suite=fiber-contract', origin).href,
+    'http://127.0.0.1:4173/baseline.html?suite=fiber-contract');
 });

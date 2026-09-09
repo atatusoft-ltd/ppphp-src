@@ -5,6 +5,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
 import { fiberContractProbes } from '../src/fiber-contract-probes.mjs';
 
+// Match the fixed loopback origin accepted by verifyLoadedArtifacts.
+export const FIBER_CONTRACT_ORIGIN = 'http://127.0.0.1:4173';
+
 export function assessFiberContract(data) {
   if (data?.suite !== 'fiber-contract' || data.done !== true || !Array.isArray(data.cases)
       || data.cases.length !== fiberContractProbes.length
@@ -35,11 +38,12 @@ export async function main(args = process.argv.slice(2)) {
   try {
     // Reuse the candidate's already-built diagnostic page. Do not rebuild PHP.
     const vite = await import('vite');
+    const origin = new URL(FIBER_CONTRACT_ORIGIN);
     server = await vite.preview({ root: spike, configFile: join(spike, 'vite.config.js'),
-      preview: { host: '127.0.0.1', port: 4174, strictPort: true } });
+      preview: { host: origin.hostname, port: Number(origin.port), strictPort: true } });
     const browser = await launchChrome();
     report.browser = await collectObservation(browser, async () => {
-      const navigation = await browser.send('Page.navigate', { url: 'http://127.0.0.1:4174/baseline.html?suite=fiber-contract' });
+      const navigation = await browser.send('Page.navigate', { url: new URL('/baseline.html?suite=fiber-contract', origin).href });
       if (navigation.errorText) throw new Error(navigation.errorText);
       const deadline = Date.now() + 180000;
       let data;
