@@ -1,113 +1,99 @@
-Error[P0004]: Unknown Configuration Property
+src/Families.ppphp:2:1
+ERROR P0004 · Representative P0004 diagnostic.
 
-Representative P0004 diagnostic.
+  1  <?php
+  2  first();
+     ^^^^^
+  3  second();
 
-  --> src/Families.ppphp:2:1
-1 | <?php
-2 | first();
-  | ^^^^^ Primary label.
-3 | second();
+Primary label.
 
-Help: Correct the project path, configuration, or command input described above, then run the command again.
+src/Families.ppphp:2:1
+ERROR P3004 · Representative P3004 diagnostic.
 
-Error[P3004]: Generic Type Argument Count Does Not Match
+  1  <?php
+  2  first();
+     ^^^^^
+  3  second();
 
-Representative P3004 diagnostic.
+Primary label.
 
-  --> src/Families.ppphp:2:1
-1 | <?php
-2 | first();
-  | ^^^^^ Primary label.
-3 | second();
+src/Families.ppphp:2:1
+ERROR P6001 · Representative P6001 diagnostic.
 
-Help: Correct the highlighted generic declaration or application so it satisfies its type-parameter contract.
+  1  <?php
+  2  first();
+     ^^^^^
+  3  second();
 
-Error[P6001]: Invalid Composer Configuration
+Primary label.
 
-Representative P6001 diagnostic.
+src/Families.ppphp:3:1
+ERROR P1001 · Representative P1001 diagnostic.
 
-  --> src/Families.ppphp:2:1
-1 | <?php
-2 | first();
-  | ^^^^^ Primary label.
-3 | second();
+  2  first();
+  3  second();
+     ^^^^^
+  4  third();
 
-Help: Correct the Composer, stub, or static-analysis input described above, then run the command again.
+Primary label.
 
-Error[P1001]: Invalid PHP Syntax
+src/Families.ppphp:3:1
+ERROR P4003 · Representative P4003 diagnostic.
 
-Representative P1001 diagnostic.
+  2  first();
+  3  second();
+     ^^^^^
+  4  third();
 
-  --> src/Families.ppphp:3:1
-2 | first();
-3 | second();
-  | ^^^^^ Primary label.
-4 | third();
+Primary label.
 
-Help: Correct the highlighted source syntax, then run the command again.
+src/Families.ppphp:3:1
+ERROR P7002 · Representative P7002 diagnostic.
 
-Error[P4003]: Checked Error Is Not Handled
+  2  first();
+  3  second();
+     ^^^^^
+  4  third();
 
-Representative P4003 diagnostic.
+Primary label.
 
-  --> src/Families.ppphp:3:1
-2 | first();
-3 | second();
-  | ^^^^^ Primary label.
-4 | third();
+src/Families.ppphp:3:10
+ERROR P2003 · Representative P2003 diagnostic.
 
-Help: Catch, declare, or correct the checked error contract described above.
+  2  first();
+  3  second();
+              ^
+  4  third();
+     ^^^^
+  5
 
-Error[P7002]: Generated PHP Output Path Collision
+Primary label.
 
-Representative P7002 diagnostic.
+Declare and initialize this local with an explicit type before the read, or correct its name if you intended an existing variable.
 
-  --> src/Families.ppphp:3:1
-2 | first();
-3 | second();
-  | ^^^^^ Primary label.
-4 | third();
+src/Families.ppphp:3:10
+ERROR P5002 · Representative P5002 diagnostic.
 
-Help: Correct the output condition described above, then run a pathless `ppphp build`.
+  2  first();
+  3  second();
+              ^
+  4  third();
+     ^^^^
+  5
 
-Error[P2003]: Local Variable Is Not Declared
+Primary label.
 
-Representative P2003 diagnostic.
+src/Families.ppphp:3:10
+ERROR P9001 · Representative P9001 diagnostic.
 
-  --> src/Families.ppphp:3:10
-2 | first();
-3 | second();
-  |          ^ Primary label.
-4 | third();
-  | ^^^^
-5 |
+  2  first();
+  3  second();
+              ^
+  4  third();
+     ^^^^
+  5
 
-Help: Declare and initialize this local with an explicit type before the read, or correct its name if you intended an existing variable.
+Primary label.
 
-Error[P5002]: When Branch Does Not Produce A Value
-
-Representative P5002 diagnostic.
-
-  --> src/Families.ppphp:3:10
-2 | first();
-3 | second();
-  |          ^ Primary label.
-4 | third();
-  | ^^^^
-5 |
-
-Help: Correct the highlighted `when` expression so every branch is valid in this context.
-
-Error[P9001]: Internal Compiler Error
-
-Representative P9001 diagnostic.
-
-  --> src/Families.ppphp:3:10
-2 | first();
-3 | second();
-  |          ^ Primary label.
-4 | third();
-  | ^^^^
-5 |
-
-Help: Run the command again with --debug and include the resulting details when reporting the issue.
+Run the command again with --debug and include the resulting details when reporting the issue.

@@ -25,9 +25,9 @@ PHP);
     $build = StageElevenProject::runCommand(['command' => 'build', '--working-directory' => $root]);
 
     expect($check->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and(substr_count($check->getDisplay(), 'Error[P2034]: Duplicate Project Declaration'))->toBe(2)
+        ->and(substr_count($check->getDisplay(), 'ERROR P2034 · '))->toBe(2)
         ->and($check->getDisplay())->toContain('Example\\Duplicate', 'Example\\duplicate')
-        ->toContain('src/Duplicate.ppphp', 'legacy/Duplicate.php', 'Related:')
+        ->toContain('src/Duplicate.ppphp', 'legacy/Duplicate.php', 'NOTE · ')
         ->and($build->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
         ->and(file_exists($root . '/build/ppphp/Duplicate.php'))->toBeFalse();
 });
@@ -45,7 +45,7 @@ test('stubs cannot hide duplicate project declarations through source ordering',
     $check = StageElevenProject::runCommand(['command' => 'check', '--working-directory' => $root]);
 
     expect($check->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and(substr_count($check->getDisplay(), 'Error[P2034]: Duplicate Project Declaration'))->toBe(1)
+        ->and(substr_count($check->getDisplay(), 'ERROR P2034 · '))->toBe(1)
         ->and($check->getDisplay())->toContain('a-source/Boundary.php', 'z-source/Boundary.php')
         ->not->toContain('m-stubs/Boundary.stub.php');
 });
@@ -90,7 +90,7 @@ PPP);
     expect($independent->getStatusCode())->toBe(ExitCode::Success->value, $independent->getDisplay())
         ->and($independent->getDisplay())->not->toContain('P2034')
         ->and($caller->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and(substr_count($caller->getDisplay(), 'Error[P2034]: Duplicate Project Declaration'))->toBe(2, $caller->getDisplay())
+        ->and(substr_count($caller->getDisplay(), 'ERROR P2034 · '))->toBe(2, $caller->getDisplay())
         ->and($caller->getDisplay())->toContain(
             'src/Caller.ppphp',
             'src/ContextA.php',
@@ -139,8 +139,8 @@ PPP);
 
     expect($check->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
         ->and($check->getDisplay())->toContain(
-            'Error[P3010]: Generic Documentation Conflicts With Native Syntax',
-            'Error[P4007]: Throws Documentation Conflicts With Native Clause',
+            'ERROR P3010 · ',
+            'ERROR P4007 · ',
         )
         ->and($build->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
         ->and(file_exists($root . '/build/ppphp'))->toBeFalse();
@@ -209,7 +209,7 @@ test('compiled and copied output collisions preserve the previous complete outpu
 
     expect($successful->getStatusCode())->toBe(ExitCode::Success->value)
         ->and($collision->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($collision->getDisplay())->toContain('Error[P7002]: Generated PHP Output Path Collision')
+        ->and($collision->getDisplay())->toContain('ERROR P7002 · ')
         ->and(StageElevenProject::captureTree($root . '/build/ppphp'))->toBe($before);
 });
 
@@ -240,6 +240,6 @@ test('Composer projection conflicts leave composer json byte-identical', functio
     ]);
 
     expect($configure->getStatusCode())->toBe(ExitCode::InvalidProject->value)
-        ->and($configure->getDisplay())->toContain('Error[P6011]: Composer Runtime Mapping Conflicts With Build Output')
+        ->and($configure->getDisplay())->toContain('ERROR P6011 · ')
         ->and(file_get_contents($root . '/composer.json'))->toBe($original);
 });

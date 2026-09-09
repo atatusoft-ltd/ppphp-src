@@ -86,6 +86,8 @@ final class DiagnosticCatalog
     private static function resolveTitle(DiagnosticCode $code): string
     {
         $canonical = match ($code) {
+            DiagnosticCode::InvalidPhpSyntax,
+            DiagnosticCode::InvalidExtensionSyntax => 'Syntax Error',
             DiagnosticCode::AssignmentCannotDeclareVariable => 'Missing Local Variable Type',
             DiagnosticCode::AnalysisWorkspacePreparationFailed => 'Code Could Not Be Prepared For Analysis',
             DiagnosticCode::DependencyDeclarationContextUnavailable => 'Dependency Source Unavailable',

@@ -56,7 +56,37 @@ recovery never authorizes output or hides backend findings by variable-name matc
 
 ## Console output
 
-Console diagnostics include a severity/code/title heading, message, project-relative source location, contextual source frame, primary underline, related source frames, and optional help. Tabs use four-column stops, long lines are clipped to terminal width, multiline spans highlight at most four source lines, and control bytes are escaped.
+Console diagnostics put the project-relative location first, followed by the severity,
+stable code, and specific cause. For example:
+
+```text
+src/main.ppphp:3:1
+ERROR P1001 · Expected a semicolon before `return`.
+
+  2  int $value = 1
+  3  return $value;
+     ^^^^^^
+```
+
+The source excerpt uses line numbers and precise underlines without an arrow or
+pipe frame. The catalog title is not repeated above the explanation. A primary
+label that adds information appears below the excerpt; identical message/label
+text is shown once. Related locations have their own location, `NOTE` explanation,
+and excerpt. Concrete remedies appear as plain text, without a `Help:` wrapper;
+repeated advice and generic family fallback guidance are omitted from the console.
+Project-wide errors start with the severity/code/cause line and do not acquire an
+invented source location. Internal failures retain instructions for reporting with
+`--debug`.
+
+Tabs use four-column stops, long lines are clipped to terminal width, multiline
+spans highlight at most four source lines, and control bytes are escaped.
+Color adds emphasis but is not needed to identify severity or source ranges.
+
+Syntax diagnostics `P1001` and `P1008` share the language-neutral catalog title
+`Syntax Error`; their codes still distinguish the parsing layers. JSON and editor
+consumers retain the same versioned fields, messages, labels, guidance and ranges.
+Use those structured protocols for integration, not the human-readable console
+layout. Titles are presentation text, not machine identifiers.
 
 Diagnostics use standard error when the terminal exposes a separate error channel. Command results, build summaries, AST data, and editor protocol responses use standard output. `--ansi` forces semantic decoration, `--no-ansi` disables it, and explicit flags override the environment. Automatic decoration is disabled when `NO_COLOR` is nonempty or `TERM=dumb`.
 
@@ -122,14 +152,14 @@ The table below is generated from `DiagnosticCatalog`. Reserved codes preserve s
 | `P0024` | `project` | `active` | `error` | Selected Path Excluded |
 | `P0025` | `project` | `active` | `error` | Selected Path Not Readable |
 | `P0026` | `project` | `active` | `error` | Conflicting PHP Target Configuration |
-| `P1001` | `syntax` | `active` | `error` | Invalid PHP Syntax |
+| `P1001` | `syntax` | `active` | `error` | Syntax Error |
 | `P1002` | `syntax` | `active` | `error` | Explicit Source File Is Required |
 | `P1003` | `syntax` | `reserved` | `error` | Directory Compilation Unavailable |
 | `P1004` | `syntax` | `active` | `error` | Unsupported Source File |
 | `P1005` | `syntax` | `active` | `error` | Selected Path Is Outside Configured Source Roots |
 | `P1006` | `syntax` | `active` | `error` | Source File Not Readable |
 | `P1007` | `syntax` | `reserved` | `error` | PHP Source Is Not Build Target |
-| `P1008` | `syntax` | `active` | `error` | Invalid Extension Syntax |
+| `P1008` | `syntax` | `active` | `error` | Syntax Error |
 | `P1009` | `syntax` | `active` | `error` | Unsupported Extension Syntax |
 | `P1010` | `syntax` | `active` | `error` | Extension Normalization Failed |
 | `P1011` | `syntax` | `active` | `error` | Missing PHP Opening Tag |

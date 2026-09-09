@@ -1,25 +1,23 @@
-Error[P2099]: Static Analysis Error
+src/Debug.ppphp:2:1
+ERROR P2099 · The analyzed call could not be resolved.
 
-The analyzed call could not be resolved.
+  1  <?php
+  2  unknown();
+     ^^^^^^^
+  3
 
-  --> src/Debug.ppphp:2:1
-1 | <?php
-2 | unknown();
-  | ^^^^^^^ Unknown call.
-3 |
+Unknown call.
 
-Help: Declare or import the called function.
+Declare or import the called function.
 
 Debug:
   origin: phpstan
   backendIdentifier: function.notFound
   analysisPath: /tmp/project/.ppphp-cache/analysis/selected/0123456789abcdef/Debug.php
 
-Error[P9001]: Internal Compiler Error
+ERROR P9001 · The compiler encountered an unexpected failure.
 
-The compiler encountered an unexpected failure.
-
-Help: Run the command again with --debug and include the resulting details when reporting the issue.
+Run the command again with --debug and include the resulting details when reporting the issue.
 
 Debug:
   origin: compiler

@@ -76,7 +76,7 @@
         {
             "code": "P1001",
             "severity": "error",
-            "title": "Invalid PHP Syntax",
+            "title": "Syntax Error",
             "message": "Representative P1001 diagnostic.",
             "location": {
                 "file": "src/Families.ppphp",

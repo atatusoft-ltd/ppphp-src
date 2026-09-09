@@ -148,7 +148,7 @@ test('console JSON debug unsaved overlays and verified warm cache replay agree o
     foreach ($debug['diagnostics'] as &$diagnostic) { unset($diagnostic['debug']); }
     unset($diagnostic);
     expect($debug)->toBe($json)
-        ->and($console->getErrorOutput())->toContain('Missing Local Variable Type', 'Exception Not Permitted By Inherited Contract', 'Repository::create()', 'string $id = $this->getId();', 'src/Repository.ppphp');
+        ->and($console->getErrorOutput())->toContain('ERROR P2002 · ', 'ERROR P4004 · ', 'Repository::create()', 'string $id = $this->getId();', 'src/Repository.ppphp');
 
     // The target is truly unsaved: disk is replaced with different, valid source.
     $saved = '<?php namespace App; final class Saved {}';

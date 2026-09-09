@@ -28,32 +28,39 @@ final readonly class ConsoleRenderer
 
     private function renderDiagnostic(Diagnostic $diagnostic, ConsoleRenderOptions $options): string
     {
-        $heading = sprintf('%s[%s]: %s', ucfirst($diagnostic->severity->value), $diagnostic->code->value, $diagnostic->title);
-        $lines = [
-            $this->style($this->sanitize($heading), $this->severityStyle($diagnostic->severity), $options),
-            '',
-            ...explode("\n", $this->sanitize($diagnostic->message)),
-        ];
+        $message = explode("\n", $this->sanitize($diagnostic->message));
+        $heading = sprintf('%s %s · %s', strtoupper($diagnostic->severity->value), $diagnostic->code->value, array_shift($message));
+        $lines = $diagnostic->primary === null ? [] : [$this->renderLocation($diagnostic->primary, $options)];
+        $lines[] = $this->style($heading, $this->severityStyle($diagnostic->severity), $options);
+        array_push($lines, ...$message);
 
         if ($diagnostic->primary !== null) {
             $lines[] = '';
             array_push($lines, ...$this->renderLabel($diagnostic->primary, $diagnostic->severity, $options));
+
+            if ($diagnostic->primary->message !== '' && $diagnostic->primary->message !== $diagnostic->message) {
+                $lines[] = '';
+                $lines[] = $this->sanitize($diagnostic->primary->message);
+            }
         }
 
         foreach ($diagnostic->related as $related) {
             $lines[] = '';
-            $lines[] = $this->style('Related:', '36;1', $options) . ' ' . $this->sanitize($related->message);
-            array_push($lines, ...$this->renderLabel($related, Severity::Note, $options, false));
+            $lines[] = $this->renderLocation($related, $options);
+            $lines[] = $this->style('NOTE · ' . $this->sanitize($related->message), $this->severityStyle(Severity::Note), $options);
+            $lines[] = '';
+            array_push($lines, ...$this->renderLabel($related, Severity::Note, $options));
         }
 
-        if ($diagnostic->help !== null) {
+        if (
+            $diagnostic->help !== null
+            && $diagnostic->help !== ''
+            && $diagnostic->help !== $diagnostic->message
+            && $diagnostic->help !== $diagnostic->primary?->message
+            && $diagnostic->help !== DiagnosticHelpProvider::resolveGeneric($diagnostic->family)
+        ) {
             $lines[] = '';
-            $help = explode("\n", $this->sanitize($diagnostic->help));
-            $lines[] = $this->style('Help:', '32;1', $options) . ' ' . array_shift($help);
-
-            foreach ($help as $helpLine) {
-                $lines[] = $helpLine === '' ? '' : '      ' . $helpLine;
-            }
+            $lines[] = $this->style($this->sanitize($diagnostic->help), '32', $options);
         }
 
         if ($options->includeDebug) {
@@ -80,12 +87,21 @@ final readonly class ConsoleRenderer
         return implode("\n", $lines);
     }
 
+    private function renderLocation(DiagnosticLabel $label, ConsoleRenderOptions $options): string
+    {
+        return $this->style(sprintf(
+            '%s:%d:%d',
+            $this->sanitize(str_replace('\\', '/', $label->span->sourceFile->displayPath)),
+            $label->span->start->line,
+            $label->span->start->column,
+        ), '1', $options);
+    }
+
     /** @return list<string> */
     private function renderLabel(
         DiagnosticLabel $label,
         Severity $severity,
         ConsoleRenderOptions $options,
-        bool $includeMessage = true,
     ): array {
         $span = $label->span;
         $source = $span->sourceFile;
@@ -102,22 +118,16 @@ final readonly class ConsoleRenderer
         }
 
         $gutterWidth = strlen((string) max($visibleLines === [] ? [$span->start->line] : $visibleLines));
-        $lines = [sprintf(
-            '  %s %s:%d:%d',
-            $this->style('-->', '36;1', $options),
-            $this->sanitize(str_replace('\\', '/', $source->displayPath)),
-            $span->start->line,
-            $span->start->column,
-        )];
+        $lines = [];
         $previous = null;
 
         foreach ($visibleLines as $line) {
             if ($previous !== null && $line > $previous + 1) {
-                $lines[] = str_repeat(' ', $gutterWidth + 1) . $this->style('...', '2', $options);
+                $lines[] = str_repeat(' ', $gutterWidth + 4) . $this->style('...', '2', $options);
             }
 
             $sourceLine = $source->readLineText($line);
-            $available = max(1, $options->terminalWidth - $gutterWidth - 3);
+            $available = max(1, $options->terminalWidth - $gutterWidth - 4);
             [$column, $length] = $line >= $span->start->line && $line <= $highlightEnd
                 ? $this->resolveUnderlineColumns($label, $line)
                 : [1, 1];
@@ -138,10 +148,9 @@ final readonly class ConsoleRenderer
             );
             $lineNumber = str_pad((string) $line, $gutterWidth, ' ', STR_PAD_LEFT);
             $lines[] = sprintf(
-                '%s %s%s',
-                $this->style($lineNumber, '34', $options),
-                $this->style('|', '34', $options),
-                $expanded === '' ? '' : ' ' . $expanded,
+                '  %s%s',
+                $this->style($lineNumber, '2', $options),
+                $expanded === '' ? '' : '  ' . $expanded,
             );
 
             if ($line >= $span->start->line && $line <= $highlightEnd) {
@@ -149,13 +158,7 @@ final readonly class ConsoleRenderer
                 $underline = str_repeat(' ', $indent)
                     . str_repeat('^', max(1, min($length, $available - $indent)));
 
-                if ($includeMessage && $line === $span->start->line && $label->message !== '') {
-                    $underline .= ' ' . $this->sanitize($label->message);
-                }
-
-                $lines[] = str_repeat(' ', $gutterWidth + 1)
-                    . $this->style('|', '34', $options)
-                    . ' '
+                $lines[] = str_repeat(' ', $gutterWidth + 4)
                     . $this->style($underline, $this->severityStyle($severity), $options);
             }
 

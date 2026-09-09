@@ -6,6 +6,7 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 
 ### Changed
 
+- Console diagnostics now lead with the source location and specific cause, with simpler excerpts and no repeated explanation or generic repair advice. Syntax errors use a language-neutral title; diagnostic codes and editor ranges are unchanged.
 - Native compiler commands now allow 512 MiB by default without editing `php.ini`. Set `PPPHP_COMPILER_MEMORY_LIMIT_MEGABYTES` once to choose another ceiling; editor integrations and supplemental analysis share that setting.
 
 ### Fixed

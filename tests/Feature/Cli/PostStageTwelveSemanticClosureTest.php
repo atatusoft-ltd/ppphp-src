@@ -104,7 +104,7 @@ PPP);
         ->toContain('throw new \LogicException()')
         ->not->toContain("'wrong'")
         ->and($complete->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($complete->getDisplay())->toContain('Error[P2008]', 'src/ShoppingCart.ppphp:');
+        ->and($complete->getDisplay())->toContain('ERROR P2008', 'src/ShoppingCart.ppphp:');
 });
 
 test('focused declaration context never fabricates an invalid generic header', function (): void {

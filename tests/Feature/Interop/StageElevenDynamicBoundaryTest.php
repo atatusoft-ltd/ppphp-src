@@ -23,7 +23,7 @@ test('genuine dynamic boundaries warn without blocking checks builds or runtime'
     $runtime->run();
 
     expect($check->getStatusCode())->toBe(ExitCode::Success->value)
-        ->and($check->getDisplay())->toContain('Warning[P4005]: Unchecked Call Boundary')
+        ->and($check->getDisplay())->toContain('WARNING P4005 · ')
         ->toContain('src/Dynamic.ppphp:')
         ->and($json->getStatusCode())->toBe(ExitCode::Success->value)
         ->and($payload['summary']['warnings'])->toBeGreaterThanOrEqual(1)

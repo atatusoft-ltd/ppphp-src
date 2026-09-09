@@ -84,7 +84,7 @@ test('ordinary parser errors point to the original ppphp path without internal d
     $diagnostic = $result->diagnostics->errors[0] ?? null;
 
     expect($diagnostic?->code->value)->toBe('P1001')
-        ->and($diagnostic?->title)->toBe('Invalid PHP Syntax')
+        ->and($diagnostic?->title)->toBe('Syntax Error')
         ->and($diagnostic?->primary?->span->sourceFile->displayPath)->toBe('src/Invalid.ppphp')
         ->and($diagnostic?->message)->not->toContain('PhpParser\\');
 });

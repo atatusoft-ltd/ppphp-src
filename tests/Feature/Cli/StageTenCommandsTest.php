@@ -240,7 +240,7 @@ test('partial builds reject modified manifest-owned output without changing it',
     ]);
 
     expect($build->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($build->getDisplay())->toContain('Error[P7012]: Build Output Has Been Modified')
+        ->and($build->getDisplay())->toContain('ERROR P7012 · ')
         ->and(captureStageTenTree($root . '/build/ppphp'))->toBe($before);
 });
 
@@ -260,7 +260,7 @@ test('build locking prevents same-process concurrent build transactions', functi
     }
 
     expect($build->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($build->getDisplay())->toContain('Error[P7009]: Build Is Already In Progress');
+        ->and($build->getDisplay())->toContain('ERROR P7009 · ');
 });
 
 test('operation locking permits concurrent checks and excludes build or clean mutations', function (): void {
@@ -335,7 +335,7 @@ test('strict types cannot be disabled by a source build', function (): void {
     $build = runStageTenCommand(['command' => 'build', '--working-directory' => $root]);
 
     expect($build->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($build->getDisplay())->toContain('Error[P2033]: Strict Types Cannot Be Disabled')
+        ->and($build->getDisplay())->toContain('ERROR P2033 · ')
         ->and(file_exists($root . '/build/ppphp'))->toBeFalse();
 });
 
@@ -401,7 +401,7 @@ test('partial builds reject invalid manifests while pathless builds replace them
     ]);
 
     expect($partial->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($partial->getDisplay())->toContain('Error[P7004]: Build Manifest Is Invalid')
+        ->and($partial->getDisplay())->toContain('ERROR P7004 · ')
         ->and(captureStageTenTree($root . '/build/ppphp'))->toBe($before);
 
     $complete = runStageTenCommand(['command' => 'build', '--working-directory' => $root]);
@@ -432,7 +432,7 @@ test('partial builds reject incompatible manifest identity', function (): void {
     ]);
 
     expect($partial->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($partial->getDisplay())->toContain('Error[P7011]: Build Manifest Does Not Match Configuration');
+        ->and($partial->getDisplay())->toContain('ERROR P7011 · ');
 });
 
 test('partial builds reject manifests created with different source exclusions', function (): void {
@@ -462,7 +462,7 @@ test('partial builds reject manifests created with different source exclusions',
 
     expect($reordered->getStatusCode())->toBe(ExitCode::Success->value, $reordered->getDisplay())
         ->and($partial->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($partial->getDisplay())->toContain('Error[P7011]: Build Manifest Does Not Match Configuration')
+        ->and($partial->getDisplay())->toContain('ERROR P7011 · ')
         ->and($complete->getStatusCode())->toBe(ExitCode::Success->value, $complete->getDisplay())
         ->and(file_exists($root . '/build/ppphp/Keep.php'))->toBeTrue()
         ->and(file_exists($root . '/build/ppphp/Excluded.php'))->toBeFalse();
@@ -475,7 +475,7 @@ test('reserved metadata output paths are rejected globally', function (): void {
     $build = runStageTenCommand(['command' => 'build', '--working-directory' => $root]);
 
     expect($build->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($build->getDisplay())->toContain('Error[P7008]: Output Path Is Reserved')
+        ->and($build->getDisplay())->toContain('ERROR P7008 · ')
         ->and(file_exists($root . '/build/ppphp'))->toBeFalse();
 });
 
@@ -499,7 +499,7 @@ test('partial builds reject symlinks inside the output tree without following th
     ]);
 
     expect($build->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($build->getDisplay())->toContain('Error[P7005]: Build Could Not Be Staged')
+        ->and($build->getDisplay())->toContain('ERROR P7005 · ')
         ->and(file_get_contents($outside . '/untouched.txt'))->toBe('outside');
 });
 

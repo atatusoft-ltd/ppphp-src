@@ -1,50 +1,53 @@
-Error[P4004]: Exception Not Permitted By Inherited Contract
+src/InMemoryRepository.ppphp:20:16
+ERROR P4004 · InMemoryRepository::create() declares \InvalidArgumentException, but Repository::create() does not declare any checked exceptions.
 
-InMemoryRepository::create() declares \InvalidArgumentException, but Repository::create() does not declare any checked exceptions.
+  19      public function create(T $item): void
+  20          throws \InvalidArgumentException
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  21      {
 
-  --> src/InMemoryRepository.ppphp:20:16
-19 |     public function create(T $item): void
-20 |         throws \InvalidArgumentException
-   |                ^^^^^^^^^^^^^^^^^^^^^^^^^ \InvalidArgumentException is not permitted by Repository::create().
-21 |     {
+\InvalidArgumentException is not permitted by Repository::create().
 
-Related: Repository::create() does not declare any checked exceptions.
-  --> src/Repository.ppphp:9:5
- 8 |
- 9 |     public function create(T $item): void;
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-10 | }
+src/Repository.ppphp:9:5
+NOTE · Repository::create() does not declare any checked exceptions.
 
-Related: InMemoryRepository::create() declares the additional exception here.
-  --> src/InMemoryRepository.ppphp:19:5
-18 |
-19 |     public function create(T $item): void
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-20 |         throws \InvalidArgumentException
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-21 |     {
+   8
+   9      public function create(T $item): void;
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  10  }
 
-Help: If this exception belongs to the public contract, add `throws \InvalidArgumentException` to Repository::create(). This changes the public API; callers must handle or declare the exception. Every other inherited contract must also permit it.
+src/InMemoryRepository.ppphp:19:5
+NOTE · InMemoryRepository::create() declares the additional exception here.
 
-      Otherwise, handle \InvalidArgumentException inside InMemoryRepository::create() so it does not escape. Removing the throws declaration alone does not handle an escaping exception.
+  18
+  19      public function create(T $item): void
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  20          throws \InvalidArgumentException
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  21      {
 
-Error[P2002]: Missing Local Variable Type
+If this exception belongs to the public contract, add `throws \InvalidArgumentException` to Repository::create(). This changes the public API; callers must handle or declare the exception. Every other inherited contract must also permit it.
 
-The local variable $id is missing its explicit type.
+Otherwise, handle \InvalidArgumentException inside InMemoryRepository::create() so it does not escape. Removing the throws declaration alone does not handle an escaping exception.
 
-  --> src/InMemoryRepository.ppphp:22:9
-21 |     {
-22 |         $id = $this->getId($item);
-   |         ^^^ Add a type before $id.
-23 |
+src/InMemoryRepository.ppphp:22:9
+ERROR P2002 · The local variable $id is missing its explicit type.
 
-Related: The initializer uses this declared return contract.
-  --> src/InMemoryRepository.ppphp:29:22
-28 |
-29 |     private function getId(T $item): string
-   |                      ^^^^^
-30 |         throws \InvalidArgumentException
+  21      {
+  22          $id = $this->getId($item);
+              ^^^
+  23
 
-Help: InMemoryRepository::getId() is declared to return string. This suggestion uses its declaration, independently of checking its body. Write:
+Add a type before $id.
 
-          string $id = $this->getId($item);
+src/InMemoryRepository.ppphp:29:22
+NOTE · The initializer uses this declared return contract.
+
+  28
+  29      private function getId(T $item): string
+                           ^^^^^
+  30          throws \InvalidArgumentException
+
+InMemoryRepository::getId() is declared to return string. This suggestion uses its declaration, independently of checking its body. Write:
+
+    string $id = $this->getId($item);

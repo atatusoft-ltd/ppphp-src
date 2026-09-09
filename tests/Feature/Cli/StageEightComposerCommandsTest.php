@@ -77,7 +77,7 @@ test('build warns until root Composer application mappings target generated PHP'
     ]);
 
     expect($before->getStatusCode())->toBe(ExitCode::Success->value)
-        ->and($before->getDisplay())->toContain('Warning[P6008]: Composer Autoload Does Not Target Build Output')
+        ->and($before->getDisplay())->toContain('WARNING P6008 · ')
         ->toContain('autoload.psr-4.App\\')
         ->toContain('src/')
         ->toContain('build/ppphp/');

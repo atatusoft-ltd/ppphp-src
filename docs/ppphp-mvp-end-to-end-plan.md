@@ -1771,6 +1771,14 @@ The Stage 12 catalog and presentation remain intact; valid generic property iter
 
 ## Diagnostic Usability And Negated-Guard Regression Maintenance
 
+The owner-approved console presentation now uses a location-first, cause-led
+layout across diagnostic families, without arrow/pipe framing, repeated catalog
+titles or duplicate primary explanations. Specific remedies and related locations
+remain visible; generic family advice is omitted from console output. Syntax
+titles are language-neutral, while stable codes, structured protocol fields and
+original source ranges remain unchanged. This supersedes earlier presentation
+preservation requirements without changing completed semantic contracts.
+
 This compiler-correctness work preserves completed stage numbering, the current
 compiler identity, explicit declarations, checked-error contracts and release
 preparation/publication separation. Repository-local regression fixtures exercise

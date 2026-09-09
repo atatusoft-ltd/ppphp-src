@@ -33,9 +33,9 @@ PPP);
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P2011]: Missing Parameter Type')
-        ->and($tester->getDisplay())->toContain('Error[P2012]: Missing Return Type')
-        ->and($tester->getDisplay())->toContain('Error[P2013]: Missing Property Type')
+        ->and($tester->getDisplay())->toContain('ERROR P2011 · ')
+        ->and($tester->getDisplay())->toContain('ERROR P2012 · ')
+        ->and($tester->getDisplay())->toContain('ERROR P2013 · ')
         ->and($tester->getDisplay())->toContain('src/Invalid.ppphp:')
         ->and($tester->getDisplay())->not->toContain('.ppphp-cache')
         ->and(file_exists($root . '/build/ppphp/Invalid.php'))->toBeFalse();
@@ -87,11 +87,11 @@ PPP);
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P2015]: Argument Type Does Not Match')
-        ->and($tester->getDisplay())->toContain('Error[P2016]: Return Type Does Not Match')
-        ->and($tester->getDisplay())->toContain('Error[P2017]: Not All Paths Return A Value')
-        ->and($tester->getDisplay())->toContain('Error[P2020]: Type Does Not Exist')
-        ->and($tester->getDisplay())->toContain('Error[P2021]: Function Does Not Exist')
+        ->and($tester->getDisplay())->toContain('ERROR P2015 · ')
+        ->and($tester->getDisplay())->toContain('ERROR P2016 · ')
+        ->and($tester->getDisplay())->toContain('ERROR P2017 · ')
+        ->and($tester->getDisplay())->toContain('ERROR P2020 · ')
+        ->and($tester->getDisplay())->toContain('ERROR P2021 · ')
         ->and($tester->getDisplay())->not->toContain('argument.type')
         ->and($tester->getDisplay())->not->toContain('.ppphp-cache');
 });
@@ -112,9 +112,9 @@ PPP);
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::Success->value)
-        ->and($tester->getDisplay())->toContain('Warning[P2046]: Property Is Never Read')
+        ->and($tester->getDisplay())->toContain('WARNING P2046 · ')
         ->and($tester->getDisplay())->toContain('Service::$value is never read, only written.')
-        ->and($tester->getDisplay())->not->toContain('Error[P2099]')
+        ->and($tester->getDisplay())->not->toContain('ERROR P2099')
         ->and(file_exists($root . '/build/ppphp/Service.php'))->toBeTrue();
 });
 
@@ -206,10 +206,10 @@ PPP);
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P2018]: Method Does Not Exist')
-        ->and($tester->getDisplay())->toContain('Error[P2019]: Property Does Not Exist')
-        ->and($tester->getDisplay())->toContain('Error[P2024]: Property Type Does Not Match')
-        ->and($tester->getDisplay())->toContain('Error[P2025]: Null Is Not Assignable')
+        ->and($tester->getDisplay())->toContain('ERROR P2018 · ')
+        ->and($tester->getDisplay())->toContain('ERROR P2019 · ')
+        ->and($tester->getDisplay())->toContain('ERROR P2024 · ')
+        ->and($tester->getDisplay())->toContain('ERROR P2025 · ')
         ->and($tester->getDisplay())->not->toContain('P2099');
 });
 
@@ -240,8 +240,8 @@ PPP);
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and(substr_count($tester->getDisplay(), 'Error[P2015]: Argument Type Does Not Match'))->toBe(2)
-        ->and($tester->getDisplay())->not->toContain('Missing Parameter Type');
+        ->and(substr_count($tester->getDisplay(), 'ERROR P2015 · '))->toBe(2)
+        ->and($tester->getDisplay())->not->toContain('ERROR P2011');
 });
 
 test('selected php is checked against valid generated ppphp context', function (): void {
@@ -259,7 +259,7 @@ PPP);
     ]);
 
     expect($tester->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($tester->getDisplay())->toContain('Error[P2015]: Argument Type Does Not Match')
+        ->and($tester->getDisplay())->toContain('ERROR P2015 · ')
         ->and($tester->getDisplay())->toContain('src/Caller.php:');
 });
 

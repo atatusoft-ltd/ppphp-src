@@ -102,7 +102,7 @@ PPP);
     ]);
 
     expect($check->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($check->getDisplay())->toContain('Error[P5002]: When Branch Does Not Produce A Value')
+        ->and($check->getDisplay())->toContain('ERROR P5002 · ')
         ->toContain('src/Invalid.ppphp:')
         ->not->toContain('.ppphp-cache')
         ->not->toContain('$__ppphp_when_')
@@ -164,7 +164,7 @@ PPP);
     ]);
 
     expect($check->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and($check->getDisplay())->toContain('Error[P2018]: Method Does Not Exist')
+        ->and($check->getDisplay())->toContain('ERROR P2018 · ')
         ->toContain('src/Backend.ppphp:6:')
         ->not->toContain('.ppphp-cache')
         ->not->toContain('$__ppphp_when_');

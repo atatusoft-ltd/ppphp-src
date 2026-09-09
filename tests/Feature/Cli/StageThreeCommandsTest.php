@@ -143,7 +143,7 @@ test('output collisions block only builds whose selected emission participates',
     ]);
 
     expect($colliding->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($colliding->getDisplay())->toContain('Error[P7002]: Generated PHP Output Path Collision')
+        ->and($colliding->getDisplay())->toContain('ERROR P7002 · ')
         ->and($unrelated->getStatusCode())->toBe(ExitCode::Success->value)
         ->and(file_exists($root . '/build/ppphp/Other.php'))->toBeTrue();
 });
@@ -228,7 +228,7 @@ test('selection rejects missing unsupported excluded and non-owned paths', funct
     ]);
 
     expect($check->getStatusCode())->toBe(ExitCode::InvalidProject->value)
-        ->and($check->getDisplay())->toContain('Error[' . $code . ']');
+        ->and($check->getDisplay())->toContain('ERROR ' . $code);
 })->with([
     'missing path' => ['src/Missing.ppphp', 'P0018'],
     'unsupported file' => ['src/readme.txt', 'P1004'],
@@ -274,7 +274,7 @@ test('syntax diagnostics aggregate in deterministic source order', function (): 
     ]);
 
     expect($check->getStatusCode())->toBe(ExitCode::DiagnosticsReported->value)
-        ->and(substr_count($check->getDisplay(), 'Error[P1001]'))->toBe(2)
+        ->and(substr_count($check->getDisplay(), 'ERROR P1001'))->toBe(2)
         ->and(strpos($check->getDisplay(), 'src/ABroken.ppphp:'))->toBeLessThan(
             strpos($check->getDisplay(), 'src/ZBroken.php:'),
         );
@@ -292,7 +292,7 @@ test('a missing configured stub directory is invalid project context', function 
     ]);
 
     expect($check->getStatusCode())->toBe(ExitCode::InvalidProject->value)
-        ->and($check->getDisplay())->toContain('Error[P6004]: Configured Stub Path Is Invalid');
+        ->and($check->getDisplay())->toContain('ERROR P6004 · ');
 });
 
 test('mixed PHP and generated ++PHP sources run together without rewriting PHP', function (): void {
@@ -335,7 +335,7 @@ test('compiled and copied sources participate in the same output collision model
     ]);
 
     expect($build->getStatusCode())->toBe(ExitCode::OutputValidationFailed->value)
-        ->and($build->getDisplay())->toContain('Error[P7002]: Generated PHP Output Path Collision')
+        ->and($build->getDisplay())->toContain('ERROR P7002 · ')
         ->and(file_exists($root . '/build/ppphp/Service.php'))->toBeFalse();
 });
 
