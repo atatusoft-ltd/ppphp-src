@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { readPhpStanDebugResult, resolvePreparedDebugPaths } from '../src/phpstan-debug-output.mjs';
 
 const path = '/workspace/.cache/analysis/selected/fixture/main.php';
@@ -44,9 +47,9 @@ function prepared() {
   return {
     phpStan: { resultPath: '/workspace/.cache/analysis/result.json' },
     continuation: { workspaceManifest: [
-      { path: 'phpstan.neon', hash: 'a'.repeat(64) },
-      { path: 'context/library.php', hash: 'b'.repeat(64) },
-      { path: 'selected/fixture/main.php', hash: 'c'.repeat(64) },
+      { path: 'phpstan.neon', hash: 'sha256:' + 'a'.repeat(64) },
+      { path: 'context/library.php', hash: 'sha256:' + 'b'.repeat(64) },
+      { path: 'selected/fixture/main.php', hash: 'sha256:' + 'c'.repeat(64) },
     ] },
   };
 }
@@ -64,5 +67,30 @@ test('rejects missing, traversing, duplicate and unhashed selected files', () =>
   ]) {
     const payload = prepared(); change(payload);
     assert.throws(() => resolvePreparedDebugPaths(payload));
+  }
+});
+
+test('accepts the actual PHP ProtocolJson hash contract', () => {
+  const helper = fileURLToPath(new URL('../../../src/Analysis/Browser/ProtocolJson.php', import.meta.url));
+  const source = '<?php echo "answer";\n';
+  const result = spawnSync(process.env.PHP_BINARY || 'php', [
+    '-r', 'require $argv[1]; echo \\Atatusoft\\Ppphp\\Analysis\\Browser\\ProtocolJson::hash($argv[2]);',
+    helper, source,
+  ], { encoding: 'utf8', timeout: 10000, maxBuffer: 16384,
+    env: { PATH: process.env.PATH || '', LANG: 'C.UTF-8' } });
+  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, '');
+  assert.equal(result.stdout, 'sha256:' + createHash('sha256').update(source).digest('hex'));
+  const payload = prepared();
+  payload.continuation.workspaceManifest[2].hash = result.stdout;
+  assert.deepEqual(resolvePreparedDebugPaths(payload), [path]);
+});
+test('rejects untagged or malformed hashes instead of inventing a new hash contract', () => {
+  for (const hash of ['c'.repeat(64), 'sha256:' + 'c'.repeat(63), 'sha1:' + 'c'.repeat(64),
+    'SHA256:' + 'c'.repeat(64), 'sha256:' + 'g'.repeat(64)]) {
+    const payload = prepared();
+    payload.continuation.workspaceManifest[2].hash = hash;
+    assert.throws(() => resolvePreparedDebugPaths(payload), /analysis-file identity/);
   }
 });

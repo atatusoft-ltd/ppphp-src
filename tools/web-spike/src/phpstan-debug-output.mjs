@@ -47,7 +47,7 @@ export function resolvePreparedDebugPaths(payload) {
   const paths = manifest.filter((file) => typeof file?.path === 'string'
     && file.path.startsWith('selected/') && file.path.endsWith('.php')).map((file) => {
       if (/[\r\n\0\\]/.test(file.path) || file.path.split('/').some((part) => !part || part === '..' || part === '.')
-          || !/^[a-f0-9]{64}$/.test(file.hash || '')) {
+          || !/^sha256:[a-f0-9]{64}$/.test(file.hash || '')) {
         throw new Error('Invalid selected analysis-file identity');
       }
       return `${root}/${file.path}`;
