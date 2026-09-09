@@ -1,6 +1,7 @@
 import { PHP, loadPHPRuntime, proxyFileSystem } from '@php-wasm/universal';
 import { getPHPLoaderModule } from '@php-wasm/web-8-4';
 import { validCleanPhpStanResult } from './baseline-probes.js';
+import { readPhpStanDebugResult, resolvePreparedDebugPaths } from './phpstan-debug-output.mjs';
 
 const MAX_OUTPUT = 2097152;
 let caseId;
@@ -76,8 +77,17 @@ async function analyze(php) {
   // This command is produced by the trusted packaged compiler, not a visitor.
   phase('executing');
   const result = await cli(php, payload.phpStan.command, ['/workspace', '/opt/ppphp']);
-  const validPhpStanJson = validCleanPhpStanResult(result.stdout);
-  return { ...result, validPhpStanJson, command: payload.phpStan.command, compilerArchive: manifest };
+  // Keep --debug and raw output. Separate only the manifest-owned progress lines.
+  try {
+    const expectedPaths = payload.phpStan.command.includes('--debug') ? resolvePreparedDebugPaths(payload) : [];
+    const framed = readPhpStanDebugResult(result.stdout, expectedPaths);
+    const validPhpStanJson = result.exitCode === 0 && result.stderr === '' && validCleanPhpStanResult(framed.jsonText);
+    return { ...result, validPhpStanJson, phpStanJson: framed.jsonText, phpStanDebugPaths: framed.debugPaths,
+      command: payload.phpStan.command, compilerArchive: manifest };
+  } catch (error) {
+    return { ...result, validPhpStanJson: false, outputFormatError: String(error.message).slice(0, 4096),
+      command: payload.phpStan.command, compilerArchive: manifest };
+  }
 }
 
 self.onmessage = async ({ data: probe }) => {
