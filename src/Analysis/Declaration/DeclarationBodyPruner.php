@@ -7,7 +7,7 @@ namespace Atatusoft\Ppphp\Analysis\Declaration;
 use Atatusoft\Ppphp\Frontend\ParsedFile;
 use PhpParser\Node\Stmt;
 
-/** Drops dependency implementation bodies only after dependency discovery has completed. */
+/** Keeps dependency contracts without following or retaining callable implementations. */
 final readonly class DeclarationBodyPruner
 {
     public function prune(ParsedFile $file): ParsedFile

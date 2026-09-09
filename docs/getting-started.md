@@ -7,9 +7,37 @@ This guide takes a clean Composer project to executable generated PHP with ++PHP
 - PHP 8.4 or 8.5 within the compiler's `^8.4` host requirement.
 - Composer 2.
 
-Small mixed Composer projects are tested with PHP's `128M` memory limit for both
-cold and cached checks and builds. The compiler does not increase your memory
-limit. Larger source and dependency graphs can require more memory.
+Native compiler commands allow 512 MiB by default. This is a per-process ceiling,
+not reserved memory or a change to your machine's `php.ini`. Small mixed projects
+remain regression-tested at an explicitly selected 128 MiB ceiling.
+
+### Compiler Memory
+
+To choose an allowance once for subsequent terminal calls, export a whole number
+of MiB in your shell configuration (or set the environment variable in your CI):
+
+```bash
+export PPPHP_COMPILER_MEMORY_LIMIT_MEGABYTES=768
+```
+
+The setting applies to `check`, `build`, and native editor commands. An explicit
+value from 1 to 2,147,483,647 wins, even when lower than 512. Without it, the
+compiler uses at least 512 MiB and preserves a larger or unlimited PHP allowance.
+PHP's `-d memory_limit=...` alone does not distinguish an intentional low limit
+from `php.ini`; use the compiler environment setting to select a lower ceiling.
+Invalid values fail before project analysis rather than silently using a default.
+The supplemental analyzer inherits the effective compiler limit.
+
+Updated editor integrations send their configured memory allowance through the
+same environment setting. Their settings control editor calls, not unrelated
+terminal sessions. Embedded library use and the browser analysis protocol retain
+their host's memory policy. Larger dependency graphs can still need more memory;
+the compiler's separate dependency-index safety limits remain enforced.
+
+This configuration is available in the development checkout, not the immutable
+published `2026.3.1-rc-2` package.
+
+## Create A Project
 
 The workflow below requires a published Stable release of `atatusoft/ppphp`. Check [GitHub Releases](https://github.com/atatusoft-ltd/ppphp-src/releases) first. For a Release Candidate or Development release, substitute its exact installation command; unqualified resolution does not select prereleases or guarantee a Stable version is available. RC-1 retains the original package name in its published instructions.
 

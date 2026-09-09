@@ -61,6 +61,14 @@ The manifest must already be mounted beneath the project root. The compiler perf
 
 ## Trust and missing context
 
+Native discovery follows project references and dependency declaration contracts,
+including native types, PHPDoc, defaults, inheritance and property hooks. After
+static include, alias and guard inspection, named dependency callable bodies are
+discarded; their implementation-only references do not recursively expand the
+declaration index. Original files remain available to supplemental PHPStan
+analysis. This avoids loading unrelated internals simply because a test tool or
+other installed dependency mentions them inside an implementation.
+
 Native dependency reading canonicalizes the project, vendor, package, and source paths and reads only the validated canonical file. Composer eager files follow dependency order, with providers before dependents and package-name ordering for equal weights; their static includes are traversed depth-first at the inclusion point. Only the exact `__DIR__ . '<literal>'` include form is followed; dynamic expressions are recorded as unavailable rather than guessed. A followed file must be a regular PHP file inside its owning package and an explicitly trusted root after symlink resolution. Static includes are cycle-safe, limited to depth 32, and share the global 2,048-file, 16 MiB, and 8,192-discovery-entry bounds. Symlink escapes and unsafe installed paths are rejected; no textual-prefix check grants trust. Existence guards and `class_alias()` are recognized only when namespace and function-import resolution proves the call targets the global intrinsic.
 
 Missing, unavailable, and dynamic declaration context remain distinct. `P2020`/`P2021` mean no known declaration source owns a symbol. `P6018` means relevant Composer context exists but safe installed source or a valid index is unavailable. `P6021` identifies a relevant unsafe dependency path, and `P6020` identifies declarations for which Composer behavior does not establish one authority. An absent vendor tree or index does not fail unrelated selected source.
