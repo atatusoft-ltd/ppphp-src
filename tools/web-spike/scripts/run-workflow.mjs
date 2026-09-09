@@ -46,6 +46,13 @@ export async function buildWorkflowPage(runtime) {
 }
 
 const ordered = (files) => files?.toSorted((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+export function assessStaleCompletions(sequence) {
+  const ids = ['a', 'b'].map((key) => sequence?.evidence?.[key]?.response?.operationId);
+  const stale = sequence?.evidence?.stale;
+  return ids.every((id) => typeof id === 'string') && new Set(ids).size === 2 && Array.isArray(stale)
+    && stale.every((item) => ids.includes(item.response?.operationId) && item.response?.status === 'rejected' && item.response?.currentOutput === null)
+    && ids.every((id) => stale.some((item) => item.response?.operationId === id));
+}
 export function assessWorkflow(native, build, browser) {
   return { check: browser.kind === 'completed' && native.completion?.status === browser.check?.response.compilerStatus
       && JSON.stringify(native.completion?.diagnostics) === JSON.stringify(browser.check?.response.diagnostics)
@@ -149,7 +156,8 @@ export async function main(args = process.argv.slice(2)) {
         report.sequence.consoleEvents = [...browser.events];
         report.sequence.consoleFailures = runtimeConsoleFailures(browser.events);
         report.sequence.nativeEquivalentC = JSON.stringify(ordered(result.evidence?.c?.outputs)) === JSON.stringify(ordered(report.sequenceReference.outputs));
-        if (report.sequence.consoleFailures.length || !report.sequence.nativeEquivalentC) report.sequence.status = 'FAIL';
+        report.sequence.staleOwnersRejected = assessStaleCompletions(result);
+        if (report.sequence.consoleFailures.length || !report.sequence.nativeEquivalentC || !report.sequence.staleOwnersRejected) report.sequence.status = 'FAIL';
         save(); console.log('Sequential workflow: ' + report.sequence.status + ' ' + (result.error || ''));
       }
       await browser.send('Page.navigate', { url: 'about:blank' });

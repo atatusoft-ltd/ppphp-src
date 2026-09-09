@@ -126,7 +126,9 @@ window.runWorkflowSequence = () => {
       const a = evidence.a = await operate({ id: 'A' }, 'build');
       if (a.response.compilerStatus !== 0) throw new Error('A did not publish');
       const outputA = JSON.stringify(a.outputs);
-      write('src/main.ppphp', "<?php\nint $value = 'wrong';\n");
+      // Ordinary-PHP body checking reaches retained PHPStan, providing a real
+      // failed B continuation to replay after C (a core failure has none).
+      write('src/old.php', "<?php\nfunction invalidBrowserBuild(): int { return 'wrong'; }\n");
       const b = evidence.b = await operate({ id: 'B' }, 'build');
       evidence.bPreservesA = b.response.compilerStatus === 1 && b.response.currentOutput === null
         && b.response.previousOutput?.snapshot === a.response.snapshot && JSON.stringify(outputs(a.response)) === outputA;
@@ -142,6 +144,7 @@ window.runWorkflowSequence = () => {
         const stale = await request(item.request); evidence.stale.push(stale);
         if (stale.response.status !== 'rejected' || JSON.stringify(outputs(c.response)) !== outputC) throw new Error('Stale completion changed C');
       }
+      evidence.staleOwnersRejected = [a, b].every((operation) => evidence.stale.some((item) => item.response.operationId === operation.response.operationId));
       write('src/Context.ppphp', "<?php\nfunction preservedWorkflowContext(): string { return 'context'; }\n");
       evidence.context = await operate({ id: 'partial-context', selection: 'src/Context.ppphp' }, 'build');
       if (evidence.context.response.compilerStatus !== 0) throw new Error('Partial context did not publish');
@@ -213,7 +216,7 @@ window.runWorkflowSequence = () => {
       try { await operation; throw new Error('Abort unexpectedly completed'); } catch (error) { evidence.abort = String(error).includes('aborted'); }
       evidence.afterAbort = await operate({ id: 'after-abort' }, 'build');
       evidence.recoveredAfterAbort = evidence.afterAbort.response.compilerStatus === 0;
-      const gates = ['bPreservesA', 'cRemovedStale', 'noExecution', 'lintWarningSuccess', 'partialPreservesC', 'validationGuardsPassed', 'realLintRejected', 'abort', 'recoveredAfterAbort'];
+      const gates = ['bPreservesA', 'cRemovedStale', 'staleOwnersRejected', 'noExecution', 'lintWarningSuccess', 'partialPreservesC', 'validationGuardsPassed', 'realLintRejected', 'abort', 'recoveredAfterAbort'];
       window.__bp4.result = { kind: 'completed', status: gates.every((key) => evidence[key] === true) ? 'PASS' : 'FAIL', evidence, cleanup: active === null ? 'PASS' : 'FAIL' };
     } catch (error) { window.__bp4.result = { kind: 'failure', error: String(error.stack || error), evidence, cleanup: active === null ? 'PASS' : 'FAIL' }; }
     finally { window.__bp4.running = false; }

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { hash, canonical, validateWorkspace, validateInvocation, relativePath, processRecord } from '../src/workflow-contract.mjs';
 import { ROOT, SPIKE, runProcess } from './run-project-parity.mjs';
-import { assessWorkflow } from './run-workflow.mjs';
+import { assessWorkflow, assessStaleCompletions } from './run-workflow.mjs';
 
 test('workflow canonical hashing agrees with the production PHP protocol', async () => {
   const value = { z: ['é', { c: 2, a: 1 }], a: '/workspace/example' };
@@ -61,6 +61,17 @@ test('workflow entry points parse and use the actual versioned compiler command'
   const worker = readFileSync(join(SPIKE, 'src/workflow-worker.js'), 'utf8');
   assert.match(worker, /'browser:analysis'/); assert.doesNotMatch(worker, /parity-adapter/);
   assert.match(worker, /child\.chdir\('\/workspace'\)/);
+});
+
+test('sequential acceptance requires rejected genuine completions from both A and B', () => {
+  const response = (operationId) => ({ operationId, status: 'rejected', currentOutput: null });
+  const evidence = { a: { response: { operationId: 'A/build/1' } }, b: { response: { operationId: 'B/build/2' } },
+    stale: [{ response: response('A/build/1') }] };
+  assert.equal(assessStaleCompletions({ evidence }), false);
+  evidence.stale.push({ response: response('B/build/2') });
+  assert.equal(assessStaleCompletions({ evidence }), true);
+  evidence.stale[1].response.currentOutput = {};
+  assert.equal(assessStaleCompletions({ evidence }), false);
 });
 
 test('a queued message from a terminated worker cannot overwrite the next workspace', async () => {
