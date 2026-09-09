@@ -608,6 +608,33 @@ test('lint rejection preserves prior output and exposes no transaction path norm
         ->and($rendered)->not->toContain('.ppphp-stage-');
 });
 
+test('post lint mutations cannot publish known or additional candidate files', function (string $mutation): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/One.ppphp', '<?php function guardedCandidate(): int { return 1; }');
+    runStageTenCommand(['command' => 'build', '--working-directory' => $root]);
+    $before = captureStageTenTree($root . '/build/ppphp');
+    $this->writeFile($root . '/src/One.ppphp', '<?php function guardedCandidate(): int { return 2; }');
+    [$project, $selection] = loadStageTenCompilationInputs($root);
+    $validator = new class($mutation) implements PhpValidator {
+        public function __construct(private readonly string $mutation) {}
+
+        public function validate(CompilationArtifact $artifact, string $candidatePath): DiagnosticBag
+        {
+            $diagnostics = (new Atatusoft\Ppphp\Compiler\Validation\PhpLintValidator())->validate($artifact, $candidatePath);
+            $path = $this->mutation === 'known' ? $candidatePath : dirname($candidatePath) . '/unvalidated.php';
+            file_put_contents($path, '<?php echo "changed after actual lint";');
+            return $diagnostics;
+        }
+    };
+    $result = (new Compiler(committer: new AtomicBuildCommitter(phpValidator: $validator)))->compile($project, $selection);
+    expect($result->isSuccessful)->toBeFalse()
+        ->and(captureStageTenTree($root . '/build/ppphp'))->toBe($before)
+        ->and(glob($root . '/build/.ppphp-stage-*') ?: [])->toBe([])
+        ->and(glob($root . '/build/.ppphp-backup-*') ?: [])->toBe([]);
+    expect(runStageTenCommand(['command' => 'build', '--working-directory' => $root])->getStatusCode())->toBe(0);
+})->with(['known', 'additional']);
+
 test('backup cleanup failure keeps the committed output and reports a warning', function (): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);

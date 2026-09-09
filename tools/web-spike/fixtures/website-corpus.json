@@ -1,0 +1,520 @@
+{
+    "format": "ppphp.browser-corpus",
+    "version": 1,
+    "provenance": {
+        "repository": "atatusoft-ltd/ppphp-website",
+        "contentRevision": "3e97d5549460ae38bb89acce5d25f53192b329cc",
+        "sourceFiles": [
+            {
+                "path": "src/Learn/LearnService.php",
+                "sha256": "102246dec32c0ccd76a3baeb399bdcab5e5f0f1fc5cb4ca861435cbf20be3e38"
+            },
+            {
+                "path": "src/Playground/PlaygroundService.php",
+                "sha256": "1ab40b1b9dd68252737d69ff82d357957a9777943722bfd3bd48ab420198ded2"
+            },
+            {
+                "path": "src/WebComponents/PlaygroundEditor/PlaygroundEditorComponent.wc.ts",
+                "sha256": "5e06c573b537accb1944f28378f8aa42e4f3b1e3138c512734f7b4be0604461c"
+            }
+        ]
+    },
+    "cases": [
+        {
+            "id": "playground/typed-locals/example",
+            "page": "playground",
+            "route": "/playground",
+            "exampleId": "typed-locals",
+            "variant": "example",
+            "label": "Typed locals",
+            "files": [
+                {
+                    "path": "main.ppphp",
+                    "source": "<?php\n\nstring $name = 'Maya';\nreadonly string $prefix = 'Hello';\n\necho $prefix . ', ' . $name . \"!\\n\";\n",
+                    "sha256": "74b709211a916201b2fae51b5f8aaae38d39a04a7b285c267e8272f594c7eddb"
+                }
+            ],
+            "entry": "main.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "PlaygroundService::examples: authored runnable example."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "playground/generics/example",
+            "page": "playground",
+            "route": "/playground",
+            "exampleId": "generics",
+            "variant": "example",
+            "label": "Erased generics",
+            "files": [
+                {
+                    "path": "Box.ppphp",
+                    "source": "<?php\n\nfinal class Box<T>\n{\n    public function __construct(\n        public readonly T $value,\n    ) {}\n}\n\nBox<string> $box = new Box('++PHP');\necho $box->value;\n",
+                    "sha256": "cb1a4d5f15ceb43d454eceeddd1b684f62e2ba2643c898d2e7e256d2538c1b73"
+                }
+            ],
+            "entry": "Box.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "PlaygroundService::examples: authored runnable example."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "playground/typed-arrays/example",
+            "page": "playground",
+            "route": "/playground",
+            "exampleId": "typed-arrays",
+            "variant": "example",
+            "label": "Typed arrays",
+            "files": [
+                {
+                    "path": "scores.ppphp",
+                    "source": "<?php\n\narray<string> $names = ['Maya', 'Noor'];\narray<string, int> $scores = ['Maya' => 92, 'Noor' => 87];\n\nforeach ($names as string $name) {\n    echo $name . ': ' . $scores[$name] . \"\\n\";\n}\n",
+                    "sha256": "829c0ac25d31e5ed39687412b13a191d526d9119cb8e1baae97d587ec80d024e"
+                }
+            ],
+            "entry": "scores.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "PlaygroundService::examples: authored runnable example."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "playground/when/example",
+            "page": "playground",
+            "route": "/playground",
+            "exampleId": "when",
+            "variant": "example",
+            "label": "when expression",
+            "files": [
+                {
+                    "path": "orders.ppphp",
+                    "source": "<?php\n\narray<int> $orders = [120, 80, 40];\n\nint $largest = when ($orders !== []) {\n    int $max = 0;\n    foreach ($orders as int $amount) {\n        if ($amount > $max) {\n            $max = $amount;\n        }\n    }\n\n    return $max;\n} else {\n    return 0;\n};\n\necho 'Largest order: ' . $largest;\n",
+                    "sha256": "439baf9690248613206794aea90f7730deb261002a3cd6c792a19dfa0ab753dc"
+                }
+            ],
+            "entry": "orders.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "PlaygroundService::examples: authored runnable example."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "playground/checked-errors/example",
+            "page": "playground",
+            "route": "/playground",
+            "exampleId": "checked-errors",
+            "variant": "example",
+            "label": "Checked errors",
+            "files": [
+                {
+                    "path": "users.ppphp",
+                    "source": "<?php\n\nfinal class UserNotFound extends Exception {}\n\nfunction loadUser(string $id): string throws UserNotFound\n{\n    if ($id === '') { throw new UserNotFound(); }\n    return $id;\n}\n\ntry {\n    string $user = loadUser('maya');\n    echo $user;\n} catch (UserNotFound $error) {\n    echo 'guest';\n}\n",
+                    "sha256": "82c53076a2f0195947218a8e1da99629d06a783d4f7cfe985deb0f13fd6f6892"
+                }
+            ],
+            "entry": "users.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "PlaygroundService::examples: authored runnable example."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "playground/mixed-project/example",
+            "page": "playground",
+            "route": "/playground",
+            "exampleId": "mixed-project",
+            "variant": "example",
+            "label": "Mixed project",
+            "files": [
+                {
+                    "path": "LegacyUser.php",
+                    "source": "<?php\n\nfinal class LegacyUser\n{\n    public function __construct(public string $name) {}\n}\n",
+                    "sha256": "2a1e735fe6d76e72eb430067e575d8a0b01aee559dd62a275a826eb834218bdf"
+                },
+                {
+                    "path": "main.ppphp",
+                    "source": "<?php\n\nrequire_once __DIR__ . '/LegacyUser.php';\n\nLegacyUser $user = new LegacyUser('Maya');\nreadonly string $greeting = $user->name;\n\necho 'Hello, ' . $greeting;\n",
+                    "sha256": "62d174e1a6bc069b805fe14c7c031f6c5bfbdaa41966ae4c005d4cffd5429d7e"
+                }
+            ],
+            "entry": "main.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "PlaygroundService::examples: authored runnable example."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/hello/starter",
+            "page": "learn",
+            "route": "/learn/hello",
+            "exampleId": "hello",
+            "variant": "starter",
+            "label": "Hello, ++PHP",
+            "files": [
+                {
+                    "path": "hello.ppphp",
+                    "source": "<?php\n\necho \"Hello, ++PHP!\";\n",
+                    "sha256": "e71602d6fe92f355a489d982237179fb0f082132abbe28c6e9bb39d3d94098c2"
+                }
+            ],
+            "entry": "hello.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "LearnService::lessons: documented intentionally broken starters carry solution files; other starters are runnable."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/typed-locals/starter",
+            "page": "learn",
+            "route": "/learn/typed-locals",
+            "exampleId": "typed-locals",
+            "variant": "starter",
+            "label": "Typed locals",
+            "files": [
+                {
+                    "path": "counter.ppphp",
+                    "source": "<?php\n\nint $count = 0;\n$count = $count + 1;   // ok\n$count = \"ten\";       // not ok\n\necho $count;\n",
+                    "sha256": "5717406ad6e2e3370752bf087e80b3883cc54c441c8c416cecb491c4b58282a9"
+                }
+            ],
+            "entry": "counter.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "diagnostics",
+                "basis": "LearnService::lessons: documented intentionally broken starters carry solution files; other starters are runnable."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/typed-locals/solution",
+            "page": "learn",
+            "route": "/learn/typed-locals",
+            "exampleId": "typed-locals",
+            "variant": "solution",
+            "label": "Typed locals",
+            "files": [
+                {
+                    "path": "counter.ppphp",
+                    "source": "<?php\n\nint $count = 0;\n$count = $count + 1;   // ok\n$count = 10;          // fixed\n\necho $count;\n",
+                    "sha256": "a5c13fd7d640aeb4f8e00f920d4c171fa0b29c90ac898ade2fa059d3b18db64e"
+                }
+            ],
+            "entry": "counter.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "LearnService::lessons: authored correction selected by Solve."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/readonly-bindings/starter",
+            "page": "learn",
+            "route": "/learn/readonly-bindings",
+            "exampleId": "readonly-bindings",
+            "variant": "starter",
+            "label": "Readonly bindings",
+            "files": [
+                {
+                    "path": "env.ppphp",
+                    "source": "<?php\n\nreadonly string $env = \"prod\";\n$env = \"dev\";   // not ok\n\necho $env;\n",
+                    "sha256": "19ac8714a0380e4910f0e620f068667d65ee81f1fe93a88e536ed2276e7d6e92"
+                }
+            ],
+            "entry": "env.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "diagnostics",
+                "basis": "LearnService::lessons: documented intentionally broken starters carry solution files; other starters are runnable."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/readonly-bindings/solution",
+            "page": "learn",
+            "route": "/learn/readonly-bindings",
+            "exampleId": "readonly-bindings",
+            "variant": "solution",
+            "label": "Readonly bindings",
+            "files": [
+                {
+                    "path": "env.ppphp",
+                    "source": "<?php\n\nreadonly string $env = \"prod\";\n\necho $env;\n",
+                    "sha256": "5b0962673111942a460634096ae3202a97a1858bd98dbd5be9b94e96801f5cec"
+                }
+            ],
+            "entry": "env.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "LearnService::lessons: authored correction selected by Solve."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/typed-arrays/starter",
+            "page": "learn",
+            "route": "/learn/typed-arrays",
+            "exampleId": "typed-arrays",
+            "variant": "starter",
+            "label": "Typed arrays",
+            "files": [
+                {
+                    "path": "ids.ppphp",
+                    "source": "<?php\n\narray<int> $ids = [1, 2, 3];\narray<string, int> $scores = ['Maya' => 92];\n$ids[] = \"x\";   // not ok\n",
+                    "sha256": "ffaa321ae765bdadbb8ec881b9498acf89b35770c3695527ee26daefd131a2de"
+                }
+            ],
+            "entry": "ids.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "diagnostics",
+                "basis": "LearnService::lessons: documented intentionally broken starters carry solution files; other starters are runnable."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/typed-arrays/solution",
+            "page": "learn",
+            "route": "/learn/typed-arrays",
+            "exampleId": "typed-arrays",
+            "variant": "solution",
+            "label": "Typed arrays",
+            "files": [
+                {
+                    "path": "ids.ppphp",
+                    "source": "<?php\n\narray<int> $ids = [1, 2, 3];\narray<string, int> $scores = ['Maya' => 92];\n$ids[] = 4;     // fixed\n",
+                    "sha256": "862c76979a8291ac2317c0cab0672d38233a746f50cbf25f1c9ac6c4db767d13"
+                }
+            ],
+            "entry": "ids.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "LearnService::lessons: authored correction selected by Solve."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/generics/starter",
+            "page": "learn",
+            "route": "/learn/generics",
+            "exampleId": "generics",
+            "variant": "starter",
+            "label": "Generics",
+            "files": [
+                {
+                    "path": "Box.ppphp",
+                    "source": "<?php\n\nfinal class Box<T>\n{\n    public function __construct(\n        public readonly T $value,\n    ) {}\n}\n\nBox<string> $box = new Box('++PHP');\necho $box->value;\n",
+                    "sha256": "cb1a4d5f15ceb43d454eceeddd1b684f62e2ba2643c898d2e7e256d2538c1b73"
+                }
+            ],
+            "entry": "Box.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "LearnService::lessons: documented intentionally broken starters carry solution files; other starters are runnable."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/when-expressions/starter",
+            "page": "learn",
+            "route": "/learn/when-expressions",
+            "exampleId": "when-expressions",
+            "variant": "starter",
+            "label": "When expressions",
+            "files": [
+                {
+                    "path": "report.ppphp",
+                    "source": "<?php\n\narray<int> $orders = [120, 80, 40];\n\nint $total = when ($orders !== []) {\n    int $sum = 0;\n    foreach ($orders as int $order) {\n        $sum = $sum + $order;\n    }\n    return $sum;\n} else {\n    return 0;\n};\n\necho $total;\n",
+                    "sha256": "091b355e4b798b8186b2e649ebdc730d32f75255c4e113c7c80bac72f174085d"
+                }
+            ],
+            "entry": "report.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "LearnService::lessons: documented intentionally broken starters carry solution files; other starters are runnable."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/checked-errors/starter",
+            "page": "learn",
+            "route": "/learn/checked-errors",
+            "exampleId": "checked-errors",
+            "variant": "starter",
+            "label": "Checked errors",
+            "files": [
+                {
+                    "path": "users.ppphp",
+                    "source": "<?php\n\nfinal class UserNotFound extends Exception {}\nfinal class StorageFailure extends Exception {}\n\nfunction loadUser(string $id): string\n    throws UserNotFound, StorageFailure\n{\n    if ($id === '') { throw new UserNotFound(); }\n    return $id;\n}\n\ntry {\n    string $user = loadUser('maya');\n    echo $user;\n} catch (UserNotFound $error) {\n    echo 'guest';\n}\n",
+                    "sha256": "a2360e6fa85b3ee91985ea556b2db5634cfece1e469ae44e8b2d9f914e6369ca"
+                }
+            ],
+            "entry": "users.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "diagnostics",
+                "basis": "LearnService::lessons: documented intentionally broken starters carry solution files; other starters are runnable."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/checked-errors/solution",
+            "page": "learn",
+            "route": "/learn/checked-errors",
+            "exampleId": "checked-errors",
+            "variant": "solution",
+            "label": "Checked errors",
+            "files": [
+                {
+                    "path": "users.ppphp",
+                    "source": "<?php\n\nfinal class UserNotFound extends Exception {}\nfinal class StorageFailure extends Exception {}\n\nfunction loadUser(string $id): string\n    throws UserNotFound, StorageFailure\n{\n    if ($id === '') { throw new UserNotFound(); }\n    return $id;\n}\n\ntry {\n    string $user = loadUser('maya');\n    echo $user;\n} catch (UserNotFound $error) {\n    echo 'guest';\n} catch (StorageFailure $error) {\n    echo 'unavailable';\n}\n",
+                    "sha256": "a00ea27c8b260c75dbfb613b292dfc652aeaa208195dad6bcb18cc0900b8c141"
+                }
+            ],
+            "entry": "users.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "LearnService::lessons: authored correction selected by Solve."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        },
+        {
+            "id": "learn/mixed-projects/starter",
+            "page": "learn",
+            "route": "/learn/mixed-projects",
+            "exampleId": "mixed-projects",
+            "variant": "starter",
+            "label": "Mixed projects",
+            "files": [
+                {
+                    "path": "LegacyUser.php",
+                    "source": "<?php\n\nfinal class LegacyUser\n{\n    public function __construct(public string $name) {}\n}\n",
+                    "sha256": "2a1e735fe6d76e72eb430067e575d8a0b01aee559dd62a275a826eb834218bdf"
+                },
+                {
+                    "path": "main.ppphp",
+                    "source": "<?php\n\nrequire_once __DIR__ . '/LegacyUser.php';\n\nLegacyUser $user = new LegacyUser('Maya');\nreadonly string $greeting = $user->name;\n\necho 'Hello, ' . $greeting;\n",
+                    "sha256": "62d174e1a6bc069b805fe14c7c031f6c5bfbdaa41966ae4c005d4cffd5429d7e"
+                }
+            ],
+            "entry": "main.php",
+            "entryBasis": "PlaygroundService::resolveEntry on the complete build file set: main.php, then the first source-derived PHP file, then the existing artifact fallback.",
+            "intent": {
+                "check": "pass",
+                "basis": "LearnService::lessons: documented intentionally broken starters carry solution files; other starters are runnable."
+            },
+            "requiredActions": [
+                "check",
+                "build",
+                "run"
+            ],
+            "expected": null
+        }
+    ]
+}

@@ -3,6 +3,11 @@
 > Revision: 1
 > Date: 2026-09-06
 > Status: Implementation plan; delivery gates are NOT RUN until backed by recorded evidence.
+
+BP-3 is approved. Protocol 3 Check/Build is implemented for BP-4; final
+qualification is in progress. See the [implemented workflow](browser/bp4-workflow.md)
+and [current evidence](browser/bp4-evidence.md). BP-5 through BP-9 remain unimplemented
+by this delivery; no production Run or website routes are enabled.
 > Product outcome: Enable the production playground and interactive Learn routes with complete browser-side Check, Build PHP and Run.
 > Canonical home: `atatusoft-ltd/ppphp-src`, `docs/ppphp-browser-production-plan.md`.
 
@@ -182,7 +187,7 @@ close the separate cross-browser, production resource or earlier provenance gate
 
 ### Work
 
-Preserve existing version 1 preparation and version 2 compiler-core analysis behavior. Introduce a new versioned full-workflow contract where necessary; version 3 is the proposed next version, subject to checking the implementation at stage start. Do not mutate version 2 into a different promise.
+Preserve existing version 1 preparation and version 2 compiler-core analysis behavior. Version 3 now implements the full-workflow contract through the hidden `browser:analysis` command; its actual actions and schemas are documented in [the BP-4 workflow](browser/bp4-workflow.md). Do not mutate version 2 into a different promise.
 
 The host orchestrates a fixed set of compiler-approved operations, not arbitrary shell commands:
 

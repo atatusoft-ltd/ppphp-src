@@ -105,6 +105,7 @@ final readonly class AtomicBuildCommitter
             $this->writeManifest($stage, $manifest);
             $this->filesystem->pruneEmptyDirectories($stage);
             $this->validateCandidate($stage, $manifest);
+            $candidateIdentity = $this->identifyCandidateFiles($stage);
 
             foreach ($artifacts as $artifact) {
                 $diagnostics->addAll($this->phpValidator->validate(
@@ -119,6 +120,13 @@ final readonly class AtomicBuildCommitter
                 return new BuildCommitResult(null, 0, false, $diagnostics);
             }
 
+            // Validators are an external execution boundary. Recheck the bytes
+            // and metadata immediately before creating publication authority.
+            $this->validateCandidate($stage, $manifest);
+            if ($candidateIdentity !== $this->identifyCandidateFiles($stage)) {
+                throw new BuildOutputException(DiagnosticCode::BuildManifestIsInvalid,
+                    'The candidate output tree changed during PHP validation.');
+            }
             $candidateFiles = $this->filesystem->listFiles($stage);
             $staleRemovalCount = count(array_diff($previousFiles, $candidateFiles));
             $journal = $this->journal();
@@ -180,6 +188,16 @@ final readonly class AtomicBuildCommitter
         }
 
         return new BuildCommitResult(null, 0, false, $diagnostics);
+    }
+
+    /** @return array<string, string> */
+    private function identifyCandidateFiles(string $stage): array
+    {
+        $identity = [];
+        foreach ($this->filesystem->listFiles($stage) as $path) {
+            $identity[$path] = hash('sha256', $this->filesystem->readFile(Path::join($stage, $path)));
+        }
+        return $identity;
     }
 
     private function guardPaths(Project $project, string $stage, string $backup): void

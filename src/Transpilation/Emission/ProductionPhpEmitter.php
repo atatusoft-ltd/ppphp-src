@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Transpilation\Emission;
 
 use Atatusoft\Ppphp\Compiler\CompilationArtifact;
+use Atatusoft\Ppphp\Transpilation\Emission\Interfaces\ProductionEmitter;
 use Atatusoft\Ppphp\Compiler\Output\Enumerations\OutputOperation;
 use Atatusoft\Ppphp\Compiler\Output\OutputPlan;
 use Atatusoft\Ppphp\Project\Project;
@@ -14,7 +15,7 @@ use Atatusoft\Ppphp\Transpilation\PhpLowerer;
 use Atatusoft\Ppphp\Transpilation\Pass\RelocateComposerAutoloadPass;
 use Atatusoft\Ppphp\Support\Path;
 
-final readonly class ProductionPhpEmitter
+final readonly class ProductionPhpEmitter implements ProductionEmitter
 {
     public function __construct(private PhpLowerer $lowerer = new PhpLowerer()) {}
 

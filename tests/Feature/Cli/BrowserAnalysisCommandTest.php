@@ -49,7 +49,7 @@ test('the browser command rejects unsupported versions and request symlinks outs
     $this->writeConfiguration($root);
     $this->writeFile($root . '/src/main.ppphp', "<?php\nint \$total = 240;\n");
     $this->writeFile($root . '/unsupported.json', json_encode([
-        'version' => 3,
+        'version' => 99,
         'requestId' => 'unsupported',
         'action' => 'prepare',
         'operation' => 'check',

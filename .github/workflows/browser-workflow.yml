@@ -1,0 +1,126 @@
+name: Browser Check and Build qualification
+
+# Recorded, short-lived artifact comparison. Not an ongoing required CI gate.
+# These exact artifacts expire; use the rebuild workflow for a fresh build.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: browser-workflow-qualification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Qualify compiler workflow with the pinned runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      COMPOSER_NO_INTERACTION: '1'
+      RETAINED_ROOT: /tmp/ppphp-workflow-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: composer:2.10.3@sha256:7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.16.0'
+          cache: npm
+          cache-dependency-path: tools/web-spike/package-lock.json
+      - name: Install locked compiler and harness dependencies
+        run: |
+          composer install --prefer-dist --no-progress --no-ansi
+          npm ci --prefix tools/web-spike --no-audit --no-fund
+      - name: Test output framing and runtime assertions
+        run: |
+          node --test tools/web-spike/scripts/*.test.mjs
+          node --test tools/php-wasm-runtime/verify-built.test.mjs
+      # Immutable build identity. Expiration fails closed; never select a latest artifact.
+      - name: Retrieve recorded source and build provenance
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: 34297911850
+          name: php-wasm-rebuild-evidence-69dd18e7a884535031576d380e119183c1b979c3-1
+          path: ${{ env.RETAINED_ROOT }}/evidence
+      - name: Retrieve the exact baseline and candidate binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: 34297911850
+          name: php-wasm-diagnostic-binaries-69dd18e7a884535031576d380e119183c1b979c3-1
+          path: ${{ env.RETAINED_ROOT }}/binaries
+      - name: Reassemble the recorded profiles and verify pinned WASM hashes
+        run: |
+          mkdir "$RETAINED_ROOT/runtime"
+          for profile in baseline candidate; do
+            cp -a "$RETAINED_ROOT/evidence/artifacts/$profile" "$RETAINED_ROOT/runtime/$profile"
+            cp -a "$RETAINED_ROOT/binaries/$profile/asyncify" "$RETAINED_ROOT/runtime/$profile/asyncify"
+          done
+          printf '%s  %s\n' 197d164934a92b8527732757249b494bf14251cd7c6ab714ea537dbdbd9e6b71 "$RETAINED_ROOT/runtime/baseline/artifacts.json" | sha256sum --check --status
+          printf '%s  %s\n' 408d2735395885c30df578204a5d029cb6f2f08705689017d5d685d8147e1263 "$RETAINED_ROOT/runtime/candidate/artifacts.json" | sha256sum --check --status
+          printf '%s  %s\n' ef597bdbddf37b8f648ffd7f7f95272b387f0255ee0b772040da4c220180a4c7 "$RETAINED_ROOT/runtime/baseline/asyncify/8_4_23/php_8_4.wasm" | sha256sum --check --status
+          printf '%s  %s\n' 3198aa074ad42bd2fad37d9af80a4a382df743bd1df0651ded4d3d3fc1cb80f9 "$RETAINED_ROOT/runtime/candidate/asyncify/8_4_23/php_8_4.wasm" | sha256sum --check --status
+          python3 - <<'PY'
+          import json, os, pathlib
+          p = pathlib.Path(os.environ['RETAINED_ROOT']) / 'source.json'
+          p.write_text(json.dumps({'buildRun':34297911850, 'buildCommit':'69dd18e7a884535031576d380e119183c1b979c3', 'verificationCommit':os.environ['GITHUB_SHA'], 'productionReady':False}, indent=2)+'\n')
+          PY
+      - name: Reproduce baseline and require all candidate cases to pass
+        run: |
+          node tools/php-wasm-runtime/verify-built.mjs --runtime "$RETAINED_ROOT/runtime/baseline" --expect baseline --output "$RETAINED_ROOT/baseline-control"
+          node tools/php-wasm-runtime/verify-built.mjs --runtime "$RETAINED_ROOT/runtime/candidate" --expect candidate --output "$RETAINED_ROOT/candidate-control"
+      - name: Verify additional Fiber lifecycle contracts in Chromium
+        run: node tools/web-spike/scripts/run-fiber-contract.mjs --wasm-sha256 3198aa074ad42bd2fad37d9af80a4a382df743bd1df0651ded4d3d3fc1cb80f9 --output "$RETAINED_ROOT/fiber-control"
+      - name: Keep BP-3 as an independent regression
+        run: >-
+          node tools/web-spike/scripts/run-project-parity.mjs
+          --runtime "$RETAINED_ROOT/runtime/candidate"
+          --wasm-sha256 3198aa074ad42bd2fad37d9af80a4a382df743bd1df0651ded4d3d3fc1cb80f9
+          --corpus tools/web-spike/fixtures/website-corpus.json
+          --controls "$RETAINED_ROOT"
+          --output "$RETAINED_ROOT/bp3"
+      - name: Exercise actual protocol 3 Check Build and sequential publication
+        run: >-
+          node tools/web-spike/scripts/run-workflow.mjs
+          --runtime "$RETAINED_ROOT/runtime/candidate"
+          --wasm-sha256 3198aa074ad42bd2fad37d9af80a4a382df743bd1df0651ded4d3d3fc1cb80f9
+          --corpus tools/web-spike/fixtures/website-corpus.json
+          --output "$RETAINED_ROOT/bp4"
+      - name: Checksum and archive observed evidence outside the checkout
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, pathlib, zipfile
+          root = pathlib.Path(os.environ['RETAINED_ROOT'])
+          root.mkdir(parents=True, exist_ok=True)
+          files = sorted([p for p in root.glob('*/report.json') if p.is_file()] + list(root.glob('source.json')))
+          checksums = ''.join(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + str(p.relative_to(root)) + '\n' for p in files)
+          (root / 'SHA256SUMS').write_text(checksums)
+          with zipfile.ZipFile(root / 'browser-workflow-evidence.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+              for p in files + [root / 'SHA256SUMS']:
+                  archive.write(p, p.relative_to(root))
+          artifact = root / 'browser-workflow-evidence.zip'
+          (root / 'browser-workflow-evidence.zip.sha256').write_text(hashlib.sha256(artifact.read_bytes()).hexdigest() + '  ' + artifact.name + '\n')
+          PY
+      - name: Retain verification evidence outside the checkout
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: browser-workflow-verification-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.RETAINED_ROOT }}/browser-workflow-evidence.zip
+            ${{ env.RETAINED_ROOT }}/browser-workflow-evidence.zip.sha256
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Verify compiler inputs remain unchanged
+        if: always()
+        run: git diff --exit-code
