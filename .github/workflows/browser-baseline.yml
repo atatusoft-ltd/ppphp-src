@@ -42,15 +42,21 @@ jobs:
         working-directory: tools/web-spike
         run: npm ci --no-audit --no-fund
       - name: Check harness and native references
-        run: node --test tools/web-spike/scripts/run-baseline.test.mjs
+        run: |
+          node --test tools/web-spike/scripts/run-baseline.test.mjs tools/web-spike/scripts/inspect-runtime-modes.test.mjs
+          php -l tools/web-spike/scripts/inspect-phpstan-fibers.php
       - name: Observe unchanged spike and independent browser probes
         run: node tools/web-spike/scripts/run-baseline.mjs --output "/tmp/ppphp-bp0-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+      - name: Inspect explicitly selected runtimes and retained symbols
+        run: node tools/web-spike/scripts/inspect-runtime-modes.mjs --output "/tmp/ppphp-modes-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
       - name: Preserve diagnostic evidence outside the checkout
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: bp0-runtime-${{ github.sha }}-${{ github.run_attempt }}
-          path: /tmp/ppphp-bp0-${{ github.run_id }}-${{ github.run_attempt }}/report.json
+          path: |
+            /tmp/ppphp-bp0-${{ github.run_id }}-${{ github.run_attempt }}/report.json
+            /tmp/ppphp-modes-${{ github.run_id }}-${{ github.run_attempt }}/modes-report.json
           if-no-files-found: warn
           retention-days: 7
       - name: Verify tracked inputs are unchanged
