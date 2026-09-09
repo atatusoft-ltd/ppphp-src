@@ -56,6 +56,7 @@ final class ComposerDependencyDeclarationLoader
         $discoveryEntries = 0;
         $bytes = 0;
         $declarationOrder = 0;
+        $bodyPruner = new DeclarationBodyPruner();
         $projectFiles = array_values(is_array($projectFiles) ? $projectFiles : iterator_to_array($projectFiles));
         $trustedRoots = $this->canonicalRoots([
             $project->projectRoot,
@@ -96,8 +97,14 @@ final class ComposerDependencyDeclarationLoader
             }
         }
 
-        if (count($pending) > self::MAXIMUM_FILES || $discoveryEntries > self::MAXIMUM_DISCOVERY_ENTRIES) {
-            $this->addLimitDiagnostic($diagnostics);
+        if (count($pending) > self::MAXIMUM_FILES) {
+            $this->addLimitDiagnostic($diagnostics, 'files', count($pending), self::MAXIMUM_FILES);
+
+            return new ProjectParseResult([], [], $diagnostics);
+        }
+
+        if ($discoveryEntries > self::MAXIMUM_DISCOVERY_ENTRIES) {
+            $this->addLimitDiagnostic($diagnostics, 'discovery entries', $discoveryEntries, self::MAXIMUM_DISCOVERY_ENTRIES);
 
             return new ProjectParseResult([], [], $diagnostics);
         }
@@ -111,8 +118,14 @@ final class ComposerDependencyDeclarationLoader
                     continue;
                 }
 
-                if (count($loaded) >= self::MAXIMUM_FILES || $candidate->includeDepth > self::MAXIMUM_INCLUDE_DEPTH) {
-                    $this->addLimitDiagnostic($diagnostics);
+                if (count($loaded) >= self::MAXIMUM_FILES) {
+                    $this->addLimitDiagnostic($diagnostics, 'files', count($loaded) + 1, self::MAXIMUM_FILES);
+
+                    return new ProjectParseResult([], [], $diagnostics);
+                }
+
+                if ($candidate->includeDepth > self::MAXIMUM_INCLUDE_DEPTH) {
+                    $this->addLimitDiagnostic($diagnostics, 'include depth', $candidate->includeDepth, self::MAXIMUM_INCLUDE_DEPTH);
 
                     return new ProjectParseResult([], [], $diagnostics);
                 }
@@ -135,7 +148,7 @@ final class ComposerDependencyDeclarationLoader
                 $bytes += strlen($source);
 
                 if ($bytes > self::MAXIMUM_BYTES) {
-                    $this->addLimitDiagnostic($diagnostics);
+                    $this->addLimitDiagnostic($diagnostics, 'source bytes', $bytes, self::MAXIMUM_BYTES);
 
                     return new ProjectParseResult([], [], $diagnostics);
                 }
@@ -171,9 +184,11 @@ final class ComposerDependencyDeclarationLoader
                     continue;
                 }
 
-                $parsedFiles[$key] = $result->parsedFile;
                 $sourceFiles[$key] = $sourceFile;
                 $inspection = $this->inspector->inspect($result->parsedFile);
+                // Inspect runtime includes, guards and aliases first. Only declaration
+                // contracts belong in the dependency closure; PHPStan reads original bodies.
+                $parsedFiles[$key] = $bodyPruner->prune($result->parsedFile);
 
                 foreach (array_reverse($inspection->staticIncludes) as $include) {
                     $this->enqueueNext($pending, $queued, new DependencySourceCandidate(
@@ -217,10 +232,10 @@ final class ComposerDependencyDeclarationLoader
                             true,
                         ),
                     );
-                    $parsedFiles[$conditionalKey] = $result->parsedFile->withDeclarations(
+                    $parsedFiles[$conditionalKey] = $bodyPruner->prune($result->parsedFile->withDeclarations(
                         $conditionalSource,
                         $inspection->conditionalDeclarations,
-                    );
+                    ));
                     $sourceFiles[$conditionalKey] = $conditionalSource;
                 }
             }
@@ -283,7 +298,7 @@ final class ComposerDependencyDeclarationLoader
         }
 
         return new ProjectParseResult(
-            array_map((new DeclarationBodyPruner())->prune(...), $parsedFiles),
+            $parsedFiles,
             $sourceFiles,
             $diagnostics,
             array_keys($prefixes),
@@ -1091,12 +1106,14 @@ final class ComposerDependencyDeclarationLoader
         return $entries;
     }
 
-    private function addLimitDiagnostic(DiagnosticBag $diagnostics): void
+    private function addLimitDiagnostic(DiagnosticBag $diagnostics, string $resource, int $observed, int $limit): void
     {
         $diagnostics->add(new Diagnostic(
             DiagnosticCode::ComposerDependencyIndexLimitExceeded,
-            'The Composer dependency index exceeds its size or file-count limit.',
-            help: 'Reduce the dependency declaration surface or supply narrower Composer autoload metadata.',
+            sprintf('The Composer dependency index requires %s %s; the limit is %s.', number_format($observed), $resource, number_format($limit)),
+            help: $resource === 'include depth'
+                ? 'Check the dependency static-include chain for unintended nesting. Report this limit if the chain is intentional.'
+                : 'Check Composer autoload paths for unintended directories. If the dependency graph is intentional, report this limit with the package metadata.',
         ));
     }
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process;
 use Tests\Support\StageElevenProject;
 
-test('cold and warm mixed Composer checks and builds fit the default memory budget', function (string $firstCommand): void {
+test('cold and warm mixed Composer checks and builds respect the memory policy', function (string $firstCommand, bool $developmentTools): void {
     $root = $this->createTemporaryDirectory();
     $repository = dirname(__DIR__, 3);
     $this->writeConfiguration($root);
@@ -16,7 +16,7 @@ test('cold and warm mixed Composer checks and builds fit the default memory budg
     $installed = json_decode(file_get_contents($repository . '/vendor/composer/installed.json'), true, flags: JSON_THROW_ON_ERROR);
     $packages = [];
     foreach ($installed['packages'] as $package) {
-        if (!str_starts_with($package['name'], 'symfony/') && $package['name'] !== 'psr/container') {
+        if (!$developmentTools && !str_starts_with($package['name'], 'symfony/') && $package['name'] !== 'psr/container') {
             continue;
         }
         StageElevenProject::copyTree($repository . '/vendor/' . $package['name'], $root . '/vendor/' . $package['name']);
@@ -39,7 +39,10 @@ PHP);
     $this->writeFile($root . '/src/index.php', "<?php\n// Ordinary PHP is copied unchanged.\n");
     $before = StageElevenProject::captureTree($root . '/src');
 
-    $editor = new Process([PHP_BINARY, '-d', 'memory_limit=128M', $repository . '/bin/ppphp', 'editor:diagnostics'], $root);
+    // The large fixture includes the real installed Pest/PHPUnit classmaps and
+    // autoload files. Small fixtures keep their explicit 128 MiB acceptance gate.
+    $environment = ['PPPHP_COMPILER_MEMORY_LIMIT_MEGABYTES' => $developmentTools ? false : '128'];
+    $editor = new Process([PHP_BINARY, '-d', 'memory_limit=128M', $repository . '/bin/ppphp', 'editor:diagnostics'], $root, $environment);
     $editor->setInput(json_encode(['version' => 1, 'document' => [
         'path' => 'src/BuildCommand.ppphp', 'contents' => $before['BuildCommand.ppphp'],
     ]], JSON_THROW_ON_ERROR));
@@ -49,7 +52,7 @@ PHP);
 
     $commands = $firstCommand === 'check' ? ['check', 'check', 'build', 'build'] : ['build', 'build', 'check', 'check'];
     foreach ($commands as $command) {
-        $process = new Process([PHP_BINARY, '-d', 'memory_limit=128M', $repository . '/bin/ppphp', $command, '--format=json'], $root);
+        $process = new Process([PHP_BINARY, '-d', 'memory_limit=128M', $repository . '/bin/ppphp', $command, '--format=json'], $root, $environment);
         $process->setTimeout(120);
         $process->run();
         expect($process->getExitCode())->toBe(0, $process->getOutput() . $process->getErrorOutput());
@@ -66,11 +69,15 @@ PHP);
     $built = StageElevenProject::captureTree($root . '/build/ppphp');
     $this->writeFile($root . '/src/BuildCommand.ppphp', str_replace('return Command::SUCCESS;', "return 'wrong';", $before['BuildCommand.ppphp']));
     foreach (['check', 'build'] as $command) {
-        $process = new Process([PHP_BINARY, '-d', 'memory_limit=128M', $repository . '/bin/ppphp', $command, '--format=json'], $root);
+        $process = new Process([PHP_BINARY, '-d', 'memory_limit=128M', $repository . '/bin/ppphp', $command, '--format=json'], $root, $environment);
         $process->run();
         expect($process->getExitCode())->toBe(1, $process->getOutput() . $process->getErrorOutput());
         $response = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
         expect($response['summary']['errors'])->toBeGreaterThan(0);
     }
     expect(StageElevenProject::captureTree($root . '/build/ppphp'))->toBe($built);
-})->with(['check', 'build']);
+})->with([
+    'small check first at 128 MiB' => ['check', false],
+    'small build first at 128 MiB' => ['build', false],
+    'installed development tools at the compiler default' => ['check', true],
+]);

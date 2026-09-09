@@ -10,4 +10,4 @@ $autoloadPath = $GLOBALS['_composer_autoload_path']
 
 require_once $autoloadPath;
 
-exit((new Application())->run());
+exit((new Application(configureMemoryLimit: true))->run());

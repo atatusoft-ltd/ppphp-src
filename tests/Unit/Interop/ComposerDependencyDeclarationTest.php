@@ -53,7 +53,7 @@ PHP,
         ))))->toBe([DeclarationOrigin::ComposerDependency->value]);
 });
 
-test('dependency discovery follows implementation references before releasing bodies', function (): void {
+test('dependency discovery follows contracts but not implementation-only references', function (): void {
     $root = $this->createTemporaryDirectory();
     foreach (portableComposerFixture() as $path => $contents) {
         $this->writeFile($root . '/' . $path, $contents);
@@ -72,10 +72,17 @@ PHP);
     $result = (new ComposerDependencyDeclarationLoader())->load($composer, [$parsed]);
 
     expect($result->isSuccessful)->toBeTrue()
-        ->and($result->findParsedFile($root . '/vendor/acme/support/src/Value.php'))->not->toBeNull();
+        ->and($result->findParsedFile($root . '/vendor/acme/support/src/Value.php'))->toBeNull();
     $clock = $result->findParsedFile($root . '/vendor/acme/contracts/src/Clock.php');
     expect($clock->statements[0]->stmts[0]->getMethod('value')->stmts)->toBe([])
         ->and($clock->sourceFile->contents)->toContain('new \Acme\Support\Value()');
+
+    // The same reference in project code must still load its dependency contract.
+    $direct = new SourceFile($source->path, $source->displayPath, FileKind::Ppphp,
+        '<?php function consume(): object { return new \Acme\Support\Value(); }');
+    $directResult = (new ComposerDependencyDeclarationLoader())->load($composer, [(new PpphpParser())->parse($direct)->parsedFile]);
+    expect($directResult->isSuccessful)->toBeTrue()
+        ->and($directResult->findParsedFile($root . '/vendor/acme/support/src/Value.php'))->not->toBeNull();
 });
 
 test('guarded dependency bodies are released from original and conditional trees after discovery', function (): void {
@@ -86,7 +93,7 @@ test('guarded dependency bodies are released from original and conditional trees
     $this->writeFile($root . '/vendor/acme/contracts/functions.php', <<<'PHP'
 <?php
 if (!function_exists('acme_guarded')) {
-    function acme_guarded(): object { return new \Acme\Support\Value(); }
+    function acme_guarded(): \Acme\Support\Value { return new \Acme\Support\Value(); }
 }
 if (!class_exists('GuardedClock')) {
     class GuardedClock {
@@ -240,7 +247,8 @@ test('excessive dependency declaration metadata fails before source loading', fu
 
     expect($result->parsedFiles)->toBe([])
         ->and($result->diagnostics->errors)->toHaveCount(1)
-        ->and($result->diagnostics->errors[0]->code)->toBe(DiagnosticCode::ComposerDependencyIndexLimitExceeded);
+        ->and($result->diagnostics->errors[0]->code)->toBe(DiagnosticCode::ComposerDependencyIndexLimitExceeded)
+        ->and($result->diagnostics->errors[0]->message)->toContain('2,049 files', '2,048');
 });
 
 /** @return array<string, string> */
