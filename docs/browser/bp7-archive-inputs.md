@@ -1,0 +1,13 @@
+# Browser distribution compiler input
+
+The website owns the reusable client and release-set pipeline. This repository owns the compiler archive builder and browser archive admission rules. Compiler protocols 1, 2 and 3 are unchanged.
+
+`tools/web-spike/scripts/prepare-compiler-bundle.mjs` creates a fresh locked production Composer installation under the operating-system temporary directory. Composer scripts/plugins and development dependencies are disabled. Per-build caches are removed with staging; neither the developer vendor tree nor a visitor request builds the archive. POSIX build machines need PHP, Composer and Node; the website's installer needs PHP only.
+
+The reviewed closure consists of compiler source/resources/identity inputs, Composer autoload metadata and the 15 production dependencies explicitly listed by `productionPackages` in `tools/web-spike/src/compiler-archive.mjs`. Installed versions/dist references must match `composer.lock`. A lock dependency-set change requires closure review. PHPStan's PHAR and ordinary analysis are retained; optional native Turbo accelerators, Symfony's Windows prompt executable and contract test classes cannot run in this browser profile and are excluded. No development package tree is distributed.
+
+The builder emits `compiler.tar.gz.bin`, `compiler.json` and `compiler-members.json`. Header order, permissions, ownership, timestamps, gzip metadata and closure checksums are deterministic. The executable's `Compiler::VERSION`, `CompilerBuildIdentity`, PHPStan PHAR hash and all compiler resources remain authoritative. A native probe runs from the isolated assembled production installation.
+
+`compiler-archive.mjs` is browser-compatible and shared with the actual website compiler worker. It bounds streaming gzip expansion and validates regular-file USTAR membership before the worker creates a runtime or invokes `PharData`. Links, special files, GNU/PAX extensions, unsafe paths, duplicates/collisions, bad headers, unsupported modes/ownership, truncation, forbidden files and incomplete compiler membership are rejected. The limits are 20 MiB compressed, 96 MiB expanded, 8,000 files and 32 MiB per member.
+
+Run `node --test tools/web-spike/scripts/compiler-archive.test.mjs` for the focused contracts. Independent runtime controls, BP-3 parity and BP-4 workflow qualification retain their own runners/oracles and must rerun against any new distribution archive. A green archive-contract CI job does not establish browser workflow qualification. Website packaging evidence records its exact executable-input hashes separately from source/license and hosting gates.
