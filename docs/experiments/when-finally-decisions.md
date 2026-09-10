@@ -45,7 +45,10 @@ can be expressed as ordinary value-producing branches outside finally.
   must still skip subsequent source statements in that branch.
 - A destination write must occur only after successful expression completion.
   Moving a property write inside the source try can make its catches intercept
-  a setter failure they would not otherwise catch.
+  a setter failure they would not otherwise catch. Plain local assignment is
+  not automatically safe either: overwriting its previous object can invoke
+  a throwing destructor. Destination syntax alone cannot establish that
+  moving the write across a catch boundary preserves behavior.
 - `CheckWhenExpressionsPass::canComplete` means fallthrough **without yielding**.
   It cannot alone decide whether to emit the destination copy. A successful
   yield and a throw both set it false today; the lowerer needs those outcomes
@@ -69,6 +72,6 @@ precedence, and delayed destination assignment. A finally result can replace
 a pending value, but cannot cancel a pending exception. Keep native cleanup
 and catch behavior; preserve temporary lifetime on successful and exceptional
 exits. These are the agreed requirements, not a claim that this experiment
-implements them. Independent review is still pending. Do not infer
-authorization for a broad lowerer rewrite from these narrow examples or from
-their static-analysis success.
+implements them. Independent review reproduced the candidate outputs and
+maximum-level gate results. Do not infer authorization for a broad lowerer
+rewrite from these narrow examples or from their static-analysis success.

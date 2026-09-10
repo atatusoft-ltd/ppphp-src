@@ -1,8 +1,11 @@
 # Internal `when` control-transfer experiment
 
-This local decision-B experiment is not an accepted language change. The
-published contract in `docs/when-expressions.md` remains the baseline. The
-experiment does not change lowering, release identity, or the PHPStan gate.
+The owner approved internal `break`/`continue` on 2026-09-10: their targets must
+remain inside the same `when`; they cannot escape its value-producing boundary.
+This local experiment has passed independent review but is not integrated.
+The published contract in `docs/when-expressions.md` remains the baseline until
+integration. The experiment does not change lowering, release identity, or the
+PHPStan gate.
 
 ## Candidate
 
@@ -50,6 +53,8 @@ source and prints `3`. Other cases cover continue, all loop forms, internal
 multi-level targets, switch fallthrough, empty/no-match inputs, missing tail
 values, independent nested boundaries, and finally-crossing rejection.
 
-The recommendation is to allow internal transfers while preserving `when` as
-a value-producing boundary. The owner must approve the semantic change before
-this candidate is integrated or documented as supported behavior.
+Independent review reproduced the 29 transfer tests and additionally checked
+mixed user transfers and compiler-generated return transfers at multiple loop
+depths. The owner-approved rule is broader than the current try/finally-crossing
+limitation: approval does not turn that implementation limit into a language
+restriction or establish those paths as working.
