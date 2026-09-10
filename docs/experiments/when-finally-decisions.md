@@ -64,9 +64,11 @@ and runs selected, unselected, and throwing helper paths. The native baseline's
 gate rejection is an explicit expected observation, not an ignored finding.
 The same probe suite was executed with the native PHP 8.4.21 interpreter.
 
-Recommend A2 with greedy completion and delayed destination assignment. This
-fits the owner's exception-precedence requirement without suppressing errors
-or banning finally results. Keep native cleanup and catch behavior; preserve
-temporary lifetime on successful and exceptional exits. The owner retains the
-final decision. Do not infer authorization for a broad lowerer rewrite from
-these narrow examples or from their static-analysis success.
+The owner confirmed A2 on 2026-09-10: greedy completion, exception/error
+precedence, and delayed destination assignment. A finally result can replace
+a pending value, but cannot cancel a pending exception. Keep native cleanup
+and catch behavior; preserve temporary lifetime on successful and exceptional
+exits. These are the agreed requirements, not a claim that this experiment
+implements them. Independent review is still pending. Do not infer
+authorization for a broad lowerer rewrite from these narrow examples or from
+their static-analysis success.
