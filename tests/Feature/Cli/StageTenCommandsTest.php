@@ -195,8 +195,8 @@ test('focused and directory builds merge compatible manifests and remove stale s
         JSON_THROW_ON_ERROR,
     );
 
-    expect($focused->getStatusCode())->toBe(ExitCode::Success->value)
-        ->and($directory->getStatusCode())->toBe(ExitCode::Success->value)
+    expect($focused->getStatusCode())->toBe(ExitCode::Success->value, $focused->getDisplay())
+        ->and($directory->getStatusCode())->toBe(ExitCode::Success->value, $directory->getDisplay())
         ->and(file_get_contents($root . '/build/ppphp/Other/Two.php'))->toBe($two)
         ->and(file_exists($root . '/build/ppphp/Feature/Old.php'))->toBeFalse()
         ->and($manifest['completeProject'] ?? null)->toBeTrue();
