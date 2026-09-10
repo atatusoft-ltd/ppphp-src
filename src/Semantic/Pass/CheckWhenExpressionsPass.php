@@ -23,6 +23,7 @@ use Atatusoft\Ppphp\Semantic\Symbol\VariableSymbol;
 use Atatusoft\Ppphp\Semantic\Type\ExpressionTypeResolver;
 use Atatusoft\Ppphp\Semantic\Type\AtomicType;
 use Atatusoft\Ppphp\Semantic\Type\GenericType;
+use Atatusoft\Ppphp\Semantic\Type\IterationTypeResolver;
 use Atatusoft\Ppphp\Semantic\Type\LocalType;
 use Atatusoft\Ppphp\Semantic\Type\MemberTypeResolver;
 use Atatusoft\Ppphp\Semantic\Type\NamedType;
@@ -498,9 +499,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
         }
 
         if ($statement instanceof Stmt\Foreach_) {
-            $this->inspectExpression($statement->expr, $scope);
-            $this->declareForeachTarget($statement->keyVar, $scope);
-            $this->declareForeachTarget($statement->valueVar, $scope);
+            $this->inspectForeachHeader($statement, $scope);
             $body = $this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-loop'));
             $body['canComplete'] = true;
 
@@ -583,6 +582,17 @@ final class CheckWhenExpressionsPass implements SemanticPass
                 $this->inspectNode($statement, $callableScope, false);
             }
             $this->nestedCallableDepth--;
+
+            return;
+        }
+
+        if ($node instanceof Stmt\Foreach_) {
+            $this->inspectForeachHeader($node, $scope);
+            if (!$skipLoopBody) {
+                foreach ($node->stmts as $statement) {
+                    $this->inspectNode($statement, $scope, false);
+                }
+            }
 
             return;
         }
@@ -1097,7 +1107,22 @@ final class CheckWhenExpressionsPass implements SemanticPass
         return $copy;
     }
 
-    private function declareForeachTarget(?Expr $target, Scope $scope): void
+    private function inspectForeachHeader(Stmt\Foreach_ $foreach, Scope $scope): void
+    {
+        $this->inspectExpression($foreach->expr, $scope);
+        [$key, $value] = (new IterationTypeResolver())->resolve($this->resolveExpressionType($foreach->expr, $scope));
+        if ($foreach->byRef) {
+            $this->addDiagnostic(
+                DiagnosticCode::UnsupportedLocalBindingPosition,
+                'By-reference foreach targets are not supported in ++PHP.',
+                $this->span($foreach->valueVar),
+            );
+        }
+        $this->declareForeachTarget($foreach->keyVar, $scope, $key);
+        $this->declareForeachTarget($foreach->valueVar, $scope, $value);
+    }
+
+    private function declareForeachTarget(?Expr $target, Scope $scope, LocalType $assignedType): void
     {
         if (!$target instanceof Expr\Variable || !is_string($target->name)) {
             if ($target !== null) {
@@ -1127,6 +1152,13 @@ final class CheckWhenExpressionsPass implements SemanticPass
                     $span,
                 );
             } else {
+                if (!$this->compatibility->accepts($symbol->type, $assignedType, $this->context->symbols)) {
+                    $this->addDiagnostic(
+                        DiagnosticCode::AssignmentNotAssignableToDeclaredType,
+                        sprintf('Iteration value of type %s is not assignable to declared type %s.', $assignedType->text, $symbol->type->text),
+                        $span,
+                    );
+                }
                 $symbol->binding?->recordWrite($span);
             }
 
@@ -1146,6 +1178,13 @@ final class CheckWhenExpressionsPass implements SemanticPass
         }
 
         $type = $this->resolveSourceLocalType($declaration->type);
+        if (!$type->equalsCanonical($assignedType)) {
+            $this->addDiagnostic(
+                DiagnosticCode::LoopBindingTypeDoesNotMatch,
+                sprintf('The %s binding type %s must exactly match the collection contract %s.', $declaration->position->value, $type->text, $assignedType->text),
+                $declaration->type->span,
+            );
+        }
         $binding = new LocalBinding(
             $declaration->id,
             $name,
@@ -1155,7 +1194,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
             $declaration->variableSpan,
             null,
             null,
-            LocalType::createUnknown(),
+            $assignedType,
         );
         $binding->recordWrite($declaration->variableSpan);
         $this->context->model->bindings->record($binding);

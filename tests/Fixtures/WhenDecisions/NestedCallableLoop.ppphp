@@ -1,0 +1,19 @@
+<?php
+
+function nested(array<int> $values): int
+{
+    int $r = when (count($values) > 0) {
+        array<int> $found = array_map(function (int $v): int {
+            foreach ([1, 2] as int $n) {
+                if ($n === 2) { break; }
+            }
+            return $v * 2;
+        }, $values);
+        return $found[0];
+    } else {
+        return 0;
+    };
+    return $r;
+}
+
+echo nested([3]), '|', nested([]);

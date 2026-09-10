@@ -18,6 +18,8 @@ use Atatusoft\Ppphp\Project\ProjectSyntaxChecker;
 use Atatusoft\Ppphp\Project\SourceSet;
 use Atatusoft\Ppphp\Semantic\SemanticAnalyzer;
 use Atatusoft\Ppphp\Support\Path;
+use PhpParser\Node;
+use PhpParser\Node\Stmt;
 
 final readonly class DeclarationContextCollector
 {
@@ -111,6 +113,7 @@ final readonly class DeclarationContextCollector
             DiagnosticCode::GenericDocumentationConflictsWithNativeSyntax,
             DiagnosticCode::InvalidGenericBound,
             DiagnosticCode::InvalidCompositeType,
+            DiagnosticCode::WhenPositionNotSupported,
         ], true);
     }
 
@@ -119,6 +122,45 @@ final readonly class DeclarationContextCollector
         foreach ($parsedFile->extensionSyntax->genericDeclarations as $declaration) {
             if ($offset >= $declaration->span->start->offset && $offset <= $declaration->span->end->offset) {
                 return true;
+            }
+        }
+
+        foreach ($parsedFile->statements as $statement) {
+            if ($this->containsHeaderInitializer($statement, $offset)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function containsHeaderInitializer(Node $node, int $offset): bool
+    {
+        if ($node instanceof Stmt && !$node instanceof Stmt\Namespace_
+            && !$node instanceof Stmt\ClassLike && !$node instanceof Stmt\ClassMethod
+            && !$node instanceof Stmt\Function_ && !$node instanceof Stmt\Property
+            && !$node instanceof Stmt\ClassConst && !$node instanceof Stmt\Const_) {
+            return false;
+        }
+        $initializer = match (true) {
+            $node instanceof Node\Param, $node instanceof Node\PropertyItem => $node->default,
+            $node instanceof Node\Const_ => $node->value,
+            $node instanceof Node\Attribute => $node,
+            default => null,
+        };
+        if ($initializer !== null && $offset >= $initializer->getStartFilePos() && $offset <= $initializer->getEndFilePos()) {
+            return true;
+        }
+        foreach ($node->getSubNodeNames() as $name) {
+            // Nested callable and hook implementations are unrelated body context.
+            if ($name === 'body' || ($name === 'stmts' && !$node instanceof Stmt\Namespace_ && !$node instanceof Stmt\ClassLike)) {
+                continue;
+            }
+            $value = $node->{$name};
+            foreach (is_array($value) ? $value : [$value] as $child) {
+                if ($child instanceof Node && $this->containsHeaderInitializer($child, $offset)) {
+                    return true;
+                }
             }
         }
 

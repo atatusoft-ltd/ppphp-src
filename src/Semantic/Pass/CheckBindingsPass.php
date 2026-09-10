@@ -31,6 +31,7 @@ use Atatusoft\Ppphp\Semantic\Type\CompositeTypeValidator;
 use Atatusoft\Ppphp\Semantic\Type\GenericType;
 use Atatusoft\Ppphp\Semantic\Type\IntersectionType;
 use Atatusoft\Ppphp\Semantic\Type\LocalType;
+use Atatusoft\Ppphp\Semantic\Type\IterationTypeResolver;
 use Atatusoft\Ppphp\Semantic\Type\TypeCompatibility;
 use Atatusoft\Ppphp\Semantic\Type\TypedArrayType;
 use Atatusoft\Ppphp\Semantic\Type\TypeParameter;
@@ -521,7 +522,7 @@ final class CheckBindingsPass implements SemanticPass
     {
         $this->processNode($foreach->expr, $scope);
         $declaredBindings = [];
-        [$keyType, $valueType] = $this->resolveIterationTypes(
+        [$keyType, $valueType] = (new IterationTypeResolver())->resolve(
             $this->expressionTypes->resolve($foreach->expr, $scope),
         );
 
@@ -709,21 +710,6 @@ final class CheckBindingsPass implements SemanticPass
         ));
 
         return $binding;
-    }
-
-    /** @return array{LocalType, LocalType} */
-    private function resolveIterationTypes(LocalType $collection): array
-    {
-        $contract = $this->resolveTypedArrayContract($collection->semanticType);
-
-        if ($contract !== null) {
-            return [
-                LocalType::createFromSemanticType($contract->keyType),
-                LocalType::createFromSemanticType($contract->valueType),
-            ];
-        }
-
-        return [LocalType::createAtomic('mixed'), LocalType::createAtomic('mixed')];
     }
 
     private function processIterationTarget(Expr $target, Scope $scope, ?LocalType $assignedType = null): void

@@ -136,6 +136,12 @@ backend failures never become successful evidence. See [Compiler Cache](compiler
 
 `PhpStanProjectAnalyzer` is constructed lazily on the supplemental path and invokes the compiler-installed backend through `PHP_BINARY` and bounded argument-array process execution. Standard output and error are capped, timeout termination reaps the child, and only a reviewed environment is forwarded. A generated configuration supplies selected paths, context, stubs, target PHP version, and a workspace-local cache. User PHPStan configuration, autoload entrypoints, Composer scripts, and application bootstrap files are not executed. PHPStan supplements Optional catalog capabilities such as generator-specific return flow, deep ordinary-PHP bodies, and backend failure handling, while normal `check` and `build` require this established full phase. Changing the native default or dependency placement requires explicit product approval.
 
+Unselected sources with body errors use declaration erasure plus parser
+normalization before their bodies are discarded. They never pass a fabricated
+successful semantic model into production lowering. Invalid `when` defaults,
+constant values and attribute arguments are declaration errors, not safe body
+context, and do not become placeholder-valued declarations.
+
 Backend identifiers map to stable P2xxx diagnostics and original source spans. Internal and backend findings are deduplicated by category and source location. Infrastructure failures use P6005–P6007.
 
 Every selected source is parsed and every selected .ppphp model is analyzed before a build writes output. The compiler-owned backend configuration enables checked-exception reporting and maps supported exception findings to P4xxx diagnostics.

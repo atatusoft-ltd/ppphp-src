@@ -45,6 +45,11 @@ The result type is the canonical union of reachable branch-result types. Equal t
 
 Each branch has a child binding scope. It sees outer bindings and may mutate mutable ones, but may not write readonly outer bindings. Branch locals do not escape, sibling branches may reuse a name, and a branch local may not shadow a visible outer local.
 
+A branch may contain another `when`, including inside a loop or an ordinary
+closure. Typed loop variables inside nested callables follow the same collection
+type and declaration rules as other loop variables. Their bindings stay in that
+callable; its returns and internal loop transfers keep their ordinary meaning.
+
 Checked errors from conditions, statements, results, nested `when` expressions, and `finally` participate in the enclosing error flow. A caught error does not escape. A throwing branch has type `never`.
 
 ## Lowering And Diagnostics
@@ -52,5 +57,10 @@ Checked errors from conditions, statements, results, nested `when` expressions, 
 The frontend keeps exact spans and hierarchical nested syntax, then parses conditions and branch bodies with the PHP 8.4 parser after applying descendant ++PHP normalization. Syntax, semantic, and backend diagnostics map to the original `.ppphp` file.
 
 Lowering emits prerequisite statements, a collision-free deterministic temporary, and ordinary `if`/`elseif`/`else` control flow inside compiler-owned `do` boundaries. It uses no synthetic closure, runtime helper, or exception for compiler control flow. Earlier call arguments and array elements are evaluated before the `when`; later siblings remain after it. Temporaries are cleaned up when control continues.
+
+Nested consuming statements own their temporary cleanup. An enclosing `when`
+does not release those temporaries a second time or reach into a nested callable.
+Focused commands retain valid declarations from unselected files without
+lowering invalid bodies; a complete check still reports those source errors.
 
 `when` diagnostics are P5002–P5010 for missing results, valueless results, type mismatches, unsupported positions, prohibited transfers, by-reference use, and fragment parsing. P5001 remains permanently reserved and is not emitted for valid active syntax.

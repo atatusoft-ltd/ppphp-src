@@ -81,20 +81,9 @@ final readonly class AnalysisWorkspacePreparer
                         continue;
                     }
 
-                    $loweringModel = !$selected && !$semanticResult->isSuccessful
-                        ? new \Atatusoft\Ppphp\Semantic\SemanticModel(
-                            $model->parsedFile,
-                            $model->bindings,
-                            new DiagnosticBag(),
-                            $model->errorContracts,
-                            $model->whenExpressions,
-                        )
-                        : $model;
-                    $generated = $this->lowerer->lower($parsedFile, $loweringModel);
-
-                    if (!$selected && !$semanticResult->isSuccessful) {
-                        $generated = $this->declarationEmitter->emit($sourceFile, $generated->contents);
-                    }
+                    $generated = !$selected && !$semanticResult->isSuccessful
+                        ? $this->declarationEmitter->emitContext($model)
+                        : $this->lowerer->lower($parsedFile, $model);
                 } else {
                     $generated = new GeneratedPhp(
                         $sourceFile->contents,

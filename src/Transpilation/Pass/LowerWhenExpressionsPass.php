@@ -1059,7 +1059,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     {
         $names = [];
         foreach ($prelude as $statement) {
-            $this->collectGeneratedNames($statement, $names);
+            $this->collectLiveGeneratedNames($statement, $names);
         }
         foreach ($this->context->semanticModel->whenExpressions->expressions as $analysis) {
             $name = ltrim($analysis->temporaryName, '$');
@@ -1232,7 +1232,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $names = [];
 
         foreach ($prelude as $statement) {
-            $this->collectGeneratedNames($statement, $names);
+            $this->collectLiveGeneratedNames($statement, $names);
         }
 
         return $names === []
@@ -1244,8 +1244,23 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     }
 
     /** @param array<string, true> $names */
-    private function collectGeneratedNames(Node $node, array &$names): void
+    private function collectLiveGeneratedNames(Node $node, array &$names): void
     {
+        // A nested consumer owns its cleanup; its released temporaries must not
+        // be documented or released again by an enclosing consuming statement.
+        if ($node instanceof Stmt\Unset_) {
+            foreach ($node->vars as $variable) {
+                if ($variable instanceof Expr\Variable && is_string($variable->name)) {
+                    unset($names[$variable->name]);
+                }
+            }
+
+            return;
+        }
+        if ($node instanceof Stmt\Function_ || $node instanceof Stmt\ClassLike
+            || $node instanceof Expr\Closure || $node instanceof Expr\ArrowFunction) {
+            return;
+        }
         if ($node instanceof Expr\Variable && is_string($node->name) && isset($this->generatedNames[$node->name])) {
             $names[$node->name] = true;
         }
@@ -1253,11 +1268,11 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         foreach ($node->getSubNodeNames() as $name) {
             $value = $node->{$name};
             if ($value instanceof Node) {
-                $this->collectGeneratedNames($value, $names);
+                $this->collectLiveGeneratedNames($value, $names);
             } elseif (is_array($value)) {
                 foreach ($value as $child) {
                     if ($child instanceof Node) {
-                        $this->collectGeneratedNames($child, $names);
+                        $this->collectLiveGeneratedNames($child, $names);
                     }
                 }
             }
