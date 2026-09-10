@@ -29,3 +29,28 @@ Its BP-7 record keeps unresolved Oniguruma source provenance and the combined
 frontend/wrapper licensing decision explicit. No runtime rebuild, publication,
 production activation or wider BP-8 qualification is claimed here. Exact pushed CI
 observations are recorded separately from these local runtime results.
+
+## Source-distribution closure investigation (2026-09-10)
+
+The owner has now selected the GPLv3 option for the applicable browser
+combination, preserving the compiler's Apache-2.0 license. This does not clear
+the separate legacy OpenSSL/native-runtime permission question. The website's
+existing generated component inventory owns the detailed output/source map;
+no second compiler-side license inventory is introduced.
+
+The retained original build evidence and log for run `34297911850` show that
+PHP linked prebuilt native libraries copied from the pinned WordPress Playground
+checkout. The Oniguruma source tree that produced its tracked `libonig.a` has not
+been recovered. The exact prebuilt Git blob is
+`1e4a8d4f15b680d2f93433cb1adbb7dcd499b0a5`; the website source-input lock checks
+its bytes and records the chain to the retained WASM. The supplied 6.9.10 tag
+remains a version-matched candidate. DWARF filenames and line tables lack source
+checksums and cannot establish an exact tree.
+
+The effective OpenSSL input is **1.1.1t**, established by the copied header,
+static libraries, final link command and retained WASM string. The original
+`OPENSSL_VERSION=1.1.0h` build argument did not choose the copied library. The
+closure source package corrects that snapshot while preserving the original
+BP-7 package intact. No runtime, loader, compiler source, lock or protocol change
+is required for this correction. See the website's closure evidence for actual
+package equivalence, fresh installed-page tests and any remaining gates.

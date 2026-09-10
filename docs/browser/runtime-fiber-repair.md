@@ -2,6 +2,14 @@
 
 Date: 2026-09-09. Status: The original context-creation blocker is resolved for the tested Asyncify workload. This is not a production website release or completion of the entire browser programme.
 
+Source-distribution clarification, 2026-09-10: the original runtime's native
+libraries were copied from the pinned upstream prebuilt `asyncify/dist/root`
+trees. The effective OpenSSL is 1.1.1t despite the unused 1.1.0h argument.
+Oniguruma's prebuilt library is identified but its producing source tree remains
+unknown. [The archive input record](bp7-archive-inputs.md#source-distribution-closure-investigation-2026-09-10)
+separates these findings from the historical runtime qualification below.
+No binary, original loader, Fiber patch, build flag or extension was changed.
+
 ## Verified outcome
 
 The rebuilt candidate passes all 15 core browser probes, including the unchanged pinned PHPStan invocation, and all eight additional Fiber lifecycle contracts. The comparison baseline still reproduces the original six context-related failures. Both profiles run in Headless Chrome 152 on Linux, using PHP 8.4.23. Loaded WASM asset hashes are checked against the retained build rather than inferred from a version label.

@@ -15,6 +15,11 @@ source-distribution gate remains incomplete. See the
 [compiler archive record](browser/bp7-archive-inputs.md) and the website's
 `docs/browser/bp7-evidence.md` for exact qualification and distribution identities.
 BP-8/BP-9 remain outstanding. Production routes and execution remain guarded.
+The bounded 2026-09-10 source-distribution closure preserves these executable
+inputs. GPLv3 is owner-selected for the applicable browser combination; exact
+Oniguruma source recovery and legacy OpenSSL/native permission review remain
+separate gates. The website's closure work order and existing evidence record
+govern packaging, source access, retention and the BP-8 handoff.
 > Product outcome: Enable the production playground and interactive Learn routes with complete browser-side Check, Build PHP and Run.
 > Canonical home: `atatusoft-ltd/ppphp-src`, `docs/ppphp-browser-production-plan.md`.
 
