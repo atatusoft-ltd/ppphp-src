@@ -11,3 +11,21 @@ The builder emits `compiler.tar.gz.bin`, `compiler.json` and `compiler-members.j
 `compiler-archive.mjs` is browser-compatible and shared with the actual website compiler worker. It bounds streaming gzip expansion and validates regular-file USTAR membership before the worker creates a runtime or invokes `PharData`. Links, special files, GNU/PAX extensions, unsafe paths, duplicates/collisions, bad headers, unsupported modes/ownership, truncation, forbidden files and incomplete compiler membership are rejected. The limits are 20 MiB compressed, 96 MiB expanded, 8,000 files and 32 MiB per member.
 
 Run `node --test tools/web-spike/scripts/compiler-archive.test.mjs` for the focused contracts. Independent runtime controls, BP-3 parity and BP-4 workflow qualification retain their own runners/oracles and must rerun against any new distribution archive. A green archive-contract CI job does not establish browser workflow qualification. Website packaging evidence records its exact executable-input hashes separately from source/license and hosting gates.
+
+The BP-7 run passed the 26 archive contracts, all browser/runtime Node contracts,
+the baseline/candidate/Fiber controls, independent BP-3 parity and independent
+BP-4 workflows (48 cases each). The full compiler gates passed: strict Composer
+validation, `composer check` including 1,212 tests / 7,985 assertions, distribution
+verification and audit. These runs exercised canonical compiler archive
+`c81f8c9dcec8b207a4e53341c19e17ec7c494c09cbc7aaa5dcb41605c5e24d7c`:
+5,391,298 gzip bytes, 1,203 regular files and 38,977,024 expanded tar bytes.
+The accepted BP-6 archive had 14,626,267 gzip bytes and 76,257,792 expanded tar
+bytes. Compiler build identity, PHPStan PHAR and retained WASM/loader are unchanged;
+the size reduction does not establish a different memory guarantee.
+
+The website owns the distribution/receipt, PHP-only installer, source inventory,
+actual Apache/browser delivery evidence and separate checksummed evidence archive.
+Its BP-7 record keeps unresolved Oniguruma source provenance and the combined
+frontend/wrapper licensing decision explicit. No runtime rebuild, publication,
+production activation or wider BP-8 qualification is claimed here. Exact pushed CI
+observations are recorded separately from these local runtime results.
