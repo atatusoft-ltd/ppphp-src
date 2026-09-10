@@ -30,6 +30,15 @@ The compiler supports `when` as:
 
 It rejects standalone expressions, defaults, constants, attributes, match arms, arrow-function bodies, array keys or unpack operands, call unpack operands, known by-reference arguments, arbitrary unary or binary operands, ternary arms, coalesce operands, and use as another `when` condition. `when(...)` calls without the braced expression grammar, including methods and static methods named `when`, remain ordinary PHP.
 
+The containing statement matters too. An assignment or call containing `when`
+is not supported in a `for` initializer, condition or step, a `while` or
+`do … while` condition, a `switch` condition or case, a `foreach` input, or an
+`echo` or `unset` statement. These positions report P5005 before PHP is emitted.
+An assignment containing `when` in an `if`/`elseif` condition is supported, as
+are assignments and returns in loop bodies. Moving a loop-header expression
+outside the loop changes how often it runs; put the computation in the loop
+body when it must run on each iteration.
+
 ## Types, Scopes, And Errors
 
 The result type is the canonical union of reachable branch-result types. Equal types collapse and `never` branches do not widen the union. Unknown results remain conservative for backend refinement. Compatibility is checked against local, assignment, return, parameter, and typed-array contexts. Composite types, invariant generics, typed lists, and typed maps retain their existing contracts.

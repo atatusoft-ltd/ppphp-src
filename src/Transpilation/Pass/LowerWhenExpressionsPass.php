@@ -20,6 +20,7 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Name;
 use PhpParser\Node\Scalar;
 use PhpParser\Node\Stmt;
+use PhpParser\NodeFinder;
 use PhpParser\PrettyPrinter\Standard;
 
 final class LowerWhenExpressionsPass implements TranspilationPass
@@ -74,6 +75,10 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 throw new \LogicException("A when lowering site must belong to a statement.");
             }
             $lowered = $this->lowerOrdinaryStatement($this->copyStatement($statement));
+            if ((new NodeFinder())->findFirst($lowered, static fn (Node $node): bool =>
+                $node instanceof Expr && is_string($node->getAttribute('ppphpWhenExpressionId'))) !== null) {
+                throw new \LogicException('A when placeholder survived statement lowering.');
+            }
             $php = $this->printer->prettyPrint($lowered);
             $replacement = $this->formatForSource($php, $span->start->offset);
             $context->replace($span, $replacement, $this->buildSourceMappings($span, $replacement, $lowered));
@@ -794,6 +799,25 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             }
 
             return [$statement];
+        }
+
+        // A larger owning edit may contain other ordinary statement lists.
+        // Lower those bodies too: their independent source edits would be
+        // covered by the outer replacement (for example a loop inside an if).
+        foreach ($statement->getSubNodeNames() as $name) {
+            $value = $statement->{$name};
+            if ($value instanceof Stmt) {
+                $nested = $this->lowerNestedStatement($value, false, 0);
+                if (count($nested) !== 1) {
+                    throw new \LogicException('A nested statement container must retain one node.');
+                }
+                $statement->{$name} = $nested[0];
+            } elseif (is_array($value)) {
+                $children = array_filter($value, static fn (mixed $child): bool => $child instanceof Stmt);
+                if ($children !== [] && count($children) === count($value)) {
+                    $statement->{$name} = $this->lowerOrdinaryStatements(array_values($children));
+                }
+            }
         }
 
         return [$statement];

@@ -267,6 +267,23 @@ final class CheckWhenExpressionsPass implements SemanticPass
     /** @param list<Node> $ancestors */
     private function resolveSite(Expr $placeholder, ?Node $parent, array $ancestors): WhenExpressionSite
     {
+        $path = $parent === null ? $ancestors : [$parent, ...$ancestors];
+        $owner = $this->resolveStatement($placeholder, $path);
+        // A supported immediate operand still needs an executable lowering site.
+        // In particular, loop headers are not statement lists we can hoist into.
+        if (!$owner instanceof Stmt\Expression && !$owner instanceof Stmt\Return_ && !$owner instanceof Stmt\If_) {
+            return WhenExpressionSite::Unsupported;
+        }
+        foreach ($path as $ancestor) {
+            if ($ancestor === $owner) {
+                break;
+            }
+            if ($ancestor instanceof Expr\ArrowFunction || $ancestor instanceof Node\MatchArm
+                || $ancestor instanceof Param || $ancestor instanceof Node\Attribute) {
+                return WhenExpressionSite::Unsupported;
+            }
+        }
+
         if ($parent instanceof Expr\Assign && $parent->expr === $placeholder) {
             foreach ($this->typedLocals as $local) {
                 if ($local->initializerSpan->start->offset === $this->span($placeholder)->start->offset) {
@@ -330,7 +347,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
         if ($location->site === WhenExpressionSite::Unsupported) {
             $this->addDiagnostic(
                 DiagnosticCode::WhenPositionNotSupported,
-                'This `when` expression is not in a supported value position.',
+                'This `when` expression is not in a supported value position. Put its assignment, return, call, or array in an executable statement body.',
                 $when->span,
             );
         }
