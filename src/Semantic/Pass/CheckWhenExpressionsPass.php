@@ -46,6 +46,7 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Param;
 use PhpParser\Node\Stmt;
 
+/** @phpstan-type WhenFlow array{canComplete: bool, types: list<LocalType>, spans: list<Span>, transfers?: list<Stmt>} */
 final class CheckWhenExpressionsPass implements SemanticPass
 {
     private SemanticContext $context;
@@ -66,6 +67,9 @@ final class CheckWhenExpressionsPass implements SemanticPass
     private array $typedForeachBindings = [];
 
     private int $nestedCallableDepth = 0;
+
+    /** @var array<int, Stmt> */
+    private array $transferTargets = [];
 
     /** @var array<int, true> */
     private array $freshArrayResults = [];
@@ -100,6 +104,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
         $this->typedForInitializers = [];
         $this->typedForeachBindings = [];
         $this->nestedCallableDepth = 0;
+        $this->transferTargets = [];
         $this->freshArrayResults = [];
 
         foreach ($context->parsedFile->extensionSyntax->typedLocals as $local) {
@@ -178,6 +183,10 @@ final class CheckWhenExpressionsPass implements SemanticPass
         bool $fragment,
         bool $condition,
     ): void {
+        if ($fragment && ($node instanceof Stmt\Break_ || $node instanceof Stmt\Continue_)) {
+            $this->indexTransfer($node, $parent === null ? $ancestors : [$parent, ...$ancestors]);
+        }
+
         $whenId = $node->getAttribute('ppphpWhenExpressionId');
 
         if (is_string($whenId) && $node instanceof Expr) {
@@ -208,6 +217,51 @@ final class CheckWhenExpressionsPass implements SemanticPass
                 }
             }
         }
+    }
+
+    /** @param list<Node> $ancestors */
+    private function indexTransfer(Stmt\Break_|Stmt\Continue_ $transfer, array $ancestors): void
+    {
+        // Each parsed branch is indexed separately, so no target can cross a when boundary.
+        // Nested callables retain their ordinary PHP control flow.
+        if (array_any($ancestors, static fn (Node $node): bool => $node instanceof Node\FunctionLike)) {
+            return;
+        }
+
+        $level = $transfer->num === null ? 1
+            : ($transfer->num instanceof Node\Scalar\Int_ ? $transfer->num->value : 0);
+        $message = 'The transfer level must be a positive integer targeting a loop or switch inside this `when` branch.';
+        if ($level > 0) {
+            $message = 'This transfer would leave the `when` branch; its target must be a loop or switch inside the branch.';
+            foreach ($ancestors as $ancestor) {
+                if ($ancestor instanceof Stmt\Finally_) {
+                    $message = 'A control transfer cannot leave a `finally` block; its target must be inside that block.';
+                    break;
+                }
+                if ($ancestor instanceof Stmt\TryCatch && $ancestor->finally !== null) {
+                    $message = 'A control transfer across `try`/`finally` inside a `when` branch is not supported yet.';
+                    break;
+                }
+                if (
+                    $ancestor instanceof Stmt\For_ || $ancestor instanceof Stmt\Foreach_
+                    || $ancestor instanceof Stmt\While_ || $ancestor instanceof Stmt\Do_
+                    || $ancestor instanceof Stmt\Switch_
+                ) {
+                    if (--$level !== 0) {
+                        continue;
+                    }
+                    if ($transfer instanceof Stmt\Continue_ && $ancestor instanceof Stmt\Switch_) {
+                        $message = '`continue` targets a switch here. Use `break` to leave it, or a higher level to continue an enclosing loop inside the branch.';
+                        break;
+                    }
+                    $this->transferTargets[$this->span($transfer)->start->offset] = $ancestor;
+
+                    return;
+                }
+            }
+        }
+
+        $this->addDiagnostic(DiagnosticCode::WhenControlTransferNotAllowed, $message, $this->span($transfer));
     }
 
     /** @param list<Node> $ancestors */
@@ -334,11 +388,11 @@ final class CheckWhenExpressionsPass implements SemanticPass
 
     /**
      * @param list<Stmt> $statements
-     * @return array{canComplete: bool, types: list<LocalType>, spans: list<Span>}
+     * @return WhenFlow
      */
     private function analyzeStatements(array $statements, Scope $scope): array
     {
-        $flow = ['canComplete' => true, 'types' => [], 'spans' => []];
+        $flow = ['canComplete' => true, 'types' => [], 'spans' => [], 'transfers' => []];
 
         foreach ($statements as $statement) {
             if (!$flow['canComplete']) {
@@ -348,13 +402,14 @@ final class CheckWhenExpressionsPass implements SemanticPass
             $next = $this->analyzeStatement($statement, $scope);
             array_push($flow['types'], ...$next['types']);
             array_push($flow['spans'], ...$next['spans']);
+            array_push($flow['transfers'], ...($next['transfers'] ?? []));
             $flow['canComplete'] = $next['canComplete'];
         }
 
         return $flow;
     }
 
-    /** @return array{canComplete: bool, types: list<LocalType>, spans: list<Span>} */
+    /** @return WhenFlow */
     private function analyzeStatement(Stmt $statement, Scope $scope): array
     {
         if ($statement instanceof Stmt\Return_) {
@@ -420,6 +475,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
             }
             array_push($combined['types'], ...$finally['types']);
             array_push($combined['spans'], ...$finally['spans']);
+            $combined['transfers'] = [...($combined['transfers'] ?? []), ...($finally['transfers'] ?? [])];
 
             return $combined;
         }
@@ -431,7 +487,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
             $body = $this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-loop'));
             $body['canComplete'] = true;
 
-            return $body;
+            return $this->consumeTransfers($body, $statement);
         }
 
         if (
@@ -443,7 +499,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
             $body = $this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-loop'));
             $body['canComplete'] = true;
 
-            return $body;
+            return $this->consumeTransfers($body, $statement);
         }
 
         if ($statement instanceof Stmt\Switch_) {
@@ -457,21 +513,24 @@ final class CheckWhenExpressionsPass implements SemanticPass
                 }
                 $flows[] = $this->analyzeStatements(array_values($case->stmts), $this->copyScope($scope, 'when-case'));
             }
+            // A case that falls through continues into the next case, not past the switch.
+            $canFallThrough = true;
+            foreach (array_reverse($flows, true) as $index => $flow) {
+                $canFallThrough = $flow['canComplete'] && $canFallThrough;
+                $flow['canComplete'] = $canFallThrough;
+                $flows[$index] = $flow;
+            }
             if (!$hasDefault) {
                 $flows[] = ['canComplete' => true, 'types' => [], 'spans' => []];
             }
 
-            return $this->mergeFlows($flows);
+            return $this->consumeTransfers($this->mergeFlows($flows), $statement);
         }
 
-        if (($statement instanceof Stmt\Break_ || $statement instanceof Stmt\Continue_) && $this->nestedCallableDepth === 0) {
-            $this->addDiagnostic(
-                DiagnosticCode::WhenControlTransferNotAllowed,
-                '`break` and `continue` cannot originate in a `when` branch.',
-                $this->span($statement),
-            );
+        if ($statement instanceof Stmt\Break_ || $statement instanceof Stmt\Continue_) {
+            $target = $this->transferTargets[$this->span($statement)->start->offset] ?? null;
 
-            return ['canComplete' => false, 'types' => [], 'spans' => []];
+            return ['canComplete' => false, 'types' => [], 'spans' => [], 'transfers' => $target === null ? [] : [$target]];
         }
 
         if (($statement instanceof Stmt\Goto_ || $statement instanceof Stmt\Label) && $this->nestedCallableDepth === 0) {
@@ -512,12 +571,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
         }
 
         if (($node instanceof Stmt\Break_ || $node instanceof Stmt\Continue_) && $this->nestedCallableDepth === 0) {
-            $this->addDiagnostic(
-                DiagnosticCode::WhenControlTransferNotAllowed,
-                '`break` and `continue` cannot originate in a `when` branch.',
-                $this->span($node),
-            );
-
+            // Transfers are validated during indexing, including unreachable statements.
             return;
         }
 
@@ -1212,19 +1266,39 @@ final class CheckWhenExpressionsPass implements SemanticPass
     }
 
     /**
-     * @param list<array{canComplete: bool, types: list<LocalType>, spans: list<Span>}> $flows
-     * @return array{canComplete: bool, types: list<LocalType>, spans: list<Span>}
+     * @param list<WhenFlow> $flows
+     * @return WhenFlow
      */
     private function mergeFlows(array $flows): array
     {
-        $combined = ['canComplete' => false, 'types' => [], 'spans' => []];
+        $combined = ['canComplete' => false, 'types' => [], 'spans' => [], 'transfers' => []];
         foreach ($flows as $flow) {
             $combined['canComplete'] = $combined['canComplete'] || $flow['canComplete'];
             array_push($combined['types'], ...$flow['types']);
             array_push($combined['spans'], ...$flow['spans']);
+            array_push($combined['transfers'], ...($flow['transfers'] ?? []));
         }
 
         return $combined;
+    }
+
+    /**
+     * @param WhenFlow $flow
+     * @return WhenFlow
+     */
+    private function consumeTransfers(array $flow, Stmt $target): array
+    {
+        $remaining = [];
+        foreach ($flow['transfers'] ?? [] as $transferTarget) {
+            if ($transferTarget === $target) {
+                $flow['canComplete'] = true;
+            } else {
+                $remaining[] = $transferTarget;
+            }
+        }
+        $flow['transfers'] = $remaining;
+
+        return $flow;
     }
 
     /** @param list<LocalType> $types */
