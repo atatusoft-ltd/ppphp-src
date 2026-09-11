@@ -15,6 +15,8 @@ test('a common case exit requires every path to finish the result', function (st
     'tail result' => ['return 1;', true],
     'conditional break before result' => ['if ($leave) { break; } return 1;', false],
     'conditional continue before result' => ['if ($leave) { continue; } return 1;', false],
+    'conditional earlier result cannot share the tail exit' => ['if ($take) { return 1; } return 2;', false],
+    'nested loop result cannot share the tail exit' => ['foreach ($xs as $x) { if ($take) { return 1; } } return 2;', false],
     'contained loop break' => ['foreach ($xs as $x) { if ($x) { break; } } return 1;', true],
     'contained loop continue' => ['foreach ($xs as $x) { continue; } return 1;', true],
     'outward numbered break' => ['foreach ($xs as $x) { if ($x) { break 2; } } return 1;', false],

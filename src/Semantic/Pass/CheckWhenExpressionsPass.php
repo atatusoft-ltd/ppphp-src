@@ -21,6 +21,7 @@ use Atatusoft\Ppphp\Semantic\SemanticContext;
 use Atatusoft\Ppphp\Semantic\Symbol\ParameterSymbol;
 use Atatusoft\Ppphp\Semantic\Symbol\VariableSymbol;
 use Atatusoft\Ppphp\Semantic\Type\ExpressionTypeResolver;
+use Atatusoft\Ppphp\Semantic\Type\ExpressionTypeResolution;
 use Atatusoft\Ppphp\Semantic\Type\AtomicType;
 use Atatusoft\Ppphp\Semantic\Type\GenericType;
 use Atatusoft\Ppphp\Semantic\Type\IterationTypeResolver;
@@ -47,7 +48,7 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Param;
 use PhpParser\Node\Stmt;
 
-/** @phpstan-type WhenFlow array{canComplete: bool, types: list<LocalType>, spans: list<Span>, transfers?: list<Stmt>} */
+/** @phpstan-type WhenFlow array{canComplete: bool, types: list<LocalType>, spans: list<Span>, transfers?: list<array{target: Stmt, continues: bool}>} */
 final class CheckWhenExpressionsPass implements SemanticPass
 {
     private SemanticContext $context;
@@ -501,9 +502,13 @@ final class CheckWhenExpressionsPass implements SemanticPass
         if ($statement instanceof Stmt\Foreach_) {
             $this->inspectForeachHeader($statement, $scope);
             $body = $this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-loop'));
-            $body['canComplete'] = true;
+            // An explicit item guarantees entry even alongside unpacking. An
+            // unpacked iterable alone can be empty, regardless of item type.
+            $enters = $statement->expr instanceof Expr\Array_
+                && array_any($statement->expr->items, static fn (ArrayItem $item): bool => !$item->unpack);
+            $body['canComplete'] = !$enters || $body['canComplete'];
 
-            return $this->consumeTransfers($body, $statement);
+            return $this->completeLoopFlow($body, $statement);
         }
 
         if (
@@ -513,9 +518,14 @@ final class CheckWhenExpressionsPass implements SemanticPass
         ) {
             $this->inspectNode($statement, $scope, true);
             $body = $this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-loop'));
-            $body['canComplete'] = true;
+            $condition = $statement instanceof Stmt\For_
+                ? ($statement->cond === [] ? null : $statement->cond[array_key_last($statement->cond)])
+                : $statement->cond;
+            $repeats = $condition === null || $this->resolveLiteralTruth($condition) === true;
+            $canSkip = !$statement instanceof Stmt\Do_ && !$repeats;
+            $body['canComplete'] = $canSkip || ($body['canComplete'] && !$repeats);
 
-            return $this->consumeTransfers($body, $statement);
+            return $this->completeLoopFlow($body, $statement, $repeats);
         }
 
         if ($statement instanceof Stmt\Switch_) {
@@ -546,7 +556,10 @@ final class CheckWhenExpressionsPass implements SemanticPass
         if ($statement instanceof Stmt\Break_ || $statement instanceof Stmt\Continue_) {
             $target = $this->transferTargets[$this->span($statement)->start->offset] ?? null;
 
-            return ['canComplete' => false, 'types' => [], 'spans' => [], 'transfers' => $target === null ? [] : [$target]];
+            return [
+                'canComplete' => false, 'types' => [], 'spans' => [],
+                'transfers' => $target === null ? [] : [['target' => $target, 'continues' => $statement instanceof Stmt\Continue_]],
+            ];
         }
 
         if (($statement instanceof Stmt\Goto_ || $statement instanceof Stmt\Label) && $this->nestedCallableDepth === 0) {
@@ -695,6 +708,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
                 );
             } else {
                 $symbol->binding?->recordRead($this->span($expression));
+                $this->resolveExpressionType($expression, $scope);
             }
 
             return;
@@ -804,18 +818,43 @@ final class CheckWhenExpressionsPass implements SemanticPass
         $symbol->binding?->recordWrite($this->span($assignment->var));
     }
 
+    private function resolveLiteralTruth(Expr $expression): ?bool
+    {
+        if ($expression instanceof Node\Scalar\Int_ || $expression instanceof Node\Scalar\Float_
+            || $expression instanceof Node\Scalar\String_) {
+            return (bool) $expression->value;
+        }
+        if ($expression instanceof Expr\ConstFetch) {
+            return match (strtolower($expression->name->toString())) {
+                'true' => true,
+                'false', 'null' => false,
+                default => null,
+            };
+        }
+        if ($expression instanceof Expr\BooleanNot) {
+            $truth = $this->resolveLiteralTruth($expression->expr);
+            return $truth === null ? null : !$truth;
+        }
+        if (($expression instanceof Expr\UnaryPlus || $expression instanceof Expr\UnaryMinus)
+            && ($expression->expr instanceof Node\Scalar\Int_ || $expression->expr instanceof Node\Scalar\Float_)) {
+            return (bool) $expression->expr->value;
+        }
+        return null;
+    }
+
     private function resolveExpressionType(Expr $expression, Scope $scope): LocalType
     {
         $when = $this->context->model->whenExpressions->findPlaceholder($expression);
-        if ($when !== null) {
-            return $when->resultType;
-        }
-
-        if ($expression instanceof Expr\Array_) {
-            return $this->resolveArrayLiteralType($expression, $scope);
-        }
-
-        return $this->expressionTypes->resolve($expression, $scope);
+        $type = $when->resultType ?? ($expression instanceof Expr\Array_
+            ? $this->resolveArrayLiteralType($expression, $scope)
+            : $this->expressionTypes->resolve($expression, $scope));
+        // Fragment expressions are not visited by ordinary PHP flow analysis.
+        // Retain their contextual types for lowering and other model consumers.
+        $this->context->model->expressionTypes->record(
+            $this->context->parsedFile->sourceFile, $expression,
+            $type->unknown ? ExpressionTypeResolution::unknown() : ExpressionTypeResolution::known($type->semanticType),
+        );
+        return $type;
     }
 
     private function checkContextType(WhenExpressionAnalysis $analysis, Scope $scope): void
@@ -1342,18 +1381,34 @@ final class CheckWhenExpressionsPass implements SemanticPass
      * @param WhenFlow $flow
      * @return WhenFlow
      */
-    private function consumeTransfers(array $flow, Stmt $target): array
+    private function consumeTransfers(array $flow, Stmt $target, bool $alwaysRepeats = false): array
     {
         $remaining = [];
-        foreach ($flow['transfers'] ?? [] as $transferTarget) {
-            if ($transferTarget === $target) {
-                $flow['canComplete'] = true;
+        foreach ($flow['transfers'] ?? [] as $transfer) {
+            if ($transfer['target'] === $target) {
+                // A continue reaches the next condition, not the statement
+                // after an unconditional loop. Break always exits its target.
+                $flow['canComplete'] = $flow['canComplete'] || !$transfer['continues'] || !$alwaysRepeats;
             } else {
-                $remaining[] = $transferTarget;
+                $remaining[] = $transfer;
             }
         }
         $flow['transfers'] = $remaining;
 
+        return $flow;
+    }
+
+    /** @param WhenFlow $flow
+     * @return WhenFlow
+     */
+    private function completeLoopFlow(array $flow, Stmt $loop, bool $alwaysRepeats = false): array
+    {
+        $flow = $this->consumeTransfers($flow, $loop, $alwaysRepeats);
+        if (!$flow['canComplete'] && ($flow['transfers'] ?? []) === []) {
+            // Share the checked reachability with lowering. An outward break
+            // is not a result, even when this loop cannot finish normally.
+            $this->context->model->whenExpressions->recordTerminatingLoop($this->span($loop)->start->offset);
+        }
         return $flow;
     }
 

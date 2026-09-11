@@ -7,11 +7,11 @@ namespace Atatusoft\Ppphp\Transpilation\Pass;
 use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
 use Atatusoft\Ppphp\Interop\PhpDoc\PhpDocReader;
 use Atatusoft\Ppphp\Semantic\Binding\LocalBinding;
-use Atatusoft\Ppphp\Semantic\SourceNameResolver;
 use Atatusoft\Ppphp\Semantic\Call\Enumerations\ArgumentPassingMode;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionAnalysis;
 use Atatusoft\Ppphp\Semantic\Type\LocalType;
 use Atatusoft\Ppphp\Semantic\Type\UnionType;
+use Atatusoft\Ppphp\Semantic\Type\TypedArrayType;
 use Atatusoft\Ppphp\Source\Span;
 use Atatusoft\Ppphp\Transpilation\Pass\Interfaces\TranspilationPass;
 use Atatusoft\Ppphp\Transpilation\SourceEditMapping;
@@ -19,6 +19,8 @@ use Atatusoft\Ppphp\Transpilation\TranspilationContext;
 use Atatusoft\Ppphp\Transpilation\LocalBindingTypeRenderer;
 use Atatusoft\Ppphp\Transpilation\WhenTailShape;
 use Atatusoft\Ppphp\Transpilation\WhenOperandStability;
+use Atatusoft\Ppphp\Transpilation\WhenValueLifetime;
+use Atatusoft\Ppphp\Transpilation\WhenLocalScope;
 use Atatusoft\Ppphp\Transpilation\WhenPhpPrinter;
 use PhpParser\Comment;
 use PhpParser\Comment\Doc;
@@ -35,6 +37,10 @@ use PhpParser\PrettyPrinter\Standard;
 final class LowerWhenExpressionsPass implements TranspilationPass
 {
     private TranspilationContext $context;
+
+    private WhenTailShape $tailShape;
+
+    private WhenLocalScope $localScope;
 
     private int $prerequisiteSequence = 0;
 
@@ -75,7 +81,12 @@ final class LowerWhenExpressionsPass implements TranspilationPass
 
     public function execute(TranspilationContext $context): void
     {
+        if ($context->semanticModel->whenExpressions->expressions === []) {
+            return;
+        }
         $this->context = $context;
+        $this->tailShape = new WhenTailShape($context->semanticModel->whenExpressions);
+        $this->localScope = new WhenLocalScope($context->semanticModel);
         $this->prerequisiteSequence = 0;
         $this->reservedNames = [];
         $this->generatedNames = [];
@@ -421,7 +432,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
 
         if ($statement instanceof Stmt\Return_ && $statement->expr !== null) {
             $analysis = $this->context->semanticModel->whenExpressions->findPlaceholder($statement->expr);
-            if ($analysis !== null && (new WhenTailShape())->accepts($analysis, allowGuards: true)) {
+            if ($analysis !== null && $this->tailShape->accepts($analysis, allowGuards: true)) {
                 $conditional = $this->buildWhenStatement($analysis, returnResult: true);
                 $conditional->setAttribute('comments', $statement->getComments());
                 return [$conditional];
@@ -441,9 +452,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             $assignment = $statement->expr;
             if ($assignment instanceof Expr\Assign) {
                 $analysis = $this->context->semanticModel->whenExpressions->findPlaceholder($assignment->expr);
-                if ($analysis !== null && (new WhenTailShape())->accepts($analysis, allowGuards: true)
+                if ($analysis !== null && $this->tailShape->accepts($analysis, allowGuards: true)
                     && $this->canAssignDirectly($analysis, $assignment->var)
-                    && ((new WhenTailShape())->accepts($analysis) || $this->canSeedResultLocal($assignment->var))) {
+                    && ($this->tailShape->accepts($analysis) || $this->canSeedResultLocal($assignment->var))) {
                     $conditional = $this->buildWhenStatement($analysis, $assignment->var);
                     $conditional->setAttribute('comments', $statement->getComments());
                     return [$conditional];
@@ -850,7 +861,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         bool $returnResult = false,
     ): Stmt
     {
-        $shape = new WhenTailShape();
+        $shape = $this->tailShape;
         $tail = $shape->accepts($analysis, allowGuards: true);
         if ($tail && $destination === null && !$returnResult) {
             $name = ltrim($analysis->temporaryName, '$');
@@ -994,84 +1005,20 @@ final class LowerWhenExpressionsPass implements TranspilationPass
 
     private function canSeedResultLocal(Expr $destination): bool
     {
-        if ($this->findResultDeclaration($destination) === null) {
-            return false;
-        }
-        $target = $this->span($destination);
-        $nodes = $this->context->parsedFile->statements;
-        // Nested when bodies are parsed fragments, not children of the
-        // normalized placeholder. Include them in the lexical ancestry proof.
-        foreach ($this->context->semanticModel->whenExpressions->expressions as $analysis) {
-            foreach ($analysis->branches as $branch) {
-                array_push($nodes, ...$branch->statements);
-            }
-        }
-        $callableStart = -1;
-        $callableSpan = null;
-        $callables = [];
-        $observingStarts = [];
-        foreach ((new NodeFinder())->find($nodes, static fn (Node $node): bool =>
-            $node instanceof Node\FunctionLike || $node instanceof Stmt\For_ || $node instanceof Stmt\Foreach_
-            || $node instanceof Stmt\While_ || $node instanceof Stmt\Do_ || $node instanceof Stmt\TryCatch) as $ancestor) {
-            $span = $this->span($ancestor);
-            if ($ancestor instanceof Node\FunctionLike) {
-                $callables[] = $span;
-            }
-            if (!$this->contains($span, $target)) {
-                continue;
-            }
-            if ($ancestor instanceof Node\FunctionLike) {
-                if ($span->start->offset > $callableStart) {
-                    $callableStart = $span->start->offset;
-                    $callableSpan = $span;
-                }
-            } else {
-                $observingStarts[] = $span->start->offset;
-            }
-        }
-
-        // Re-entry can retain a previous value. A catch/finally can observe a
-        // failed initializer, including in a PHP file which includes this one.
-        // A nested callable starts a fresh scope that those outer regions
-        // cannot inspect. In an unprotected frame a throw discards the local.
-        if ($callableSpan === null
-            || array_any($observingStarts, static fn (int $start): bool => $start >= $callableStart)) {
-            return false;
-        }
-
-        $names = new SourceNameResolver();
-        $hazards = (new NodeFinder())->find($nodes, function (Node $node) use ($names): bool {
-            if ($node instanceof Stmt\Goto_ || $node instanceof Expr\Include_ || $node instanceof Expr\Eval_) {
-                return true;
-            }
-            if (!$node instanceof Expr\FuncCall) {
-                return false;
-            }
-            if (!$node->name instanceof Name) {
-                return true;
-            }
-            $resolved = $names->resolve($this->context->parsedFile, $node->name->toCodeString(), $this->span($node)->start->offset);
-            // Include unqualified builtin fallback and imported aliases. An
-            // identically named project function only makes this conservative.
-            $parts = explode('\\', strtolower($resolved));
-            return in_array(end($parts), ['get_defined_vars', 'compact', 'extract'], true);
-        });
-        foreach ($hazards as $hazard) {
-            $span = $this->span($hazard);
-            if ($this->contains($callableSpan, $span)
-                && !array_any($callables, fn (Span $inner): bool =>
-                    $inner->start->offset > $callableStart && $this->contains($inner, $span))) {
-                // A goto can re-enter the declaration; local-symbol-table
-                // access can observe or create the destination before it runs.
-                return false;
-            }
-        }
-
-        return true;
+        return $this->findResultDeclaration($destination) !== null
+            && $this->localScope->canSeedLocal($this->span($destination));
     }
 
     private function canAssignDirectly(WhenExpressionAnalysis $analysis, Expr $destination): bool
     {
+        $commitMayExecute = !$this->canCommitLocalWithoutCode($destination);
+        foreach ($analysis->branches as $branch) {
+            foreach ($branch->statements as $statement) {
+                if (!$this->canFinishResultWithoutCleanup($statement, $commitMayExecute)) {
+                    return false;
+                }
+            }
+        }
         if ($destination instanceof Expr\Variable && is_string($destination->name)) {
             return !$this->readsDestination($analysis, $destination->name);
         }
@@ -1099,10 +1046,61 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             && (!$node->name instanceof Node\Identifier || $node->name->toString() === $property)) === null;
     }
 
+    private function canCommitLocalWithoutCode(Expr $destination): bool
+    {
+        if (!$destination instanceof Expr\Variable || !is_string($destination->name)) {
+            return false;
+        }
+        if ($this->canSeedResultLocal($destination)) {
+            return true;
+        }
+        $offset = $this->span($destination)->start->offset;
+        foreach ($this->context->semanticModel->bindings->bindings as $binding) {
+            if ($binding->name !== '$' . $destination->name
+                || !$this->localScope->canIsolateBinding($binding->variableSpan)
+                || !(new WhenValueLifetime())->resolveReleaseSafety($binding->type->semanticType)) {
+                continue;
+            }
+            if ($binding->variableSpan->start->offset === $offset
+                || array_any($binding->writes, static fn (Span $write): bool => $write->start->offset === $offset)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function canFinishResultWithoutCleanup(Node $node, bool $commitMayExecute, bool $pendingCleanup = false): bool
+    {
+        if ($node instanceof Node\FunctionLike || $node instanceof Stmt\ClassLike) {
+            return true;
+        }
+        if ($node instanceof Stmt\Foreach_) {
+            $type = $this->context->semanticModel->expressionTypes->resolve($this->context->parsedFile->sourceFile, $node->expr)?->type;
+            // Either side can make the order observable: iterator cleanup may
+            // execute code, and a destination hook/old-value destructor can
+            // observe iterator storage even when releasing it cannot throw.
+            $pendingCleanup = $pendingCleanup || $commitMayExecute || !$type instanceof TypedArrayType
+                || !(new WhenValueLifetime())->resolveReleaseSafety($type);
+        }
+        if ($node instanceof Stmt\Return_) {
+            return !$pendingCleanup;
+        }
+        foreach ($node->getSubNodeNames() as $name) {
+            foreach (is_array($node->$name) ? $node->$name : [$node->$name] as $child) {
+                if ($child instanceof Node && !$this->canFinishResultWithoutCleanup($child, $commitMayExecute, $pendingCleanup)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     /** @param list<Node> $intervening */
     private function canDelayOperand(Expr $operand, array $intervening): bool
     {
-        return (new WhenOperandStability(array_diff_key($this->generatedNames, $this->referenceNames), $this->context->semanticModel->whenExpressions))
+        return (new WhenOperandStability(
+            array_diff_key($this->generatedNames, $this->referenceNames), $this->context->semanticModel, $this->localScope,
+        ))
             ->canDelay($operand, $intervening);
     }
 
@@ -1113,7 +1111,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     private function rewriteTailResults(
         array $statements,
         ?Expr $destination,
-        int $switchDepth = 0,
+        int $breakDepth = 0,
         ?string $completionFlag = null,
         bool $completionReadAfter = false,
     ): array
@@ -1146,21 +1144,21 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                         new Expr\Variable($completionFlag), new Expr\ConstFetch(new Name('true')),
                     ));
                 }
-                if ($switchDepth > 0) {
-                    $rewritten[] = new Stmt\Break_($switchDepth === 1 ? null : new Scalar\Int_($switchDepth));
+                if ($breakDepth > 0) {
+                    $rewritten[] = new Stmt\Break_($breakDepth === 1 ? null : new Scalar\Int_($breakDepth));
                 }
                 continue;
             }
             if ($statement instanceof Stmt\If_) {
                 foreach ([$statement, ...$statement->elseifs, ...($statement->else === null ? [] : [$statement->else])] as $arm) {
-                    $commonExit = $destination !== null && $switchDepth > 0
-                        && (new WhenTailShape())->completesCase($arm->stmts);
+                    $commonExit = $destination !== null && $breakDepth > 0
+                        && $this->tailShape->completesCase($arm->stmts);
                     $arm->stmts = $this->rewriteTailResults(
-                        array_values($arm->stmts), $destination, $commonExit ? 0 : $switchDepth,
+                        array_values($arm->stmts), $destination, $commonExit ? 0 : $breakDepth,
                         $completionFlag, $completionWrites[$index] ?? false,
                     );
                     if ($commonExit) {
-                        $arm->stmts[] = new Stmt\Break_($switchDepth === 1 ? null : new Scalar\Int_($switchDepth));
+                        $arm->stmts[] = new Stmt\Break_($breakDepth === 1 ? null : new Scalar\Int_($breakDepth));
                     }
                 }
             } elseif ($statement instanceof Stmt\Switch_) {
@@ -1168,15 +1166,21 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                     // A common case exit keeps ordinary conditional assignment
                     // visible to PHP flow analysis. Preserve conditional exits
                     // when an arm must still fall through to the next case.
-                    $commonExit = $destination !== null && (new WhenTailShape())->completesCase($case->stmts);
+                    $commonExit = $destination !== null && $this->tailShape->completesCase($case->stmts);
                     $case->stmts = $this->rewriteTailResults(
-                        array_values($case->stmts), $destination, $commonExit ? 0 : $switchDepth + 1,
+                        array_values($case->stmts), $destination, $commonExit ? 0 : $breakDepth + 1,
                         $completionFlag, $completionWrites[$index] ?? false,
                     );
                     if ($commonExit) {
-                        $case->stmts[] = new Stmt\Break_($switchDepth === 0 ? null : new Scalar\Int_($switchDepth + 1));
+                        $case->stmts[] = new Stmt\Break_($breakDepth === 0 ? null : new Scalar\Int_($breakDepth + 1));
                     }
                 }
+            } elseif ($statement instanceof Stmt\For_ || $statement instanceof Stmt\Foreach_
+                || $statement instanceof Stmt\While_ || $statement instanceof Stmt\Do_) {
+                $statement->stmts = $this->rewriteTailResults(
+                    array_values($statement->stmts), $destination, $breakDepth + 1,
+                    $completionFlag, $completionWrites[$index] ?? false,
+                );
             }
             $rewritten[] = $statement;
         }
@@ -1952,6 +1956,10 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $names = $this->primitiveNames;
         $atoms = ['int', 'float', 'bool', 'true', 'false', 'null', ...($includeStrings ? ['string'] : [])];
         foreach ($this->temporaryTypes as $name => $type) {
+            if ($includeStrings && (new WhenValueLifetime())->resolveReleaseSafety($type->semanticType)) {
+                $names[$name] = true;
+                continue;
+            }
             $safe = true;
             foreach ($type->variants as $variant) {
                 if (count($variant) !== 1 || !in_array($variant[0], $atoms, true)) {
@@ -2062,7 +2070,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $copy = clone $node;
         if ($node instanceof Expr) {
             $analysis = $this->context->semanticModel->whenExpressions->findPlaceholder($node);
-            $operands = $analysis === null ? null : (new WhenTailShape())->resolveTernaryOperands($analysis);
+            $operands = $analysis === null ? null : $this->tailShape->resolveTernaryOperands($analysis);
             if ($operands !== null) {
                 // Expose native expressions before deciding whether a parent
                 // call or nullsafe chain needs any statement-level lowering.

@@ -14,7 +14,14 @@ string $label = when ($score >= 80) {
 };
 ~~~
 
-Inside the lexical body of a branch, `return expression;` produces the value of the `when`; it does not return from the enclosing callable. Returns inside nested functions, methods, closures, and arrow functions keep their ordinary PHP meaning. `return;` is invalid. Every reachable branch path must produce a value, throw, exit, or end in a resolved `never` expression. A possibly empty loop does not establish a result. `break`, `continue`, `goto`, labels, `yield`, and `yield from` are rejected outside a nested callable boundary.
+Inside the lexical body of a branch, `return expression;` produces the value of the `when`; it does not return from the enclosing callable. Returns inside nested functions, methods, closures, and arrow functions keep their ordinary PHP meaning. `return;` is invalid. Every reachable branch path must produce a value, throw, exit, or end in a resolved `never` expression. A possibly empty loop does not establish a result. A guaranteed-entry loop needs no fallback if no reachable break or condition can let it finish without a result. Breaks and continues consumed by inner loops do not create an exit from an outer loop.
+
+`break` and `continue` may target loops and switches wholly inside the branch,
+including numbered transfers; they cannot escape the `when` or leave a
+`finally`. A `continue` targeting a switch is rejected with guidance to use
+`break` or target a surrounding loop. Transfers crossing a `try` with `finally`
+are not yet supported. `goto`, labels, `yield`, and `yield from` are rejected
+outside a nested callable boundary.
 
 Conditions use ordinary PHP truthiness. They run from left to right, at most once, and only until a branch is selected. Only that branch body runs. `try`, `catch`, and `finally` retain PHP behavior; a result produced by `finally` supersedes an earlier pending result or exception, and an exception thrown by `finally` supersedes both.
 
@@ -92,12 +99,34 @@ A partial `switch` keeps its ordinary case exits and
 checks completion before the following statements. `return when …` needs none
 of this state for conditional guards: native returns already skip the remainder.
 
-When one partial guard is followed only by a fallback result that is safe to
+When one partial guard or loop is followed only by a fallback result that is safe to
 evaluate early, the compiler assigns that fallback first and overwrites it on
 an early result. This needs no completion test. Eligible fallbacks include
 literals and unchanged local values; expressions with effects or values the
 branch may change remain at their original evaluation point. The same
 destination-safety rules apply, and authored result comments stay in place.
+
+Loops containing early results keep their native form. An early result exits
+the actual enclosing loops and switches with `break` at the required depth;
+source-written transfers retain their own targets. A loop with no possible
+fallthrough receives neither a fallback nor completion state. Otherwise loops
+and partial guards share one completion state per branch, so the remaining
+statements run once, only if no result has been produced. `return when …` uses
+native returns without that state. Fresh typed loop bindings can be written
+without changing a separate fallback local; possible aliases, calls and
+executable iterator cleanup prevent that early-read optimization.
+Dynamic local creation, including `extract` or included PHP in the same
+callable, also prevents treating a typed loop binding as unaliased. File-scope
+bindings may already be aliases supplied by an including PHP file.
+
+Leaving a loop may release an iterator. If this can invoke a destructor or
+generator cleanup, the result stays in a temporary until cleanup succeeds.
+Thus a cleanup failure leaves an existing destination unchanged, even when
+the result itself is a scalar. A property write or an old value's destructor
+can also observe iterator storage, so those writes stay after iterator release.
+Direct assignment remains available when both the local write and the
+iterator release are proven unable to execute user code, including ordinary
+fresh locals and arrays of recursively safe element types.
 
 Embedded results and destinations that cannot be assigned directly use
 collision-free temporaries. Tail-result forms release them at their consuming

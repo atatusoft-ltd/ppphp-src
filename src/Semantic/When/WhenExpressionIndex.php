@@ -6,11 +6,26 @@ namespace Atatusoft\Ppphp\Semantic\When;
 
 use Atatusoft\Ppphp\Frontend\Ast\NodeId;
 use PhpParser\Node\Expr;
+use PhpParser\Node\Stmt;
 
 final class WhenExpressionIndex
 {
     /** @var array<string, WhenExpressionAnalysis> */
     private array $recordedExpressions = [];
+
+    /** @var array<int, true> Loops with no exit except an owning result or termination. */
+    private array $terminatingLoops = [];
+
+    public function recordTerminatingLoop(int $originalOffset): void
+    {
+        $this->terminatingLoops[$originalOffset] = true;
+    }
+
+    public function resolveLoopTermination(Stmt $loop): bool
+    {
+        $offset = $loop->getAttribute('ppphpOriginalStart');
+        return is_int($offset) && isset($this->terminatingLoops[$offset]);
+    }
 
     public function record(WhenExpressionAnalysis $analysis): void
     {

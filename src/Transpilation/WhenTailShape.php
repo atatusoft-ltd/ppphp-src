@@ -6,6 +6,7 @@ namespace Atatusoft\Ppphp\Transpilation;
 
 use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionAnalysis;
+use Atatusoft\Ppphp\Semantic\When\WhenExpressionIndex;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Stmt;
@@ -13,6 +14,8 @@ use PhpParser\Node\Stmt;
 /** Identifies branches whose results need no non-local control transfer. */
 final class WhenTailShape
 {
+    public function __construct(private readonly ?WhenExpressionIndex $expressions = null) {}
+
     /** @return array{Expr, Expr, Expr}|null */
     public function resolveTernaryOperands(WhenExpressionAnalysis $analysis): ?array
     {
@@ -61,6 +64,14 @@ final class WhenTailShape
     {
         $rewritten = [];
         foreach ($statements as $index => $statement) {
+            if ($this->resolveLoop($statement) && $pending !== null && $this->containsResult($statement)) {
+                // The result breaks out of the real loops. Only statements
+                // after the outer loop need a shared continuation gate.
+                $remainder = array_slice($statements, $index + 1);
+                if ($remainder !== []) {
+                    return [...$rewritten, $statement, ...$this->buildGuardedContinuation($remainder, $pending)];
+                }
+            }
             if ($statement instanceof Stmt\Switch_) {
                 $statement = clone $statement;
                 $statement->cases = array_map(static fn (Stmt\Case_ $case): Stmt\Case_ => clone $case, $statement->cases);
@@ -158,22 +169,29 @@ final class WhenTailShape
     }
 
     /** @param list<Stmt> $statements */
-    private function acceptsStatements(array $statements, bool $allowGuards = false): bool
+    private function acceptsStatements(array $statements, bool $allowGuards = false, bool $insideLoop = false): bool
     {
         foreach ($statements as $index => $statement) {
             if (!$this->containsResult($statement)) {
                 continue;
             }
-            if ($index !== array_key_last($statements)
-                && !($allowGuards && ($statement instanceof Stmt\If_ || $statement instanceof Stmt\Switch_))) {
+            if (!$insideLoop && $index !== array_key_last($statements)
+                && !($allowGuards && ($statement instanceof Stmt\If_ || $statement instanceof Stmt\Switch_ || $this->resolveLoop($statement)))) {
                 return false;
             }
             if ($statement instanceof Stmt\Return_) {
                 continue;
             }
+            if ($this->resolveLoop($statement)) {
+                if ((!$allowGuards && !$insideLoop && !($this->expressions?->resolveLoopTermination($statement) ?? false))
+                    || !$this->acceptsStatements(array_values($statement->stmts), true, true)) {
+                    return false;
+                }
+                continue;
+            }
             if ($statement instanceof Stmt\If_) {
                 foreach ([$statement, ...$statement->elseifs, ...($statement->else === null ? [] : [$statement->else])] as $arm) {
-                    if (!$this->acceptsStatements(array_values($arm->stmts), $allowGuards)) {
+                    if (!$this->acceptsStatements(array_values($arm->stmts), $allowGuards, $insideLoop)) {
                         return false;
                     }
                 }
@@ -181,15 +199,15 @@ final class WhenTailShape
             }
             if ($statement instanceof Stmt\Switch_) {
                 foreach ($statement->cases as $case) {
-                    if (!$this->acceptsStatements(array_values($case->stmts), $allowGuards)) {
+                    if (!$this->acceptsStatements(array_values($case->stmts), $allowGuards, $insideLoop)) {
                         return false;
                     }
                 }
                 continue;
             }
 
-            // Returns in loops, guards and protected regions have separate
-            // lowering shapes. Ordinary nested callables own their returns.
+            // Protected results have a separate lowering shape. Ordinary
+            // nested callables own their returns.
             return false;
         }
 
@@ -207,9 +225,9 @@ final class WhenTailShape
     {
         if (count($statements) !== 2 || !$statements[1] instanceof Stmt\Return_
             || $statements[1]->expr === null || $statements[1]->getComments() !== []
-            || (!$statements[0] instanceof Stmt\If_ && !$statements[0] instanceof Stmt\Switch_)
+            || (!$statements[0] instanceof Stmt\If_ && !$statements[0] instanceof Stmt\Switch_ && !$this->resolveLoop($statements[0]))
             || !$this->containsResult($statements[0])
-            || !$this->acceptsStatements($this->rewriteGuards([$statements[0]]))) {
+            || !$this->acceptsStatements($this->rewriteGuards([$statements[0]]), $this->resolveLoop($statements[0]))) {
             return null;
         }
 
@@ -238,6 +256,13 @@ final class WhenTailShape
         return false;
     }
 
+    /** @phpstan-assert-if-true Stmt\For_|Stmt\Foreach_|Stmt\While_|Stmt\Do_ $statement */
+    private function resolveLoop(Stmt $statement): bool
+    {
+        return $statement instanceof Stmt\For_ || $statement instanceof Stmt\Foreach_
+            || $statement instanceof Stmt\While_ || $statement instanceof Stmt\Do_;
+    }
+
     /** @param array<Stmt> $statements */
     public function completesCase(array $statements): bool
     {
@@ -252,9 +277,10 @@ final class WhenTailShape
     private function completesStatements(array $statements, bool $fallthroughCompletes = false, bool $transferCompletes = false): bool
     {
         foreach (array_slice($statements, 0, -1) as $statement) {
-            // A conditional transfer can bypass the tail result. Transfers
-            // contained in an earlier loop/switch do not leave this list.
-            if (!$transferCompletes && $this->containsEscapingTransfer($statement)) {
+            // An earlier result must exit immediately, not overwrite the
+            // destination and then run this tail. Only source transfers fully
+            // consumed by an earlier loop/switch can share the final exit.
+            if (!$transferCompletes && ($this->containsResult($statement) || $this->containsEscapingTransfer($statement))) {
                 return false;
             }
         }

@@ -70,6 +70,49 @@ function resolveStageNineCodes(SemanticAnalysisResult $analysis): array
     );
 }
 
+test('when loop completion follows entry and the actual transfer target', function (string $body, bool $complete): void {
+    [, $analysis] = analyzeStageNineSource('<?php
+        function pick(bool $ready, bool $stop, bool $again, int $n, array<int> $values): int {
+            return when ($ready) { ' . $body . ' } else { return 0; };
+        }');
+    expect(resolveStageNineCodes($analysis))->toBe($complete ? [] : ['P5002']);
+})->with([
+    'do always enters' => ['do { return 1; } while ($again);', true],
+    'true while always enters' => ['while (true) { return 1; }', true],
+    'truthy integer while always enters' => ['while (1) { return 1; }', true],
+    'truthy signed float while always enters' => ['while (-0.5) { return 1; }', true],
+    'truthy string while always enters' => ['while ("run") { return 1; }', true],
+    'negated false while always enters' => ['while (!false) { return 1; }', true],
+    'zero while can skip' => ['while (0) { return 1; }', false],
+    'zero string while can skip' => ['while ("0") { return 1; }', false],
+    'empty string while can skip' => ['while ("") { return 1; }', false],
+    'negated unknown condition can skip' => ['while (!$again) { return 1; }', false],
+    'for without condition always enters' => ['for (;;) { return 1; }', true],
+    'last for condition determines entry' => ['for (; $again, true;) { return 1; }', true],
+    'nonempty literal foreach always enters' => ['foreach ([4] as int $value) { return $value; }', true],
+    'unpacked iterable plus literal item enters' => ['foreach ([...$values, 4] as mixed $value) { return 1; }', true],
+    'possibly empty foreach needs fallback' => ['foreach ($values as int $value) { return $value; }', false],
+    'unpacking alone does not guarantee entry' => ['foreach ([...$values] as mixed $value) { return 1; }', false],
+    'unknown while can skip its body' => ['while ($again) { return 1; }', false],
+    'last unknown for condition can skip body' => ['for (; true, $again;) { return 1; }', false],
+    'do break reaches fallthrough' => ['do { if ($stop) { break; } return 1; } while ($again);', false],
+    'do continue can reach false condition' => ['do { if ($stop) { continue; } return 1; } while ($again);', false],
+    'nonempty foreach continue can exhaust input' => ['foreach ([4] as int $value) { if ($stop) { continue; } return $value; }', false],
+    'while continue cannot leave true loop' => ['while (true) { if ($stop) { continue; } return 1; }', true],
+    'for continue cannot leave unconditional loop' => ['for (;;) { if ($stop) { continue; } return 1; }', true],
+    'do continue cannot leave true loop' => ['do { if ($stop) { continue; } return 1; } while (true);', true],
+    'true loop normal iteration repeats' => ['while (true) { if ($n > 5) { return 1; } $n++; }', true],
+    'true loop break still needs fallback' => ['while (true) { if ($stop) { break; } return 1; }', false],
+    'switch consumes its own break' => ['do { switch ($n) { case 0: break; default: break; } return 1; } while ($again);', true],
+    'inner loop consumes its own break' => ['do { while ($again) { break; } return 1; } while ($again);', true],
+    'inner loop consumes its own continue' => ['do { foreach ($values as int $value) { continue; } return 1; } while ($again);', true],
+    'switch break two reaches outer loop' => ['do { switch ($n) { case 0: break 2; } return 1; } while ($again);', false],
+    'switch continue two reaches outer condition' => ['do { switch ($n) { case 0: continue 2; } return 1; } while ($again);', false],
+    'switch continue two cannot leave true loop' => ['while (true) { switch ($n) { case 0: continue 2; } return 1; }', true],
+    'nested loop break two reaches outer loop' => ['do { foreach ($values as int $value) { break 2; } return 1; } while ($again);', false],
+    'unreachable break does not add fallthrough' => ['do { return 1; break; } while ($again);', true],
+]);
+
 test('when expressions produce typed values and lower without synthetic closures', function (): void {
     $generated = lowerStageNineSource(<<<'PPP'
 <?php
