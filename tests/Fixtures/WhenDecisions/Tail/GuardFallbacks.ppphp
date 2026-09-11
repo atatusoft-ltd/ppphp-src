@@ -1,0 +1,39 @@
+<?php
+function literal(bool $enabled, bool $prefix, bool $take): int
+{
+    int $result = when ($enabled) {
+        if ($prefix) { if ($take) { return 10; } }
+        return -1;
+    } else { return -9; };
+    return $result;
+}
+function local(bool $enabled, bool $prefix, bool $take, int $fallback): int
+{
+    int $result = when ($enabled) {
+        if ($prefix) { if ($take) { return 20; } }
+        return $fallback;
+    } else { return -9; };
+    return $result;
+}
+function nullable(bool $enabled, bool $prefix, bool $take): ?int
+{
+    ?int $result = when ($enabled) {
+        if ($prefix) { if ($take) { return null; } }
+        return 4;
+    } else { return -9; };
+    return $result;
+}
+function nullFallback(bool $enabled, bool $prefix, bool $take): ?int
+{
+    ?int $result = when ($enabled) {
+        if ($prefix) { if ($take) { return 30; } }
+        return null;
+    } else { return -9; };
+    return $result;
+}
+echo json_encode([
+    literal(true, true, true), literal(true, true, false), literal(false, true, true),
+    local(true, true, true, 7), local(true, false, false, 7),
+    nullable(true, true, true), nullable(true, true, false),
+    nullFallback(true, true, true), nullFallback(true, true, false),
+]);

@@ -76,6 +76,29 @@ real nested switches. User-written breaks retain their targets and fallthrough.
 No synthetic loop, result annotation or scratch variable is
 needed for a direct destination.
 
+Early results in conditional guards skip the rest of their branch. A guard
+with one continuing arm puts that remainder in the arm; successive guards
+become an ordinary conditional chain. When several paths can continue, the
+compiler keeps one copy of the remaining statements and checks whether a result
+has already been produced. Non-null results can use `null` as the pending value;
+nullable results need a separate completion bit so that `return null` still ends
+the branch. A declared local used this way retains accurate nullable PHPDoc.
+An existing destination is not used as pending storage: a failed result must
+leave its old value intact. This also covers a declaration executed repeatedly
+in the same scope. A fresh function-local initializer can hold the pending
+value only when early assignment cannot be observed; protected regions,
+file scope and local-symbol-table access retain a separate temporary.
+A partial `switch` keeps its ordinary case exits and
+checks completion before the following statements. `return when …` needs none
+of this state for conditional guards: native returns already skip the remainder.
+
+When one partial guard is followed only by a fallback result that is safe to
+evaluate early, the compiler assigns that fallback first and overwrites it on
+an early result. This needs no completion test. Eligible fallbacks include
+literals and unchanged local values; expressions with effects or values the
+branch may change remain at their original evaluation point. The same
+destination-safety rules apply, and authored result comments stay in place.
+
 Embedded results and destinations that cannot be assigned directly use
 collision-free temporaries. Tail-result forms release them at their consuming
 expression, including when it throws. Nested calls finish their own argument

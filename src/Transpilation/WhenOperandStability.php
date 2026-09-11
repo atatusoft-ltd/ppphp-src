@@ -26,6 +26,10 @@ final class WhenOperandStability
             || $operand instanceof Scalar\String_ || $this->isLiteralConstant($operand)) {
             return true;
         }
+        if (($operand instanceof Expr\UnaryMinus || $operand instanceof Expr\UnaryPlus)
+            && ($operand->expr instanceof Scalar\Int_ || $operand->expr instanceof Scalar\Float_)) {
+            return true;
+        }
         if (!$operand instanceof Expr\Variable || !is_string($operand->name)) {
             return false;
         }

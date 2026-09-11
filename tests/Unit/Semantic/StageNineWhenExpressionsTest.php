@@ -610,3 +610,73 @@ PPP;
             ->and($generated->sourceMap->resolveOriginalOffset($offset))->toBe($original, $text);
     }
 });
+
+test('a shared guard continuation is emitted once and maps to its original result', function (bool $assignment): void {
+    $source = <<<'PPP'
+<?php
+function label(bool $ready, bool $member, bool $positive): string {
+    return when ($ready) {
+        if ($member) {
+            if ($positive) { return 'early'; }
+            echo 'member|';
+        }
+        return 'remaining';
+    } else { return 'waiting'; };
+}
+PPP;
+    if ($assignment) {
+        $source = str_replace('return when', 'string $result = when', $source);
+        $source = str_replace("};\n}", "};\nreturn \$result;\n}", $source);
+    }
+    $generated = lowerStageNineSource($source);
+    $offset = 0;
+    $copies = 0;
+    while (($offset = strpos($generated->contents, "'remaining'", $offset)) !== false) {
+        expect($generated->sourceMap->resolveOriginalOffset($offset))->toBe(strpos($source, "'remaining'"));
+        $copies++;
+        $offset++;
+    }
+    expect($copies)->toBe(1);
+})->with([false, true]);
+
+test('preassigned and early results with identical spelling retain distinct source mappings', function (): void {
+    $source = <<<'PPP'
+<?php
+function choose(bool $ready, bool $take, bool $positive, int $fallback): int {
+    int $result = when ($ready) {
+        if ($take) { if ($positive) { return $fallback; } }
+        return $fallback;
+    } else { return 0; };
+    return $result;
+}
+PPP;
+    $generated = lowerStageNineSource($source);
+    expect(substr_count($generated->contents, '$result = $fallback;'))->toBe(2)
+        ->and(strpos($generated->contents, '$result = $fallback;'))->toBeLessThan(strpos($generated->contents, 'if ($take)'));
+    $early = strpos($source, 'return $fallback') + strlen('return ');
+    $fallback = strpos($source, 'return $fallback', $early) + strlen('return ');
+    $first = strpos($generated->contents, '$result = $fallback;') + strlen('$result = ');
+    $second = strpos($generated->contents, '$result = $fallback;', $first) + strlen('$result = ');
+    expect($generated->sourceMap->resolveOriginalOffset($first))->toBe($fallback)
+        ->and($generated->sourceMap->resolveOriginalOffset($second))->toBe($early);
+});
+
+test('statement-level results retain precise nested when condition and result mappings', function (): void {
+    $source = <<<'PPP'
+<?php
+function label(bool $ready, bool $member): string {
+    string $result = when ($ready) {
+        echo 'branch|';
+        return when ($member) { return 'member'; } else { return 'guest'; };
+    } else { return 'waiting'; };
+    return $result;
+}
+PPP;
+    $generated = lowerStageNineSource($source);
+    foreach (['$member ?', "'member'", "'guest'", "'waiting'"] as $text) {
+        $offset = strpos($generated->contents, $text);
+        $original = $text === '$member ?' ? strpos($source, '($member)') + 1 : strpos($source, $text);
+        expect($offset)->toBeInt()
+            ->and($generated->sourceMap->resolveOriginalOffset($offset))->toBe($original, $text);
+    }
+});

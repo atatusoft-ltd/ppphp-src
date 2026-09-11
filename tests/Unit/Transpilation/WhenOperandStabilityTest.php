@@ -18,6 +18,10 @@ test('operand stability requires a proof across the whole intervening window', f
     ))->toBe($stable);
 })->with([
     'literal' => ['1', 'mutate();', true],
+    'negative integer literal' => ['-1', 'mutate();', true],
+    'positive signed float literal' => ['+1.5', 'mutate();', true],
+    'negative float literal' => ['-0.5', 'mutate();', true],
+    'negated global constant is not a literal' => ['-UNKNOWN', '', false],
     'string literal' => ["'value'", 'mutate();', true],
     'boolean literal' => ['true', 'mutate();', true],
     'null literal' => ['null', 'mutate();', true],

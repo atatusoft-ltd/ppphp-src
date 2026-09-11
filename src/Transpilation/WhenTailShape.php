@@ -37,10 +37,10 @@ final class WhenTailShape
         return [$first->condition, $if->expr, $else->expr];
     }
 
-    public function accepts(WhenExpressionAnalysis $analysis): bool
+    public function accepts(WhenExpressionAnalysis $analysis, bool $allowGuards = false): bool
     {
         foreach ($analysis->branches as $branch) {
-            if (!$this->acceptsStatements($branch->statements)) {
+            if (!$this->acceptsStatements($this->rewriteGuards($branch->statements), $allowGuards)) {
                 return false;
             }
         }
@@ -48,14 +48,124 @@ final class WhenTailShape
         return true;
     }
 
+    /**
+     * Moves a guard's remaining siblings onto its sole continuing arm. When
+     * several arms can continue, a supplied pending test shares the remainder
+     * instead of copying it. No source expression or continuation is duplicated.
+     * The lowerer clones this tree before rewriting expressions and results.
+     *
+     * @param list<Stmt> $statements
+     * @return list<Stmt>
+     */
+    public function rewriteGuards(array $statements, ?Expr $pending = null, bool $shareContinuation = false): array
+    {
+        $rewritten = [];
+        foreach ($statements as $index => $statement) {
+            if ($statement instanceof Stmt\Switch_) {
+                $statement = clone $statement;
+                $statement->cases = array_map(static fn (Stmt\Case_ $case): Stmt\Case_ => clone $case, $statement->cases);
+                foreach ($statement->cases as $case) {
+                    $case->stmts = $this->rewriteGuards(array_values($case->stmts), $pending);
+                }
+                $remainder = array_slice($statements, $index + 1);
+                if ($pending !== null && $remainder !== [] && $this->containsResult($statement)) {
+                    return [...$rewritten, $statement, ...$this->buildGuardedContinuation($remainder, $pending)];
+                }
+            }
+            if (!$statement instanceof Stmt\If_) {
+                $rewritten[] = $statement;
+                continue;
+            }
+
+            $statement = clone $statement;
+            $statement->elseifs = array_map(static fn (Stmt\ElseIf_ $arm): Stmt\ElseIf_ => clone $arm, $statement->elseifs);
+            $statement->else = $statement->else === null ? null : clone $statement->else;
+            $arms = [$statement, ...$statement->elseifs, ...($statement->else === null ? [] : [$statement->else])];
+            foreach ($arms as $arm) {
+                $arm->stmts = $this->rewriteGuards(array_values($arm->stmts), $pending);
+            }
+
+            $remainder = $this->containsResult($statement) ? array_slice($statements, $index + 1) : [];
+            if ($remainder !== []) {
+                $continuing = array_values(array_filter($arms, fn (Stmt $arm): bool =>
+                    !$this->completesStatements($arm->stmts, transferCompletes: true)));
+                $paths = count($continuing) + ($statement->else === null ? 1 : 0);
+                if ($pending !== null && ($paths > 1 || $shareContinuation)) {
+                    return [...$rewritten, $statement, ...$this->buildGuardedContinuation($remainder, $pending)];
+                } elseif ($paths === 1) {
+                    if ($continuing === []) {
+                        $statement->else = new Stmt\Else_($this->rewriteGuards($remainder, $pending));
+                    } else {
+                        $arm = $continuing[0];
+                        $arm->stmts = $this->rewriteGuards([...array_values($arm->stmts), ...$remainder], $pending);
+                    }
+                } else {
+                    // Leave an unresolved join intact for shape selection.
+                    $remainder = [];
+                }
+            }
+
+            // Successive guards read naturally as one elseif chain. Keep a
+            // commented nested conditional in place rather than lose its trivia.
+            while ($statement->else !== null && count($statement->else->stmts) === 1
+                && $statement->else->getComments() === []
+                && ($nested = $statement->else->stmts[0]) instanceof Stmt\If_ && $nested->getComments() === []) {
+                $statement->elseifs[] = new Stmt\ElseIf_($nested->cond, $nested->stmts, $nested->getAttributes());
+                array_push($statement->elseifs, ...$nested->elseifs);
+                $statement->else = $nested->else;
+            }
+            $rewritten[] = $statement;
+            if ($remainder !== []) {
+                return $rewritten;
+            }
+        }
+
+        return $rewritten;
+    }
+
+    /** @param list<Stmt> $statements
+     * @return list<Stmt>
+     */
+    private function buildGuardedContinuation(array $statements, Expr $pending): array
+    {
+        $guarded = [];
+        $group = [];
+        foreach ($this->rewriteGuards($statements, $pending, shareContinuation: true) as $statement) {
+            if ($statement instanceof Stmt\If_ && $statement->else === null && $statement->elseifs === []
+                && $statement->getAttribute('ppphpGuardContinuation') !== true) {
+                // An else/elseif chain must retain its outer gate: folding
+                // only its first condition would activate the other arms.
+                $statement->cond = new Expr\BinaryOp\BooleanAnd($pending, $statement->cond);
+                $statement->setAttribute('ppphpGuardContinuation', true);
+            }
+            if ($statement->getAttribute('ppphpGuardContinuation') === true) {
+                // Generated pending tests share one state. Keep successive
+                // regions at the same depth instead of nesting every guard.
+                if ($group !== []) {
+                    $guarded[] = new Stmt\If_($pending, ['stmts' => $group], ['ppphpGuardContinuation' => true]);
+                    $group = [];
+                }
+                $guarded[] = $statement;
+            } else {
+                $group[] = $statement;
+            }
+        }
+        if ($group !== []) {
+            $guarded[] = new Stmt\If_($pending, ['stmts' => $group], ['ppphpGuardContinuation' => true]);
+        }
+
+        return $guarded;
+    }
+
     /** @param list<Stmt> $statements */
-    private function acceptsStatements(array $statements): bool
+    private function acceptsStatements(array $statements, bool $allowGuards = false): bool
     {
         foreach ($statements as $index => $statement) {
             if (!$this->containsResult($statement)) {
                 continue;
             }
-            if ($index !== array_key_last($statements)) {
+            if ($index !== array_key_last($statements)
+                && !($allowGuards && ($statement instanceof Stmt\If_ || $statement instanceof Stmt\Switch_))) {
                 return false;
             }
             if ($statement instanceof Stmt\Return_) {
@@ -63,7 +173,7 @@ final class WhenTailShape
             }
             if ($statement instanceof Stmt\If_) {
                 foreach ([$statement, ...$statement->elseifs, ...($statement->else === null ? [] : [$statement->else])] as $arm) {
-                    if (!$this->acceptsStatements(array_values($arm->stmts))) {
+                    if (!$this->acceptsStatements(array_values($arm->stmts), $allowGuards)) {
                         return false;
                     }
                 }
@@ -71,7 +181,7 @@ final class WhenTailShape
             }
             if ($statement instanceof Stmt\Switch_) {
                 foreach ($statement->cases as $case) {
-                    if (!$this->acceptsStatements(array_values($case->stmts))) {
+                    if (!$this->acceptsStatements(array_values($case->stmts), $allowGuards)) {
                         return false;
                     }
                 }
@@ -84,6 +194,28 @@ final class WhenTailShape
         }
 
         return true;
+    }
+
+    /** @param list<Stmt> $statements */
+    public function requiresGuardCompletion(array $statements): bool
+    {
+        return !$this->acceptsStatements($this->rewriteGuards($statements));
+    }
+
+    /** @param list<Stmt> $statements */
+    public function resolveGuardFallback(array $statements): ?Stmt\Return_
+    {
+        if (count($statements) !== 2 || !$statements[1] instanceof Stmt\Return_
+            || $statements[1]->expr === null || $statements[1]->getComments() !== []
+            || (!$statements[0] instanceof Stmt\If_ && !$statements[0] instanceof Stmt\Switch_)
+            || !$this->containsResult($statements[0])
+            || !$this->acceptsStatements($this->rewriteGuards([$statements[0]]))) {
+            return null;
+        }
+
+        // The lowerer separately proves the fallback expression stable. A
+        // partial statement needing its own shared state cannot use this form.
+        return $statements[1];
     }
 
     private function containsResult(Node $node): bool
@@ -117,12 +249,12 @@ final class WhenTailShape
     }
 
     /** @param array<Stmt> $statements */
-    private function completesStatements(array $statements, bool $fallthroughCompletes = false): bool
+    private function completesStatements(array $statements, bool $fallthroughCompletes = false, bool $transferCompletes = false): bool
     {
         foreach (array_slice($statements, 0, -1) as $statement) {
             // A conditional transfer can bypass the tail result. Transfers
             // contained in an earlier loop/switch do not leave this list.
-            if ($this->containsEscapingTransfer($statement)) {
+            if (!$transferCompletes && $this->containsEscapingTransfer($statement)) {
                 return false;
             }
         }
@@ -134,11 +266,11 @@ final class WhenTailShape
             return true;
         }
         if ($tail instanceof Stmt\Break_ || $tail instanceof Stmt\Continue_) {
-            return false;
+            return $transferCompletes;
         }
         if ($tail instanceof Stmt\If_) {
             foreach ([$tail, ...$tail->elseifs, ...($tail->else === null ? [] : [$tail->else])] as $arm) {
-                if (!$this->completesStatements($arm->stmts, $fallthroughCompletes)) {
+                if (!$this->completesStatements($arm->stmts, $fallthroughCompletes, $transferCompletes)) {
                     return false;
                 }
             }

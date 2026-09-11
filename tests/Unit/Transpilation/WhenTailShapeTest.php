@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use Atatusoft\Ppphp\Transpilation\WhenTailShape;
+use PhpParser\NodeDumper;
+use PhpParser\Node\Expr;
 use PhpParser\ParserFactory;
+use PhpParser\PrettyPrinter\Standard;
 
 test('a common case exit requires every path to finish the result', function (string $body, bool $completes): void {
     $statements = (new ParserFactory())->createForNewestSupportedVersion()->parse('<?php ' . $body);
@@ -20,4 +23,61 @@ test('a common case exit requires every path to finish the result', function (st
     'all throw' => ['if ($x) { throw new Error(); } else { throw new Error(); }', false],
     'nested guarded break' => ['switch ($x) { case 1: if ($leave) { break; } return 1; default: return 2; }', false],
     'nested case fallthrough' => ['switch ($x) { case 1: if ($take) { return 1; } default: return 2; }', true],
+]);
+
+test('guard normalization never crosses a protected or callable boundary', function (string $body): void {
+    $source = (new ParserFactory())->createForNewestSupportedVersion()->parse('<?php ' . $body);
+    $before = (new NodeDumper())->dump($source);
+    $rewritten = (new WhenTailShape())->rewriteGuards($source);
+    expect((new NodeDumper())->dump($rewritten))->toBe($before)
+        ->and((new NodeDumper())->dump($source))->toBe($before);
+})->with([
+    'finally order' => 'try { if ($guard) { return 1; } } finally { echo "cleanup|"; } echo "rest|"; return 2;',
+    'catch boundary' => 'try { if ($guard) { return 1; } } catch (Error) { echo "caught|"; } echo "rest|"; return 2;',
+    'closure' => '$f = function () { if ($guard) { return 1; } return 2; }; return 3;',
+]);
+
+test('guard normalization leaves its input tree untouched', function (): void {
+    $source = (new ParserFactory())->createForNewestSupportedVersion()->parse('<?php if ($a) { if ($b) { return 1; } echo "inner"; } echo "rest"; return 2;');
+    $before = (new NodeDumper())->dump($source);
+    $rewritten = (new WhenTailShape())->rewriteGuards($source);
+    expect((new NodeDumper())->dump($rewritten))->not->toBe($before)
+        ->and((new NodeDumper())->dump($source))->toBe($before);
+});
+
+test('partial guards never duplicate their shared continuation', function (int $count): void {
+    $body = '';
+    for ($index = 0; $index < $count; $index++) {
+        $body .= 'if ($a' . $index . ') { echo "prefix|"; if ($b' . $index . ') { return ' . $index . '; } }';
+    }
+    $body .= 'echo "remaining|"; return -1;';
+    $source = (new ParserFactory())->createForNewestSupportedVersion()->parse('<?php ' . $body);
+    $shape = new WhenTailShape();
+    expect($shape->requiresGuardCompletion($source))->toBeTrue();
+    foreach ([null, new Expr\BooleanNot(new Expr\Variable('complete'))] as $pending) {
+        $php = (new Standard())->prettyPrint($shape->rewriteGuards($source, $pending));
+        expect(substr_count($php, 'remaining|'))->toBe(1)
+            ->and(substr_count($php, 'prefix|'))->toBe($count)
+            ->and(strlen($php))->toBeLessThan(strlen($body) * 4);
+    }
+})->with([1, 8, 64]);
+
+test('a preassigned guard fallback needs one self-contained partial statement and an uncommented tail', function (string $body, bool $eligible): void {
+    $source = (new ParserFactory())->createForNewestSupportedVersion()->parse('<?php ' . $body);
+    $before = (new NodeDumper())->dump($source);
+    $fallback = (new WhenTailShape())->resolveGuardFallback($source);
+    expect($fallback !== null)->toBe($eligible)
+        ->and((new NodeDumper())->dump($source))->toBe($before);
+    if ($eligible) {
+        expect($fallback)->toBe($source[1]);
+    }
+})->with([
+    'one partial guard' => ['if ($a) { if ($b) { return 1; } } return -1;', true],
+    'partial switch' => ['switch ($key) { case 1: return 1; default: break; } return -1;', true],
+    'owning continuation' => ['if ($a) { if ($b) { if ($c) { return 1; } } echo "remaining"; } return -1;', false],
+    'two partial statements' => ['if ($a) { if ($b) { return 1; } } if ($c) { return 2; } return -1;', false],
+    'commented fallback' => ["if (\$a) { if (\$b) { return 1; } } /** Preserve this explanation. */ return -1;", false],
+    'callable result only' => ['$call = function () { return 1; }; return -1;', false],
+    'protected body' => ['try { if ($a) { return 1; } } finally { echo "cleanup"; } return -1;', false],
+    'no result value' => ['if ($a) { return 1; } return;', false],
 ]);

@@ -1,0 +1,12 @@
+<?php
+function label(int $score): string
+{
+    string $label = when ($score !== 42) {
+        if ($score < 0) { return 'invalid'; }
+        if ($score === 0) { return 'zero'; }
+        int $band = intdiv($score, 10);
+        return 'band ' . $band;
+    } else { return 'special'; };
+    return $label;
+}
+echo label(-1), '|', label(0), '|', label(30), '|', label(42);
