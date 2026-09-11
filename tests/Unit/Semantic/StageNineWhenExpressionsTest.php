@@ -589,3 +589,24 @@ PPP);
             ->and($generated->sourceMap->resolveOriginalOffset($temporary))->toBe(strpos($source, 'when'));
     }
 })->with(['native ternary' => true, 'statement-level result' => false]);
+
+test('nested ternary parentheses preserve exact condition and result origins', function (): void {
+    $source = <<<'PPP'
+<?php
+function label(bool $ready, bool $member): string {
+    // Keep this comment outside the replaced statement.
+    return when ($ready) {
+        return when ($member) { return 'member'; } else { return 'guest'; };
+    } else { return 'waiting'; };
+}
+PPP;
+    $generated = lowerStageNineSource($source);
+    expect($generated->contents)->toContain("return \$ready ? (\$member ? 'member' : 'guest') : 'waiting';")
+        ->and(substr_count($generated->contents, '// Keep this comment'))->toBe(1);
+    foreach (['$ready ?', '$member ?', "'member'", "'guest'", "'waiting'", '// Keep this comment'] as $text) {
+        $offset = strpos($generated->contents, $text);
+        $original = str_ends_with($text, ' ?') ? strpos($source, '(' . substr($text, 0, -2) . ')') + 1 : strpos($source, $text);
+        expect($offset)->toBeInt()
+            ->and($generated->sourceMap->resolveOriginalOffset($offset))->toBe($original, $text);
+    }
+});

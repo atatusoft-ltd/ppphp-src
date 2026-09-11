@@ -16,6 +16,8 @@ use Atatusoft\Ppphp\Transpilation\TranspilationContext;
 use Atatusoft\Ppphp\Transpilation\LocalBindingTypeRenderer;
 use Atatusoft\Ppphp\Transpilation\WhenTailShape;
 use Atatusoft\Ppphp\Transpilation\WhenOperandStability;
+use Atatusoft\Ppphp\Transpilation\WhenPhpPrinter;
+use PhpParser\Comment;
 use PhpParser\Comment\Doc;
 use PhpParser\Node;
 use PhpParser\Node\Arg;
@@ -63,7 +65,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     /** @var \WeakMap<Doc, Span> */
     private \WeakMap $bindingDocumentOrigins;
 
-    public function __construct(private readonly Standard $printer = new Standard()) {}
+    public function __construct(private readonly Standard $printer = new WhenPhpPrinter()) {}
 
     public function execute(TranspilationContext $context): void
     {
@@ -113,7 +115,15 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             if (!$statement instanceof Stmt) {
                 throw new \LogicException("A when lowering site must belong to a statement.");
             }
-            $lowered = $this->lowerOrdinaryStatement($this->copyStatement($statement));
+            $copy = $this->copyStatement($statement);
+            // Leading comments outside this edit survive in the source text.
+            // Do not print them again; comments within the edit keep their context.
+            $copy->setAttribute('comments', array_values(array_filter(
+                $copy->getComments(),
+                static fn (Comment $comment): bool => $comment->getEndFilePos() < 0
+                    || $comment->getEndFilePos() >= $span->start->offset,
+            )));
+            $lowered = $this->lowerOrdinaryStatement($copy);
             if ((new NodeFinder())->findFirst($lowered, static fn (Node $node): bool =>
                 $node instanceof Expr && is_string($node->getAttribute('ppphpWhenExpressionId'))) !== null) {
                 throw new \LogicException('A when placeholder survived statement lowering.');

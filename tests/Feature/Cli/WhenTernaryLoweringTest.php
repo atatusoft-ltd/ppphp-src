@@ -5,18 +5,22 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process;
 use Tests\Support\GoldenFile;
 
-test('bare when branches emit the exact native ternary shape', function (): void {
+test('bare when branches emit the exact native ternary shape', function (string $fixture, string $expected): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
     $fixtures = dirname(__DIR__, 2) . '/Fixtures/WhenDecisions/Tail';
-    $this->writeFile($root . '/src/main.ppphp', file_get_contents($fixtures . '/BareBranches.ppphp'));
+    $this->writeFile($root . '/src/main.ppphp', file_get_contents($fixtures . '/' . $fixture . '.ppphp'));
     $build = new Process([PHP_BINARY, dirname(__DIR__, 3) . '/bin/ppphp', 'build', '--working-directory', $root, '--format=json']);
     $build->mustRun();
-    GoldenFile::assertMatches($fixtures . '/BareBranches.php', file_get_contents($root . '/build/ppphp/main.php'));
+    GoldenFile::assertMatches($fixtures . '/' . $fixture . '.php', file_get_contents($root . '/build/ppphp/main.php'));
     $run = new Process([PHP_BINARY, $root . '/build/ppphp/main.php']);
     $run->mustRun();
-    expect($run->getOutput())->toBe('1200|500|211')->and($run->getErrorOutput())->toBe('');
-});
+    expect($run->getOutput())->toBe($expected)->and($run->getErrorOutput())->toBe('');
+})->with([
+    ['BareBranches', '1200|500|211'],
+    ['NestedBareBranches', '123|456'],
+    ['Comments', 'ready|waiting|12'],
+]);
 
 test('bare when branches preserve native expression evaluation and binding', function (string $template, string $when, string $native, string $expected): void {
     $root = $this->createTemporaryDirectory();

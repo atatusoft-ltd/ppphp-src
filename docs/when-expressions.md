@@ -61,7 +61,8 @@ ternary. For example, `when ($express) { return 1200; } else { return 500; }`
 emits `$express ? 1200 : 500`. PHP retains the condition's truthiness, lazy
 branch evaluation, argument binding and nullsafe short-circuiting without
 compiler temporaries. Branch-local statement comments retain their statement
-context instead of being discarded by this simplification.
+context instead of being discarded by this simplification. Nested ternaries
+are explicitly parenthesized so their grouping remains clear.
 
 Other branch results in tail position lower to ordinary
 `if`/`elseif`/`else` statements. A destination with stable components, such as a
