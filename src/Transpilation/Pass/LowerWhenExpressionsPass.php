@@ -6,6 +6,7 @@ namespace Atatusoft\Ppphp\Transpilation\Pass;
 
 use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
 use Atatusoft\Ppphp\Interop\PhpDoc\PhpDocReader;
+use Atatusoft\Ppphp\Semantic\Call\Enumerations\ArgumentPassingMode;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionAnalysis;
 use Atatusoft\Ppphp\Semantic\Type\LocalType;
 use Atatusoft\Ppphp\Source\Span;
@@ -44,6 +45,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     private array $receiverNames = [];
 
     /** @var array<string, true> */
+    private array $referenceNames = [];
+
+    /** @var array<string, true> */
     private array $primitiveNames = [];
 
     /** @var array<string, LocalType> */
@@ -51,6 +55,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
 
     /** @var \WeakMap<Expr, Expr> */
     private \WeakMap $sourceExpressions;
+
+    /** @var \WeakMap<Arg, ArgumentPassingMode> */
+    private \WeakMap $argumentPassingModes;
 
     /** @var \WeakMap<Doc, Span> */
     private \WeakMap $bindingDocumentOrigins;
@@ -65,9 +72,11 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $this->generatedNames = [];
         $this->tailResultNames = [];
         $this->receiverNames = [];
+        $this->referenceNames = [];
         $this->primitiveNames = [];
         $this->temporaryTypes = [];
         $this->sourceExpressions = new \WeakMap();
+        $this->argumentPassingModes = new \WeakMap();
         $this->bindingDocumentOrigins = new \WeakMap();
 
         foreach (token_get_all($context->parsedFile->sourceFile->contents) as $token) {
@@ -165,7 +174,8 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             $start = $this->resolveGeneratedLineStart($replacement, $offset);
             $prefix = substr($replacement, $start, $offset - $start);
             foreach ($this->generatedNames as $name => $_) {
-                if (str_starts_with(ltrim($prefix), '$' . $name . ' = ')) {
+                if (str_starts_with(ltrim($prefix), '$' . $name . ' = ')
+                    || str_starts_with(ltrim($prefix), '$' . $name . ' =& ')) {
                     // Line-only findings belong to the source result, while
                     // the generated variable itself belongs to its when.
                     $indentEnd = $start + strlen($prefix) - strlen(ltrim($prefix));
@@ -665,7 +675,10 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 continue;
             }
             [$nestedPrelude, $value] = $this->lowerExpression($argument->value);
-            [$nestedPrelude, $value] = $this->captureConsumer($nestedPrelude, $value);
+            [$nestedPrelude, $value] = $this->captureConsumer(
+                $nestedPrelude, $value,
+                ($this->argumentPassingModes[$argument] ?? ArgumentPassingMode::Unknown) === ArgumentPassingMode::Reference,
+            );
             if ($nestedPrelude !== []) {
                 if ($calleePending) {
                     if ($callee instanceof Expr\Variable && is_string($callee->name) && isset($this->generatedNames[$callee->name])) {
@@ -689,7 +702,10 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                         && isset($this->generatedNames[$pendingArgument->value->name])) {
                         continue;
                     }
-                    [$assignment, $temporary] = $this->hoist($pendingArgument->value);
+                    [$assignment, $temporary] = $this->hoist(
+                        $pendingArgument->value,
+                        ($this->argumentPassingModes[$pendingArgument] ?? ArgumentPassingMode::Unknown) === ArgumentPassingMode::Reference,
+                    );
                     $prelude[] = $assignment;
                     $pendingArgument->value = $temporary;
                 }
@@ -715,7 +731,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 [$keyPrelude, $item->key] = $this->lowerExpression($item->key);
             }
             [$valuePrelude, $item->value] = $this->lowerExpression($item->value);
-            [$valuePrelude, $item->value] = $this->captureConsumer($valuePrelude, $item->value);
+            [$valuePrelude, $item->value] = $this->captureConsumer($valuePrelude, $item->value, $item->byRef);
             $nestedPrelude = [...$keyPrelude, ...$valuePrelude];
             if ($nestedPrelude !== []) {
                 foreach ($pending as $pendingPosition) {
@@ -724,7 +740,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                         [$assignment, $pendingItem->key] = $this->hoist($pendingItem->key);
                         $prelude[] = $assignment;
                     }
-                    [$assignment, $pendingItem->value] = $this->hoist($pendingItem->value);
+                    [$assignment, $pendingItem->value] = $this->hoist($pendingItem->value, $pendingItem->byRef);
                     $prelude[] = $assignment;
                 }
                 $pending = [];
@@ -1311,9 +1327,12 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     }
 
     /** @return array{Stmt\Expression, Expr\Variable} */
-    private function hoist(Expr $expression): array
+    private function hoist(Expr $expression, bool $byReference = false): array
     {
         $name = $this->allocateName('__ppphp_when_prerequisite');
+        if ($byReference) {
+            $this->referenceNames[$name] = true;
+        }
         if ($expression instanceof Expr\Cast\Bool_ || $expression instanceof Expr\Cast\Int_
             || $expression instanceof Expr\Cast\Double || $expression instanceof Scalar\Int_ || $expression instanceof Scalar\Float_) {
             $this->primitiveNames[$name] = true;
@@ -1328,7 +1347,11 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         }
         $variable = new Expr\Variable($name);
 
-        return [new Stmt\Expression(new Expr\Assign(clone $variable, $expression)), $variable];
+        $assignment = $byReference
+            ? new Expr\AssignRef(clone $variable, $expression)
+            : new Expr\Assign(clone $variable, $expression);
+
+        return [new Stmt\Expression($assignment), $variable];
     }
 
     private function decorateTypedLocal(Stmt\Expression $statement): void
@@ -1564,7 +1587,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
      * @param list<Stmt> $prelude
      * @return array{list<Stmt>, Expr}
      */
-    private function captureConsumer(array $prelude, Expr $value): array
+    private function captureConsumer(array $prelude, Expr $value, bool $byReference = false): array
     {
         if ($value instanceof Expr\Variable) {
             return [$prelude, $value];
@@ -1576,7 +1599,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         if (array_intersect_key($names, $this->tailResultNames) === []) {
             return [$prelude, $value];
         }
-        [$assignment, $result] = $this->hoist($value);
+        [$assignment, $result] = $this->hoist($value, $byReference);
         if (!is_string($result->name)) {
             throw new \LogicException('A generated consumer result must have a static name.');
         }
@@ -1612,7 +1635,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             }
         }
 
-        return $names;
+        // Even a reference to an int can keep an array element aliased after
+        // an exception. It must be released at the native argument boundary.
+        return array_diff_key($names, $this->referenceNames);
     }
 
     /**
@@ -1673,7 +1698,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         }
         // Reading an enclosing consumer's scratch local does not transfer its
         // ownership. Only definitions in this region belong to its cleanup.
-        $defined = $node instanceof Expr\Assign || $node instanceof Stmt\Catch_ ? $node->var : null;
+        $defined = $node instanceof Expr\Assign || $node instanceof Expr\AssignRef || $node instanceof Stmt\Catch_ ? $node->var : null;
         if ($defined instanceof Expr\Variable && is_string($defined->name) && isset($this->generatedNames[$defined->name])) {
             $names[$defined->name] = true;
         }
@@ -1709,6 +1734,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $copy = clone $node;
         if ($copy instanceof Expr && $node instanceof Expr) {
             $this->sourceExpressions[$copy] = $node;
+        }
+        if ($copy instanceof Arg && $node instanceof Arg) {
+            $this->argumentPassingModes[$copy] = $this->context->semanticModel->argumentPassing->resolve($node);
         }
         foreach ($copy->getSubNodeNames() as $name) {
             $value = $copy->{$name};

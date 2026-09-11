@@ -257,6 +257,7 @@ test('tail result golden preserves the required emitted shape', function (string
 })->with([
     ['EmbeddedObjects', 'consume|first|second|after'],
     ['EmbeddedString', 'aa|after'],
+    ['ReferenceArgument', '2', [[['BRANCH' => 'other'], '3']]],
     ['NestedSwitch', '11|12|21|99|0|error'],
     // The numbered exit crosses two real source switches, not a synthetic
     // when boundary. The user's inner break must still fall through normally.

@@ -19,6 +19,7 @@ use Atatusoft\Ppphp\Semantic\Call\CallableContractResolver;
 use Atatusoft\Ppphp\Semantic\Call\CallableOrigin;
 use Atatusoft\Ppphp\Semantic\Call\CallableResolutionStatus;
 use Atatusoft\Ppphp\Semantic\Call\GenericCallInference;
+use Atatusoft\Ppphp\Semantic\Call\Enumerations\ArgumentPassingMode;
 use Atatusoft\Ppphp\Semantic\Flow\FlowOutcome;
 use Atatusoft\Ppphp\Semantic\Flow\FlowState;
 use Atatusoft\Ppphp\Semantic\NodeSpanResolver;
@@ -965,6 +966,10 @@ final class AnalyzeTypeFlowPass implements SemanticPass
         $actualTypes = [];
 
         foreach ($binding->arguments as $bound) {
+            $this->context->model->argumentPassing->record(
+                $bound->argument,
+                $bound->parameter->byReference ? ArgumentPassingMode::Reference : ArgumentPassingMode::Value,
+            );
             $actual = $this->analyzeExpression($bound->argument->value, $scope, $state, $class)->type;
             $actualTypes[spl_object_id($bound->argument)] = $actual;
             $parameterType = $bound->parameter->effectiveType();
@@ -1047,6 +1052,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
     {
         foreach ($arguments as $argument) {
             if ($argument instanceof Arg) {
+                $this->context->model->argumentPassing->record($argument, ArgumentPassingMode::Unknown);
                 $this->analyzeExpression($argument->value, $scope, $state, $class);
             }
         }

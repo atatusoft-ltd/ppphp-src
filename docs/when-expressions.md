@@ -74,6 +74,14 @@ cleanup, and a throwing destructor cannot postpone the remaining releases until
 after an outer catch. Non-reference-counted scalar results need no exceptional
 release wrapper.
 
+Call arguments preserve their resolved parameter bindings: by-value
+arguments keep their evaluated values, and known by-reference arguments retain
+their original writable locations, including when a nested expression contains a
+`when`. Explicit references in array elements also retain their bindings.
+Captured call references are released at the call
+boundary, including on exceptions; even a reference to an integer array element
+must not leave later array copies aliased.
+
 Other control-transfer shapes currently retain compiler-owned `do` boundaries.
 Lowering uses no synthetic closure, runtime helper or exception for compiler
 control flow. Earlier call arguments and array elements are evaluated before
