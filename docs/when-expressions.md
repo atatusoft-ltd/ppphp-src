@@ -57,8 +57,10 @@ Checked errors from conditions, statements, results, nested `when` expressions, 
 The frontend keeps exact spans and hierarchical nested syntax, then parses conditions and branch bodies with the PHP 8.4 parser after applying descendant ++PHP normalization. Syntax, semantic, and backend diagnostics map to the original `.ppphp` file.
 
 When branch results are in tail position, lowering emits ordinary
-`if`/`elseif`/`else` statements. A plain local destination is assigned directly
-when the block does not read it and no branch `try` encloses the result.
+`if`/`elseif`/`else` statements. A destination with stable components, such as a
+plain local, `$this->property`, a named static property, or a property on a
+provably unchanged local receiver, is assigned directly when the block does
+not read it and no branch `try` encloses the result.
 `return when …` keeps ordinary returns in those branches. Tail results inside
 conditional arms and switch cases follow the same rule; switch cases use their
 ordinary `break`, including a numbered exit when a result must leave multiple
@@ -82,10 +84,22 @@ Captured call references are released at the call
 boundary, including on exceptions; even a reference to an integer array element
 must not leave later array copies aliased.
 
+Earlier operands are left in place when the compiler can prove that doing so
+preserves both their value and their parameter binding. Literals and `$this`
+need no value capture. For other locals, the proof covers all intervening
+operands and branches, not just direct writes to the same name: aliases,
+callbacks, property hooks and cleanup can change a local indirectly. Where
+that proof is unavailable, the compiler retains the capture.
+
+Assignment receivers keep their native evaluation timing. A direct variable
+receiver is read at the eventual property write, even if the right-hand side
+replaces that variable. A receiver-producing call is evaluated before the
+right-hand side and its result is retained until the write.
+
 Other control-transfer shapes currently retain compiler-owned `do` boundaries.
 Lowering uses no synthetic closure, runtime helper or exception for compiler
-control flow. Earlier call arguments and array elements are evaluated before
-the `when`; later siblings remain after it.
+control flow. Observable evaluation and binding of earlier call arguments and
+array elements remain before the `when`; later siblings remain after it.
 
 Nested consuming statements own their temporary cleanup. An enclosing `when`
 does not release those temporaries a second time or reach into a nested callable.

@@ -15,6 +15,7 @@ use Atatusoft\Ppphp\Transpilation\SourceEditMapping;
 use Atatusoft\Ppphp\Transpilation\TranspilationContext;
 use Atatusoft\Ppphp\Transpilation\LocalBindingTypeRenderer;
 use Atatusoft\Ppphp\Transpilation\WhenTailShape;
+use Atatusoft\Ppphp\Transpilation\WhenOperandStability;
 use PhpParser\Comment\Doc;
 use PhpParser\Node;
 use PhpParser\Node\Arg;
@@ -387,11 +388,10 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 return $nullsafe[0];
             }
             $assignment = $statement->expr;
-            if ($assignment instanceof Expr\Assign && $assignment->var instanceof Expr\Variable
-                && is_string($assignment->var->name)) {
+            if ($assignment instanceof Expr\Assign) {
                 $analysis = $this->context->semanticModel->whenExpressions->findPlaceholder($assignment->expr);
                 if ($analysis !== null && (new WhenTailShape())->accepts($analysis)
-                    && !$this->readsDestination($analysis, $assignment->var->name)) {
+                    && $this->canAssignDirectly($analysis, $assignment->var)) {
                     $conditional = $this->buildWhenStatement($analysis, $assignment->var);
                     $conditional->setAttribute('comments', $statement->getComments());
                     return [$conditional];
@@ -484,7 +484,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         if ($expression instanceof Expr\Assign) {
             [$prelude, $value] = $this->lowerExpression($expression->expr);
             if ($prelude !== []) {
-                [$targetPrelude, $target] = $this->hoistAssignmentTarget($expression->var);
+                [$targetPrelude, $target] = $this->hoistAssignmentTarget($expression->var, [...$prelude, $value]);
                 $expression->var = $target;
                 $prelude = [...$targetPrelude, ...$prelude];
             }
@@ -535,8 +535,8 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         [$leftPrelude, $expression->left] = $this->captureConsumer($leftPrelude, $expression->left);
         [$rightPrelude, $expression->right] = $this->captureConsumer($rightPrelude, $expression->right);
 
-        if ($rightPrelude === []) {
-            return [$leftPrelude, $expression];
+        if ($rightPrelude === [] || $this->canDelayOperand($expression->left, [...$rightPrelude, $expression->right])) {
+            return [[...$leftPrelude, ...$rightPrelude], $expression];
         }
 
         [$leftAssignment, $expression->left] = $this->hoist($expression->left);
@@ -664,7 +664,25 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     {
         $prelude = [];
         $pending = [];
-        $calleePending = $callee !== null;
+        // Check the entire remaining evaluation window, including later when
+        // blocks and ordinary arguments that have not yet been hoisted.
+        $effects = [];
+        foreach ($arguments as $position => $argument) {
+            if ($argument instanceof Arg) {
+                $effects[$position] = $argument->unpack ? $argument : $argument->value;
+            }
+        }
+        $calleePending = $callee !== null && !$this->canDelayOperand($callee, array_values($effects));
+        $delayArguments = [];
+        foreach ($arguments as $position => $argument) {
+            if ($argument instanceof Arg) {
+                $delayArguments[$position] = !$argument->unpack
+                    && ($this->argumentPassingModes[$argument] ?? ArgumentPassingMode::Unknown) !== ArgumentPassingMode::Unknown
+                    && $this->canDelayOperand($argument->value, array_values(array_filter(
+                        $effects, static fn (int $index): bool => $index > $position, ARRAY_FILTER_USE_KEY,
+                    )));
+            }
+        }
         if ($callee instanceof Expr\Variable && is_string($callee->name) && isset($this->generatedNames[$callee->name])) {
             $this->receiverNames[$callee->name] = true;
             $calleePending = false;
@@ -702,9 +720,13 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                         && isset($this->generatedNames[$pendingArgument->value->name])) {
                         continue;
                     }
+                    $mode = $this->argumentPassingModes[$pendingArgument] ?? ArgumentPassingMode::Unknown;
+                    if ($delayArguments[$pendingPosition]) {
+                        continue;
+                    }
                     [$assignment, $temporary] = $this->hoist(
                         $pendingArgument->value,
-                        ($this->argumentPassingModes[$pendingArgument] ?? ArgumentPassingMode::Unknown) === ArgumentPassingMode::Reference,
+                        $mode === ArgumentPassingMode::Reference,
                     );
                     $prelude[] = $assignment;
                     $pendingArgument->value = $temporary;
@@ -724,6 +746,18 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     {
         $prelude = [];
         $pending = [];
+        $effects = [];
+        foreach ($array->items as $item) {
+            if ($item->key !== null) {
+                $effects[] = $item->key;
+            }
+            $effects[] = $item->unpack ? $item : $item->value;
+        }
+        $delayKeys = $delayValues = [];
+        foreach ($array->items as $position => $item) {
+            $delayKeys[$position] = $item->key === null || $this->canDelayOperand($item->key, $effects);
+            $delayValues[$position] = !$item->unpack && $this->canDelayOperand($item->value, $effects);
+        }
 
         foreach ($array->items as $position => $item) {
             $keyPrelude = [];
@@ -736,15 +770,17 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             if ($nestedPrelude !== []) {
                 foreach ($pending as $pendingPosition) {
                     $pendingItem = $array->items[$pendingPosition];
-                    if ($pendingItem->key !== null) {
+                    if ($pendingItem->key !== null && !$delayKeys[$pendingPosition]) {
                         [$assignment, $pendingItem->key] = $this->hoist($pendingItem->key);
                         $prelude[] = $assignment;
                     }
-                    [$assignment, $pendingItem->value] = $this->hoist($pendingItem->value, $pendingItem->byRef);
-                    $prelude[] = $assignment;
+                    if (!$delayValues[$pendingPosition]) {
+                        [$assignment, $pendingItem->value] = $this->hoist($pendingItem->value, $pendingItem->byRef);
+                        $prelude[] = $assignment;
+                    }
                 }
                 $pending = [];
-                if ($item->key !== null && $valuePrelude !== []) {
+                if ($item->key !== null && $valuePrelude !== [] && !$delayKeys[$position]) {
                     [$assignment, $item->key] = $this->hoist($item->key);
                     $prelude[] = $assignment;
                 }
@@ -758,7 +794,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
 
     private function buildWhenStatement(
         WhenExpressionAnalysis $analysis,
-        ?Expr\Variable $destination = null,
+        ?Expr $destination = null,
         bool $returnResult = false,
     ): Stmt
     {
@@ -826,11 +862,47 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         return false;
     }
 
+    private function canAssignDirectly(WhenExpressionAnalysis $analysis, Expr $destination): bool
+    {
+        if ($destination instanceof Expr\Variable && is_string($destination->name)) {
+            return !$this->readsDestination($analysis, $destination->name);
+        }
+        $nodes = [];
+        foreach ($analysis->branches as $branch) {
+            if ($branch->condition !== null) {
+                $nodes[] = $branch->condition;
+            }
+            array_push($nodes, ...$branch->statements);
+        }
+        if ($destination instanceof Expr\PropertyFetch && $destination->name instanceof Node\Identifier) {
+            if (!$this->canDelayOperand($destination->var, $nodes)) {
+                return false;
+            }
+        } elseif (!$destination instanceof Expr\StaticPropertyFetch || !$destination->class instanceof Name
+            || !$destination->name instanceof Node\VarLikeIdentifier) {
+            return false;
+        }
+
+        // Include reads through possible aliases and dynamic member names.
+        $property = $destination->name->toString();
+        return (new NodeFinder())->findFirst($nodes, static fn (Node $node): bool =>
+            ($node instanceof Expr\PropertyFetch || $node instanceof Expr\NullsafePropertyFetch
+                || $node instanceof Expr\StaticPropertyFetch)
+            && (!$node->name instanceof Node\Identifier || $node->name->toString() === $property)) === null;
+    }
+
+    /** @param list<Node> $intervening */
+    private function canDelayOperand(Expr $operand, array $intervening): bool
+    {
+        return (new WhenOperandStability(array_diff_key($this->generatedNames, $this->referenceNames), $this->context->semanticModel->whenExpressions))
+            ->canDelay($operand, $intervening);
+    }
+
     /**
      * @param list<Stmt> $statements
      * @return list<Stmt>
      */
-    private function rewriteTailResults(array $statements, ?Expr\Variable $destination, int $switchDepth = 0): array
+    private function rewriteTailResults(array $statements, ?Expr $destination, int $switchDepth = 0): array
     {
         $rewritten = [];
         foreach ($statements as $statement) {
@@ -839,7 +911,12 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                     throw new \LogicException('A checked when result must have a value.');
                 }
                 $rewritten[] = new Stmt\Expression(
-                    new Expr\Assign(new Expr\Variable($destination->name), $statement->expr),
+                    new Expr\Assign(
+                        $destination instanceof Expr\Variable
+                            ? new Expr\Variable($destination->name)
+                            : $this->copyExpression($destination),
+                        $statement->expr,
+                    ),
                     $statement->getAttributes(),
                 );
                 if ($switchDepth > 0) {
@@ -1296,10 +1373,20 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         throw new \LogicException('A generated branch statement has no owning when expression.');
     }
 
-    /** @return array{list<Stmt>, Expr} */
-    private function hoistAssignmentTarget(Expr $target): array
+    /**
+     * @param list<Node> $intervening
+     * @return array{list<Stmt>, Expr}
+     */
+    private function hoistAssignmentTarget(Expr $target, array $intervening): array
     {
         if ($target instanceof Expr\PropertyFetch || $target instanceof Expr\NullsafePropertyFetch) {
+            // Native assignment reads a direct variable receiver at the write,
+            // after the RHS, even when the RHS replaces it through an alias.
+            // A receiver-producing expression, in contrast, is evaluated first.
+            if (($target->var instanceof Expr\Variable && is_string($target->var->name))
+                || $this->canDelayOperand($target->var, $intervening)) {
+                return [[], $target];
+            }
             [$assignment, $receiver] = $this->hoist($target->var);
             if (is_string($receiver->name)) {
                 $this->receiverNames[$receiver->name] = true;
@@ -1315,7 +1402,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 [$assignment, $target->var] = $this->hoist($target->var);
                 $prelude[] = $assignment;
             }
-            if ($target->dim !== null) {
+            if ($target->dim !== null && !$this->canDelayOperand($target->dim, $intervening)) {
                 [$assignment, $target->dim] = $this->hoist($target->dim);
                 $prelude[] = $assignment;
             }

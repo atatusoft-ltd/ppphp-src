@@ -1,0 +1,17 @@
+<?php
+class Box {
+    public function consume(int $literal, int $flag): void { echo $literal, ':', $flag, '|'; }
+    public function apply(bool $vip): void {
+        consume($this, 7, when ($vip) { return 1; } else { return 2; });
+        $this->consume(7, when ($vip) { return 1; } else { return 2; });
+    }
+}
+function consume(Box $box, int $literal, int $flag): void { $box->consume($literal, $flag); }
+function apply(Box $box, bool $vip): void {
+    consume($box, 7, when ($vip) { return 1; } else { return 2; });
+    $box->consume(7, when ($vip) { return 1; } else { return 2; });
+}
+(new Box())->apply(true);
+(new Box())->apply(false);
+apply(new Box(), true);
+apply(new Box(), false);

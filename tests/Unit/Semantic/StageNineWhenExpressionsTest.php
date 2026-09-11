@@ -328,7 +328,7 @@ function run(Sink $sink): string
     string $static = Sink::consumeStatic(when (true) { return 'static'; } else { return 'x'; });
     string $named = consumeNamed(label: when (true) { return 'named'; } else { return 'x'; });
     Box $box = new Box(when (true) { return 'constructor'; } else { return 'x'; });
-    string $ordered = pair($__ppphp_when_prerequisite_0, when (true) { return '!'; } else { return '?'; });
+    string $ordered = pair(trim($__ppphp_when_prerequisite_0), when (true) { string $suffix = '!'; return $suffix; } else { return '?'; });
 
     return implode(':', [$__ppphp_when_prerequisite_0, $local, $sink->value, $values[0], $method, $static, $named, $box->value, $ordered]);
 }

@@ -1,0 +1,19 @@
+<?php
+class Box {
+    public int $total = 0;
+    public static int $shared = 0;
+    public function apply(bool $vip): void {
+        $this->total = when ($vip) { return 90; } else { return 100; };
+        self::$shared = when ($vip) { return 9; } else { return 10; };
+        echo $this->total, '|', self::$shared, '|';
+    }
+}
+function assignBox(Box $box, bool $vip): void {
+    $box->total = when ($vip) { return 90; } else { return 100; };
+    Box::$shared = when ($vip) { return 9; } else { return 10; };
+    echo $box->total, '|', Box::$shared, '|';
+}
+(new Box())->apply(true);
+(new Box())->apply(false);
+assignBox(new Box(), true);
+assignBox(new Box(), false);
