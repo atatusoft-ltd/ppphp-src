@@ -17,7 +17,7 @@ function buildWhenTailProject(string $root): ApplicationTester
     return $tester;
 }
 
-test('tail when branches build as ordinary conditional statements', function (string $body, string $expected): void {
+test('tail when branches build as ordinary conditional statements', function (string $body, string $expected, array $variants = []): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
     $this->writeFile($root . '/src/main.ppphp', str_replace('BODY', $body, <<<'PPP'
@@ -30,15 +30,22 @@ PPP));
     $build = buildWhenTailProject($root);
     expect($build->getStatusCode())->toBe(0, $build->getDisplay());
     $php = file_get_contents($root . '/build/ppphp/main.php');
-    expect($php)->not->toContain('do {', 'while (true)', '$__ppphp_when_', 'break 2');
-    $run = new Process([PHP_BINARY, $root . '/build/ppphp/main.php']);
-    $run->mustRun();
-    expect($run->getOutput())->toBe($expected)->and($run->getErrorOutput())->toBe('');
+    expect($php)->not->toContain('do {')->not->toContain('while (true)')
+        ->not->toContain('$__ppphp_when_')->not->toContain('break 2');
+    foreach ([[[], $expected], ...$variants] as [$env, $output]) {
+        $run = new Process([PHP_BINARY, $root . '/build/ppphp/main.php'], env: $env);
+        $run->mustRun();
+        expect($run->getOutput())->toBe($output)->and($run->getErrorOutput())->toBe('');
+    }
 })->with([
     'local destination' => ['int $value = when ($x > 1) { return 20; } else when ($x > 0) { return 10; } else { return 0; }; return $value;', '20|10|0|0'],
     'real return operand' => ['return when ($x > 1) { return 20; } else when ($x > 0) { return 10; } else { return 0; };', '20|10|0|0'],
     'tail conditional' => ['int $value = when ($x > 0) { if ($x > 1) { return 20; } else { return 10; } } else { return 0; }; return $value;', '20|10|0|0'],
     'tail switch' => ['int $value = when ($x >= 0) { switch ($x) { case 2: return 20; case 1: if (getenv("TAIL_SWITCH") !== "other") { return 10; } else { return 5; } default: return 0; } } else { return -1; }; return $value;', '20|10|0|-1'],
+    'nested tail switch' => ['int $value = when ($x >= 0) { switch ($x) { case 2: switch (getenv("INNER_CASE")) { case "a": return 21; default: return 20; } case 1: return 10; default: return 0; } } else { return -1; }; return $value;', '20|10|0|-1', [[['INNER_CASE' => 'a'], '21|10|0|-1']]],
+    'return or throw case' => ['int $value = when ($x >= 0) { switch ($x) { case 2: return 20; case 1: if (getenv("TAIL_SWITCH") !== "other") { return 10; } else { throw new Error("case"); } default: return 0; } } else { return -1; }; return $value;', '20|10|0|-1'],
+    'nested switch fallthrough' => ['int $value = when ($x >= 0) { switch ($x) { case 2: switch (getenv("INNER_CASE")) { case "a": if (getenv("TAIL_SWITCH") !== "other") { return 21; } default: return 20; } case 1: return 10; default: return 0; } } else { return -1; }; return $value;', '20|10|0|-1', [[['INNER_CASE' => 'a'], '21|10|0|-1'], [['INNER_CASE' => 'a', 'TAIL_SWITCH' => 'other'], '20|10|0|-1']]],
+    'conditional nested switch' => ['int $value = when ($x >= 0) { switch ($x) { case 2: if (getenv("TAIL_SWITCH") !== "other") { switch (getenv("INNER_CASE")) { case "a": return 21; default: return 20; } } case 1: return 10; default: return 0; } } else { return -1; }; return $value;', '20|10|0|-1', [[['INNER_CASE' => 'a'], '21|10|0|-1'], [['TAIL_SWITCH' => 'other'], '10|10|0|-1']]],
     'nested when result' => ['int $value = when ($x > 0) { return when ($x > 1) { return 20; } else { return 10; }; } else { return 0; }; return $value;', '20|10|0|0'],
 ]);
 
@@ -84,7 +91,8 @@ PPP);
     $build = buildWhenTailProject($root);
     expect($build->getStatusCode())->toBe(0, $build->getDisplay());
     $php = file_get_contents($root . '/build/ppphp/main.php');
-    expect($php)->toContain('finally {', 'unset(')->not->toContain('do {', '@var LifetimeProbe $__ppphp_when_');
+    expect($php)->toContain('finally {', 'unset(')->not->toContain('do {')
+        ->not->toContain('@var LifetimeProbe $__ppphp_when_');
     $reference = str_replace("consume(when (getenv('BRANCH') !== 'other') { return new LifetimeProbe(); } else { return new LifetimeProbe(); });", 'consume(new LifetimeProbe());', file_get_contents($root . '/src/main.ppphp'));
     $reference = str_replace(' throws RuntimeException', '', $reference);
     $this->writeFile($root . '/reference.php', $reference);
@@ -115,6 +123,9 @@ final class Probe {
     public function step(Probe $p): Probe { echo 'step|'; return new Probe('next'); }
     public function optional(Probe $p): ?Probe { return getenv('NEXT') === 'yes' ? $this->step($p) : null; }
     public function measure(Probe $p): int { echo 'measure|'; return 1; }
+    public ?Probe $following {
+        get { echo 'get|'; return getenv('NEXT') === 'yes' ? new Probe('next') : null; }
+    }
 }
 function inner(Probe $p): int { echo 'inner|'; return 1; }
 function outer(int $n, Probe $p): void { echo 'outer|'; }
@@ -155,6 +166,7 @@ PHP;
     'long nullsafe chain' => ['maybe(getenv("READY") === "yes")?->next()->next()->consume(FIRST);'],
     'second nullsafe link' => ['maybe(getenv("READY") === "yes")?->optional(FIRST)?->consume(SECOND);'],
     'nullsafe return value' => ['function result(): ?int { return maybe(getenv("READY") === "yes")?->step(FIRST)->measure(SECOND); } echo result() ?? 0, "|";'],
+    'nullsafe property chain' => ['maybe(getenv("READY") === "yes")?->following?->consume(FIRST);'],
 ]);
 
 test('a throwing argument destructor does not defer later cleanup past the catch', function (): void {
@@ -225,7 +237,7 @@ PHP;
     }
 });
 
-test('embedded tail result golden preserves only the required cleanup protection', function (string $fixture, string $expected): void {
+test('tail result golden preserves the required emitted shape', function (string $fixture, string $expected, array $variants = []): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
     $fixtures = dirname(__DIR__, 2) . '/Fixtures/WhenDecisions/Tail';
@@ -236,13 +248,23 @@ test('embedded tail result golden preserves only the required cleanup protection
     expect($build->getStatusCode())->toBe(0, $build->getDisplay());
     $php = file_get_contents($root . '/build/ppphp/main.php');
     GoldenFile::assertMatches($fixtures . '/' . $fixture . '.php', $php);
-    expect($php)->not->toContain('do {', '@var', 'while (true)');
-    $run = new Process([PHP_BINARY, $root . '/build/ppphp/main.php']);
-    $run->mustRun();
-    expect($run->getOutput())->toBe($expected)->and($run->getErrorOutput())->toBe('');
+    expect($php)->not->toContain('do {')->not->toContain('@var')->not->toContain('while (true)');
+    foreach ([[[], $expected], ...$variants] as [$env, $output]) {
+        $run = new Process([PHP_BINARY, $root . '/build/ppphp/main.php'], env: $env);
+        $run->mustRun();
+        expect($run->getOutput())->toBe($output)->and($run->getErrorOutput())->toBe('');
+    }
 })->with([
     ['EmbeddedObjects', 'consume|first|second|after'],
     ['EmbeddedString', 'aa|after'],
+    ['NestedSwitch', '11|12|21|99|0|error'],
+    // The numbered exit crosses two real source switches, not a synthetic
+    // when boundary. The user's inner break must still fall through normally.
+    ['NativeSwitchBreak', '20|10|0|-1', [[['INNER_CASE' => 'a'], '10|10|0|-1']]],
+    ['ConditionalSwitchBreak', '30|10|0|-1', [
+        [['INNER_CASE' => 'a'], '20|10|0|-1'],
+        [['INNER_CASE' => 'a', 'LEAVE_CASE' => 'yes'], '10|10|0|-1'],
+    ]],
 ]);
 
 test('refcounted tail arguments release retained memory before an outer catch', function (string $type, string $value): void {

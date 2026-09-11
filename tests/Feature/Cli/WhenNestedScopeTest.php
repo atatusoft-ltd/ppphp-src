@@ -134,7 +134,7 @@ PPP));
     expect($contextFiles)->toHaveCount(1);
     $context = file_get_contents($contextFiles[0]);
     expect($context)->toContain('@template T', '@param T $input', '@return T', '@throws \\RuntimeException', 'throw new \\LogicException()')
-        ->not->toContain('when (', '$broken', 'return $input');
+        ->not->toContain('when (')->not->toContain('$broken')->not->toContain('return $input');
     $complete = runWhenNestedCommand($root, 'check');
     $payload = json_decode($complete->getDisplay(), true, flags: JSON_THROW_ON_ERROR);
     expect($complete->getStatusCode())->toBe(1, $complete->getDisplay())

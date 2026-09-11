@@ -833,7 +833,12 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             }
             if ($statement instanceof Stmt\If_) {
                 foreach ([$statement, ...$statement->elseifs, ...($statement->else === null ? [] : [$statement->else])] as $arm) {
-                    $arm->stmts = $this->rewriteTailResults(array_values($arm->stmts), $destination, $switchDepth);
+                    $commonExit = $destination !== null && $switchDepth > 0
+                        && (new WhenTailShape())->completesCase($arm->stmts);
+                    $arm->stmts = $this->rewriteTailResults(array_values($arm->stmts), $destination, $commonExit ? 0 : $switchDepth);
+                    if ($commonExit) {
+                        $arm->stmts[] = new Stmt\Break_($switchDepth === 1 ? null : new Scalar\Int_($switchDepth));
+                    }
                 }
             } elseif ($statement instanceof Stmt\Switch_) {
                 foreach ($statement->cases as $case) {

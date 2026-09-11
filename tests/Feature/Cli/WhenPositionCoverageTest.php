@@ -38,7 +38,8 @@ PPP;
         expect($result->getStatusCode())->toBe(1, $result->getDisplay())
             ->and($payload['diagnostics'][0]['code'])->toBe('P5005')
             ->and($payload['diagnostics'][0]['location']['file'])->toBe('src/main.ppphp')
-            ->and(array_column($payload['diagnostics'], 'code'))->not->toContain('P9001', 'P2099', 'P2015', 'P2016');
+            ->and(array_column($payload['diagnostics'], 'code'))->not->toContain('P9001')
+            ->not->toContain('P2099')->not->toContain('P2015')->not->toContain('P2016');
     }
     expect(file_exists($root . '/build/ppphp/main.php'))->toBeFalse();
 })->with([

@@ -96,7 +96,8 @@ PPP);
 
     expect($generated->contents)
         ->toContain('if ($score >= 80)', 'elseif ($score >= 50)', '$label =')
-        ->not->toContain('do {', '$__ppphp_when_', 'function () use', '@var string $label')
+        ->not->toContain('do {')->not->toContain('$__ppphp_when_')
+        ->not->toContain('function () use')->not->toContain('@var string $label')
         ->and($lint->isSuccessful())->toBeTrue()
         ->and($runtime->getOutput())->toBe('mid');
 });

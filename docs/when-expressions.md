@@ -61,7 +61,9 @@ When branch results are in tail position, lowering emits ordinary
 when the block does not read it and no branch `try` encloses the result.
 `return when …` keeps ordinary returns in those branches. Tail results inside
 conditional arms and switch cases follow the same rule; switch cases use their
-ordinary `break`. No synthetic loop, result annotation or scratch variable is
+ordinary `break`, including a numbered exit when a result must leave multiple
+real nested switches. User-written breaks retain their targets and fallthrough.
+No synthetic loop, result annotation or scratch variable is
 needed for a direct destination.
 
 Embedded results and destinations that cannot be assigned directly use

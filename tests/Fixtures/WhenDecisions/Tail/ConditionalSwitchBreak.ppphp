@@ -1,0 +1,19 @@
+<?php
+function selectGuardedValue(int $x): int
+{
+    int $value = when ($x >= 0) {
+        switch ($x) {
+            case 2:
+                switch (getenv('INNER_CASE')) {
+                    case 'a':
+                        if (getenv('LEAVE_CASE') === 'yes') { break; }
+                        return 20;
+                    default: return 30;
+                }
+            case 1: return 10;
+            default: return 0;
+        }
+    } else { return -1; };
+    return $value;
+}
+echo selectGuardedValue(2), '|', selectGuardedValue(1), '|', selectGuardedValue(0), '|', selectGuardedValue(-1);
