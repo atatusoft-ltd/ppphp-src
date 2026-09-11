@@ -7,11 +7,13 @@ namespace Atatusoft\Ppphp\Transpilation\Pass;
 use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
 use Atatusoft\Ppphp\Interop\PhpDoc\PhpDocReader;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionAnalysis;
+use Atatusoft\Ppphp\Semantic\Type\LocalType;
 use Atatusoft\Ppphp\Source\Span;
 use Atatusoft\Ppphp\Transpilation\Pass\Interfaces\TranspilationPass;
 use Atatusoft\Ppphp\Transpilation\SourceEditMapping;
 use Atatusoft\Ppphp\Transpilation\TranspilationContext;
 use Atatusoft\Ppphp\Transpilation\LocalBindingTypeRenderer;
+use Atatusoft\Ppphp\Transpilation\WhenTailShape;
 use PhpParser\Comment\Doc;
 use PhpParser\Node;
 use PhpParser\Node\Arg;
@@ -35,6 +37,21 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     /** @var array<string, true> */
     private array $generatedNames = [];
 
+    /** @var array<string, true> */
+    private array $tailResultNames = [];
+
+    /** @var array<string, true> */
+    private array $receiverNames = [];
+
+    /** @var array<string, true> */
+    private array $primitiveNames = [];
+
+    /** @var array<string, LocalType> */
+    private array $temporaryTypes = [];
+
+    /** @var \WeakMap<Expr, Expr> */
+    private \WeakMap $sourceExpressions;
+
     /** @var \WeakMap<Doc, Span> */
     private \WeakMap $bindingDocumentOrigins;
 
@@ -46,6 +63,11 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $this->prerequisiteSequence = 0;
         $this->reservedNames = [];
         $this->generatedNames = [];
+        $this->tailResultNames = [];
+        $this->receiverNames = [];
+        $this->primitiveNames = [];
+        $this->temporaryTypes = [];
+        $this->sourceExpressions = new \WeakMap();
         $this->bindingDocumentOrigins = new \WeakMap();
 
         foreach (token_get_all($context->parsedFile->sourceFile->contents) as $token) {
@@ -58,6 +80,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             $name = ltrim($analysis->temporaryName, '$');
             $this->reservedNames[$name] = true;
             $this->generatedNames[$name] = true;
+            $this->temporaryTypes[$name] = $analysis->resultType;
         }
         $statements = [];
 
@@ -67,6 +90,12 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             }
 
             $span = $this->span($analysis->statement);
+            foreach ($context->parsedFile->extensionSyntax->typedLocals as $declaration) {
+                if ($declaration->variableSpan->start->offset === $span->start->offset) {
+                    $span = $span->sourceFile->createSpan($declaration->span->start->offset, $span->end->offset);
+                    break;
+                }
+            }
             $statements[$span->start->offset . ':' . $span->end->offset] = [$span, $analysis->statement];
         }
 
@@ -329,20 +358,41 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $this->decorateNestedExtensions($statement);
 
         if ($statement instanceof Stmt\Return_ && $statement->expr !== null) {
+            $analysis = $this->context->semanticModel->whenExpressions->findPlaceholder($statement->expr);
+            if ($analysis !== null && (new WhenTailShape())->accepts($analysis)) {
+                $conditional = $this->buildWhenStatement($analysis, returnResult: true);
+                $conditional->setAttribute('comments', $statement->getComments());
+                return [$conditional];
+            }
             [$prelude, $expression] = $this->lowerExpression($statement->expr);
             $statement->expr = $expression;
             $this->decorateTemporaryTypes($statement, $prelude);
 
-            return [...$prelude, $statement];
+            return $this->completeConsumer($prelude, $statement);
         }
 
         if ($statement instanceof Stmt\Expression) {
+            $nullsafe = $this->lowerNullsafeChain($statement->expr, false);
+            if ($nullsafe !== null) {
+                return $nullsafe[0];
+            }
+            $assignment = $statement->expr;
+            if ($assignment instanceof Expr\Assign && $assignment->var instanceof Expr\Variable
+                && is_string($assignment->var->name)) {
+                $analysis = $this->context->semanticModel->whenExpressions->findPlaceholder($assignment->expr);
+                if ($analysis !== null && (new WhenTailShape())->accepts($analysis)
+                    && !$this->readsDestination($analysis, $assignment->var->name)) {
+                    $conditional = $this->buildWhenStatement($analysis, $assignment->var);
+                    $conditional->setAttribute('comments', $statement->getComments());
+                    return [$conditional];
+                }
+            }
             [$prelude, $expression] = $this->lowerExpression($statement->expr);
             $statement->expr = $expression;
             $this->decorateTypedLocal($statement);
             $this->decorateTemporaryTypes($statement, $prelude);
 
-            return [...$prelude, $statement, ...$this->buildCleanup($prelude)];
+            return $this->completeConsumer($prelude, $statement);
         }
 
         return $this->lowerNestedStatement($statement, false, 0);
@@ -354,6 +404,10 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $analysis = $this->context->semanticModel->whenExpressions->findPlaceholder($expression);
         if ($analysis !== null) {
             return [[$this->buildWhenStatement($analysis)], new Expr\Variable(ltrim($analysis->temporaryName, '$'))];
+        }
+        $nullsafe = $this->lowerNullsafeChain($expression, true);
+        if ($nullsafe !== null) {
+            return $nullsafe;
         }
 
         if ($expression instanceof Expr\FuncCall) {
@@ -369,6 +423,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
 
         if ($expression instanceof Expr\MethodCall || $expression instanceof Expr\NullsafeMethodCall) {
             [$receiverPrelude, $receiver] = $this->lowerExpression($expression->var);
+            [$receiverPrelude, $receiver] = $this->captureConsumer($receiverPrelude, $receiver);
             $expression->var = $receiver;
             [$argumentPrelude, $arguments, $receiver] = $this->lowerArguments($expression->args, $expression->var);
             if (!$receiver instanceof Expr) {
@@ -443,6 +498,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             $value = $expression->{$name};
             if ($value instanceof Expr) {
                 [$nestedPrelude, $nested] = $this->lowerExpression($value);
+                [$nestedPrelude, $nested] = $this->captureConsumer($nestedPrelude, $nested);
                 array_push($prelude, ...$nestedPrelude);
                 $expression->{$name} = $nested;
             } elseif (is_array($value)) {
@@ -466,6 +522,8 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     {
         [$leftPrelude, $expression->left] = $this->lowerExpression($expression->left);
         [$rightPrelude, $expression->right] = $this->lowerExpression($expression->right);
+        [$leftPrelude, $expression->left] = $this->captureConsumer($leftPrelude, $expression->left);
+        [$rightPrelude, $expression->right] = $this->captureConsumer($rightPrelude, $expression->right);
 
         if ($rightPrelude === []) {
             return [$leftPrelude, $expression];
@@ -482,6 +540,8 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     {
         [$leftPrelude, $expression->left] = $this->lowerExpression($expression->left);
         [$rightPrelude, $expression->right] = $this->lowerExpression($expression->right);
+        [$leftPrelude, $expression->left] = $this->captureConsumer($leftPrelude, $expression->left);
+        [$rightPrelude, $expression->right] = $this->captureConsumer($rightPrelude, $expression->right);
 
         if ($rightPrelude === []) {
             return [$leftPrelude, $expression];
@@ -515,6 +575,8 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     {
         [$leftPrelude, $expression->left] = $this->lowerExpression($expression->left);
         [$rightPrelude, $expression->right] = $this->lowerExpression($expression->right);
+        [$leftPrelude, $expression->left] = $this->captureConsumer($leftPrelude, $expression->left);
+        [$rightPrelude, $expression->right] = $this->captureConsumer($rightPrelude, $expression->right);
 
         if ($rightPrelude === []) {
             return [$leftPrelude, $expression];
@@ -546,12 +608,17 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     private function lowerTernaryExpression(Expr\Ternary $expression): array
     {
         [$conditionPrelude, $condition] = $this->lowerExpression($expression->cond);
+        [$conditionPrelude, $condition] = $expression->if === null
+            ? $this->captureConsumer($conditionPrelude, $condition)
+            : $this->captureCondition($conditionPrelude, $condition);
         $expression->cond = $condition;
         $ifPrelude = [];
         if ($expression->if !== null) {
             [$ifPrelude, $expression->if] = $this->lowerExpression($expression->if);
+            [$ifPrelude, $expression->if] = $this->captureConsumer($ifPrelude, $expression->if);
         }
         [$elsePrelude, $expression->else] = $this->lowerExpression($expression->else);
+        [$elsePrelude, $expression->else] = $this->captureConsumer($elsePrelude, $expression->else);
 
         if ($ifPrelude === [] && $elsePrelude === []) {
             return [$conditionPrelude, $expression];
@@ -588,15 +655,26 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $prelude = [];
         $pending = [];
         $calleePending = $callee !== null;
+        if ($callee instanceof Expr\Variable && is_string($callee->name) && isset($this->generatedNames[$callee->name])) {
+            $this->receiverNames[$callee->name] = true;
+            $calleePending = false;
+        }
 
         foreach ($arguments as $position => $argument) {
             if (!$argument instanceof Arg) {
                 continue;
             }
             [$nestedPrelude, $value] = $this->lowerExpression($argument->value);
+            [$nestedPrelude, $value] = $this->captureConsumer($nestedPrelude, $value);
             if ($nestedPrelude !== []) {
                 if ($calleePending) {
+                    if ($callee instanceof Expr\Variable && is_string($callee->name) && isset($this->generatedNames[$callee->name])) {
+                        $this->receiverNames[$callee->name] = true;
+                    }
                     [$assignment, $temporary] = $this->hoist($callee);
+                    if (is_string($temporary->name)) {
+                        $this->receiverNames[$temporary->name] = true;
+                    }
                     $prelude[] = $assignment;
                     $callee = $temporary;
                     $calleePending = false;
@@ -604,6 +682,11 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 foreach ($pending as $pendingPosition) {
                     $pendingArgument = $arguments[$pendingPosition];
                     if (!$pendingArgument instanceof Arg) {
+                        continue;
+                    }
+                    if ($pendingArgument->value instanceof Expr\Variable
+                        && is_string($pendingArgument->value->name)
+                        && isset($this->generatedNames[$pendingArgument->value->name])) {
                         continue;
                     }
                     [$assignment, $temporary] = $this->hoist($pendingArgument->value);
@@ -632,6 +715,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 [$keyPrelude, $item->key] = $this->lowerExpression($item->key);
             }
             [$valuePrelude, $item->value] = $this->lowerExpression($item->value);
+            [$valuePrelude, $item->value] = $this->captureConsumer($valuePrelude, $item->value);
             $nestedPrelude = [...$keyPrelude, ...$valuePrelude];
             if ($nestedPrelude !== []) {
                 foreach ($pending as $pendingPosition) {
@@ -656,8 +740,18 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         return [$prelude, $array];
     }
 
-    private function buildWhenStatement(WhenExpressionAnalysis $analysis): Stmt\Do_
+    private function buildWhenStatement(
+        WhenExpressionAnalysis $analysis,
+        ?Expr\Variable $destination = null,
+        bool $returnResult = false,
+    ): Stmt
     {
+        $tail = (new WhenTailShape())->accepts($analysis);
+        if ($tail && $destination === null && !$returnResult) {
+            $name = ltrim($analysis->temporaryName, '$');
+            $this->tailResultNames[$name] = true;
+            $destination = new Expr\Variable($name);
+        }
         $if = null;
         $elseifs = [];
         $else = null;
@@ -667,11 +761,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             foreach ($branch->statements as $statement) {
                 $branchStatements[] = $this->copyStatement($statement);
             }
-            $statements = $this->lowerBranchStatements(
-                $branchStatements,
-                $analysis,
-                1,
-            );
+            $statements = $tail
+                ? $this->lowerOrdinaryStatements($this->rewriteTailResults($branchStatements, $destination))
+                : $this->lowerBranchStatements($branchStatements, $analysis, 1);
             if ($branch->syntax instanceof WhenElseBranch) {
                 $else = new Stmt\Else_($statements);
                 continue;
@@ -693,9 +785,72 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         $if->elseifs = $elseifs;
         $if->else = $else;
 
+        if ($tail) {
+            return $if;
+        }
+
         // Branches leave through an explicit result break or termination.
         // There is no condition exit that can fabricate an unassigned result.
         return new Stmt\Do_(new Expr\ConstFetch(new Name('true')), [$if]);
+    }
+
+    private function readsDestination(WhenExpressionAnalysis $analysis, string $name): bool
+    {
+        foreach ($this->context->semanticModel->bindings->bindings as $binding) {
+            if ($binding->name !== '$' . $name) {
+                continue;
+            }
+            foreach ($binding->reads as $read) {
+                if ($this->contains($analysis->syntax->span, $read)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param list<Stmt> $statements
+     * @return list<Stmt>
+     */
+    private function rewriteTailResults(array $statements, ?Expr\Variable $destination, int $switchDepth = 0): array
+    {
+        $rewritten = [];
+        foreach ($statements as $statement) {
+            if ($statement instanceof Stmt\Return_ && $destination !== null) {
+                if ($statement->expr === null) {
+                    throw new \LogicException('A checked when result must have a value.');
+                }
+                $rewritten[] = new Stmt\Expression(
+                    new Expr\Assign(new Expr\Variable($destination->name), $statement->expr),
+                    $statement->getAttributes(),
+                );
+                if ($switchDepth > 0) {
+                    $rewritten[] = new Stmt\Break_($switchDepth === 1 ? null : new Scalar\Int_($switchDepth));
+                }
+                continue;
+            }
+            if ($statement instanceof Stmt\If_) {
+                foreach ([$statement, ...$statement->elseifs, ...($statement->else === null ? [] : [$statement->else])] as $arm) {
+                    $arm->stmts = $this->rewriteTailResults(array_values($arm->stmts), $destination, $switchDepth);
+                }
+            } elseif ($statement instanceof Stmt\Switch_) {
+                foreach ($statement->cases as $case) {
+                    // A common case exit keeps ordinary conditional assignment
+                    // visible to PHP flow analysis. Preserve conditional exits
+                    // when an arm must still fall through to the next case.
+                    $commonExit = $destination !== null && (new WhenTailShape())->completesCase($case->stmts);
+                    $case->stmts = $this->rewriteTailResults(array_values($case->stmts), $destination, $commonExit ? 0 : $switchDepth + 1);
+                    if ($commonExit) {
+                        $case->stmts[] = new Stmt\Break_($switchDepth === 0 ? null : new Scalar\Int_($switchDepth + 1));
+                    }
+                }
+            }
+            $rewritten[] = $statement;
+        }
+
+        return $rewritten;
     }
 
     /**
@@ -850,6 +1005,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
 
         foreach (array_reverse($statement->elseifs) as $elseif) {
             [$prelude, $condition] = $this->lowerExpression($elseif->cond);
+            [$prelude, $condition] = $this->captureCondition($prelude, $condition);
             $nested = new Stmt\If_($condition, [
                 'stmts' => $this->lowerConditionalStatements(
                     array_values($elseif->stmts),
@@ -860,19 +1016,136 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 'else' => $nextElse,
             ], $elseif->getAttributes());
             $this->decorateTemporaryTypes($nested, $prelude);
-            $nextElse = new Stmt\Else_([
-                ...$prelude,
-                $nested,
-                ...$this->buildCleanup($prelude),
-            ], $elseif->getAttributes());
+            $nextElse = new Stmt\Else_($this->completeConditional($prelude, $nested), $elseif->getAttributes());
         }
 
         [$prelude, $statement->cond] = $this->lowerExpression($statement->cond);
+        [$prelude, $statement->cond] = $this->captureCondition($prelude, $statement->cond);
         $statement->elseifs = [];
         $statement->else = $nextElse;
         $this->decorateTemporaryTypes($statement, $prelude);
 
-        return [...$prelude, $statement, ...$this->buildCleanup($prelude)];
+        return $this->completeConditional($prelude, $statement);
+    }
+
+    /** @param list<Stmt> $prelude
+     * @return list<Stmt>
+     */
+    private function completeConditional(array $prelude, Stmt\If_ $statement): array
+    {
+        $cleanup = $this->buildCleanup($prelude);
+        if ($cleanup !== []) {
+            // Release condition scratch names on entry to either path, including
+            // paths that return, throw or transfer before the end of the if.
+            $statement->stmts = [...$cleanup, ...$statement->stmts];
+            $statement->else ??= new Stmt\Else_();
+            $statement->else->stmts = [...$cleanup, ...$statement->else->stmts];
+        }
+
+        return [...$prelude, $statement];
+    }
+
+    /**
+     * Guard the entire remaining access chain, not just the nullsafe call's
+     * arguments. A null receiver also skips ordinary links farther out.
+     *
+     * @return array{list<Stmt>, Expr}|null
+     */
+    private function lowerNullsafeChain(Expr $expression, bool $needsValue): ?array
+    {
+        $site = null;
+        $chain = [];
+        $links = [];
+        $node = $expression;
+        while ($node instanceof Expr\MethodCall || $node instanceof Expr\NullsafeMethodCall
+            || $node instanceof Expr\PropertyFetch || $node instanceof Expr\NullsafePropertyFetch
+            || $node instanceof Expr\ArrayDimFetch) {
+            $chain[] = $node;
+            if ($node instanceof Expr\NullsafeMethodCall || $node instanceof Expr\NullsafePropertyFetch) {
+                $site = $node;
+                $links = array_reverse($chain);
+            }
+            $node = $node->var;
+        }
+        if ($site === null || $links === [] || (new NodeFinder())->findFirst($expression, static fn (Node $node): bool =>
+            is_string($node->getAttribute('ppphpWhenExpressionId'))) === null) {
+            return null;
+        }
+
+        [$prelude, $receiver] = $this->lowerExpression($site->var);
+        [$prelude, $receiver] = $this->captureConsumer($prelude, $receiver);
+        if (!$receiver instanceof Expr\Variable || !is_string($receiver->name) || !isset($this->generatedNames[$receiver->name])) {
+            [$assignment, $receiver] = $this->hoist($receiver);
+            $prelude[] = $assignment;
+        }
+        if (!is_string($receiver->name)) {
+            throw new \LogicException('A nullsafe receiver needs a static scratch name.');
+        }
+        $this->receiverNames[$receiver->name] = true;
+        $this->tailResultNames[$receiver->name] = true;
+        $result = null;
+        $prefix = [];
+        if ($needsValue) {
+            $name = $this->allocateName('__ppphp_when_nullsafe');
+            $this->tailResultNames[$name] = true;
+            $result = new Expr\Variable($name);
+            $prefix[] = new Stmt\Expression(new Expr\Assign(clone $result, new Expr\ConstFetch(new Name('null'))));
+        }
+        $body = $this->lowerAccessChain($links, $receiver, $result);
+
+        return [[...$prefix, ...$this->completeConsumer($prelude, $body)], $result ?? new Expr\ConstFetch(new Name('null'))];
+    }
+
+    /**
+     * Each link consumes its receiver before the next link's arguments run.
+     * Nullsafe links guard the remaining chain, including ordinary links.
+     *
+     * @param non-empty-list<Expr\MethodCall|Expr\NullsafeMethodCall|Expr\PropertyFetch|Expr\NullsafePropertyFetch|Expr\ArrayDimFetch> $links
+     * @return list<Stmt>
+     */
+    private function lowerAccessChain(array $links, Expr\Variable $receiver, ?Expr\Variable $result): array
+    {
+        $link = array_shift($links);
+        $nullsafe = $link instanceof Expr\NullsafeMethodCall || $link instanceof Expr\NullsafePropertyFetch;
+        if ($link instanceof Expr\NullsafeMethodCall) {
+            $link = new Expr\MethodCall(clone $receiver, $link->name, $link->args, $link->getAttributes());
+        } elseif ($link instanceof Expr\NullsafePropertyFetch) {
+            $link = new Expr\PropertyFetch(clone $receiver, $link->name, $link->getAttributes());
+        } else {
+            $link->var = clone $receiver;
+        }
+        if ($links === []) {
+            $body = $this->lowerOrdinaryStatement(new Stmt\Expression(
+                $result === null ? $link : new Expr\Assign(clone $result, $link),
+            ));
+        } else {
+            [$prelude, $value] = $this->lowerExpression($link);
+            [$assignment, $next] = $this->hoist($value);
+            if (!is_string($next->name) || !is_string($receiver->name)) {
+                throw new \LogicException('Access-chain temporaries must have static names.');
+            }
+            $this->tailResultNames[$next->name] = true;
+            $this->receiverNames[$next->name] = true;
+            // Release the old receiver after its arguments. Its enclosing
+            // finally still owns the name, but now holds no retained value.
+            // This release must run even if an argument's destructor throws.
+            $prelude = [new Stmt\TryCatch(
+                $this->completeConsumer($prelude, $assignment), [],
+                new Stmt\Finally_([new Stmt\Expression(new Expr\Assign(
+                    clone $receiver, new Expr\ConstFetch(new Name('null')),
+                ))]),
+            )];
+            $body = $this->completeConsumer(
+                $prelude,
+                $this->lowerAccessChain($links, $next, $result),
+                [$receiver->name => true],
+            );
+        }
+
+        return $nullsafe ? [new Stmt\If_(
+            new Expr\BinaryOp\NotIdentical(clone $receiver, new Expr\ConstFetch(new Name('null'))),
+            ['stmts' => $body],
+        )] : $body;
     }
 
     /**
@@ -960,6 +1233,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
 
     private function declareTemporary(string $name, string $type, Expr $value, Span $owner): Stmt\Expression
     {
+        if (in_array($type, ['int', 'float', 'bool', 'null'], true)) {
+            $this->primitiveNames[$name] = true;
+        }
         $statement = new Stmt\Expression(new Expr\Assign(new Expr\Variable($name), $value));
         $document = new Doc(sprintf('/** @var %s $%s */', $type, $name));
         $statement->setDocComment($document);
@@ -1004,6 +1280,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     {
         if ($target instanceof Expr\PropertyFetch || $target instanceof Expr\NullsafePropertyFetch) {
             [$assignment, $receiver] = $this->hoist($target->var);
+            if (is_string($receiver->name)) {
+                $this->receiverNames[$receiver->name] = true;
+            }
             $target->var = $receiver;
 
             return [[$assignment], $target];
@@ -1030,6 +1309,18 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     private function hoist(Expr $expression): array
     {
         $name = $this->allocateName('__ppphp_when_prerequisite');
+        if ($expression instanceof Expr\Cast\Bool_ || $expression instanceof Expr\Cast\Int_
+            || $expression instanceof Expr\Cast\Double || $expression instanceof Scalar\Int_ || $expression instanceof Scalar\Float_) {
+            $this->primitiveNames[$name] = true;
+        }
+        $original = $this->sourceExpressions[$expression] ?? $expression;
+        $type = $this->context->semanticModel->expressionTypes->resolve($this->context->parsedFile->sourceFile, $original);
+        if ($type !== null) {
+            $this->temporaryTypes[$name] = LocalType::createFromSemanticType($type->type);
+        } elseif ($expression instanceof Expr\Variable && is_string($expression->name)
+            && isset($this->temporaryTypes[$expression->name])) {
+            $this->temporaryTypes[$name] = $this->temporaryTypes[$expression->name];
+        }
         $variable = new Expr\Variable($name);
 
         return [new Stmt\Expression(new Expr\Assign(clone $variable, $expression)), $variable];
@@ -1063,7 +1354,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         }
         foreach ($this->context->semanticModel->whenExpressions->expressions as $analysis) {
             $name = ltrim($analysis->temporaryName, '$');
-            if (isset($names[$name])) {
+            if (isset($names[$name]) && !isset($this->tailResultNames[$name])) {
                 $previous = $consumer->getDocComment();
                 $origin = $previous === null ? null : ($this->bindingDocumentOrigins[$previous] ?? null);
                 $generated = $origin !== null || !(new PhpDocReader())->hasVariableAssertions($previous);
@@ -1225,22 +1516,136 @@ final class LowerWhenExpressionsPass implements TranspilationPass
 
     /**
      * @param list<Stmt> $prelude
+     * @param Stmt|list<Stmt> $consumer
+     * @param array<string, true> $borrowed
      * @return list<Stmt>
      */
-    private function buildCleanup(array $prelude): array
+    private function completeConsumer(array $prelude, Stmt|array $consumer, array $borrowed = []): array
+    {
+        $names = [];
+        foreach ($prelude as $statement) {
+            $this->collectLiveGeneratedNames($statement, $names);
+        }
+        $names = array_diff_key($names, $borrowed);
+        $body = is_array($consumer) ? $consumer : [$consumer];
+        if (array_intersect_key($names, $this->tailResultNames) !== []) {
+            $nonRefcounted = $this->resolvePrimitiveNames();
+            $retained = array_diff_key($names, $nonRefcounted);
+            if ($retained !== []) {
+                // A prerequisite or branch can throw before a scratch local is
+                // assigned. Initialize the cleanup set so it is valid on every
+                // exit, without overriding the inferred result type.
+                $initializers = [];
+                foreach ($names as $name => $_) {
+                    $initializers[] = new Stmt\Expression(new Expr\Assign(
+                        new Expr\Variable($name), new Expr\ConstFetch(new Name('null')),
+                    ));
+                }
+
+                return [...$initializers, new Stmt\TryCatch(
+                    [...$prelude, ...$body], [],
+                    new Stmt\Finally_($this->buildCleanup($prelude, $borrowed)),
+                )];
+            }
+        }
+
+        return [...$prelude, ...$body, ...($consumer instanceof Stmt\Return_ ? [] : $this->buildCleanup($prelude, $borrowed))];
+    }
+
+    /**
+     * Finish a nested consumer before evaluating its parent's later operands.
+     * Its result belongs to the parent; its arguments must not live that long.
+     *
+     * @param list<Stmt> $prelude
+     * @return array{list<Stmt>, Expr}
+     */
+    private function captureConsumer(array $prelude, Expr $value): array
+    {
+        if ($value instanceof Expr\Variable) {
+            return [$prelude, $value];
+        }
+        $names = [];
+        foreach ($prelude as $statement) {
+            $this->collectLiveGeneratedNames($statement, $names);
+        }
+        if (array_intersect_key($names, $this->tailResultNames) === []) {
+            return [$prelude, $value];
+        }
+        [$assignment, $result] = $this->hoist($value);
+        if (!is_string($result->name)) {
+            throw new \LogicException('A generated consumer result must have a static name.');
+        }
+        $this->tailResultNames[$result->name] = true;
+
+        return [$this->completeConsumer($prelude, $assignment), $result];
+    }
+
+    /** @param list<Stmt> $prelude
+     * @return array{list<Stmt>, Expr}
+     */
+    private function captureCondition(array $prelude, Expr $condition): array
+    {
+        [$completed, $result] = $this->captureConsumer($prelude, new Expr\Cast\Bool_($condition));
+
+        return $result instanceof Expr\Cast\Bool_ ? [$prelude, $condition] : [$completed, $result];
+    }
+
+    /** @return array<string, true> */
+    private function resolvePrimitiveNames(bool $includeStrings = false): array
+    {
+        $names = $this->primitiveNames;
+        $atoms = ['int', 'float', 'bool', 'true', 'false', 'null', ...($includeStrings ? ['string'] : [])];
+        foreach ($this->temporaryTypes as $name => $type) {
+            $safe = true;
+            foreach ($type->variants as $variant) {
+                if (count($variant) !== 1 || !in_array($variant[0], $atoms, true)) {
+                    $safe = false;
+                }
+            }
+            if ($safe) {
+                $names[$name] = true;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param list<Stmt> $prelude
+     * @param array<string, true> $borrowed
+     * @return list<Stmt>
+     */
+    private function buildCleanup(array $prelude, array $borrowed = []): array
     {
         $names = [];
 
         foreach ($prelude as $statement) {
             $this->collectLiveGeneratedNames($statement, $names);
         }
+        $names = array_diff_key($names, $borrowed);
 
-        return $names === []
-            ? []
-            : [new Stmt\Unset_(array_map(
-                static fn (string $name): Expr\Variable => new Expr\Variable($name),
-                array_keys($names),
-            ))];
+        // PHP releases call arguments before the receiver/callee temporary.
+        $names = array_diff_key($names, $this->receiverNames) + array_intersect_key($names, $this->receiverNames);
+        $nonThrowing = $this->resolvePrimitiveNames(includeStrings: true);
+        $cleanup = [];
+        foreach (array_reverse(array_keys($names)) as $name) {
+            $unset = new Stmt\Unset_([new Expr\Variable($name)]);
+            // An earlier destructor may throw. Later retained values must still
+            // be released during unwinding, before an outer catch can run.
+            if ($cleanup === []) {
+                $cleanup = [$unset];
+            } elseif (isset($nonThrowing[$name])) {
+                if ($cleanup[0] instanceof Stmt\Unset_) {
+                    array_unshift($cleanup[0]->vars, new Expr\Variable($name));
+                } else {
+                    array_unshift($cleanup, $unset);
+                }
+            } else {
+                $cleanup = [new Stmt\TryCatch([$unset], [], new Stmt\Finally_($cleanup))];
+            }
+        }
+
+        return $cleanup;
     }
 
     /** @param array<string, true> $names */
@@ -1261,8 +1666,11 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             || $node instanceof Expr\Closure || $node instanceof Expr\ArrowFunction) {
             return;
         }
-        if ($node instanceof Expr\Variable && is_string($node->name) && isset($this->generatedNames[$node->name])) {
-            $names[$node->name] = true;
+        // Reading an enclosing consumer's scratch local does not transfer its
+        // ownership. Only definitions in this region belong to its cleanup.
+        $defined = $node instanceof Expr\Assign || $node instanceof Stmt\Catch_ ? $node->var : null;
+        if ($defined instanceof Expr\Variable && is_string($defined->name) && isset($this->generatedNames[$defined->name])) {
+            $names[$defined->name] = true;
         }
 
         foreach ($node->getSubNodeNames() as $name) {
@@ -1294,6 +1702,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     private function copyNode(Node $node): Node
     {
         $copy = clone $node;
+        if ($copy instanceof Expr && $node instanceof Expr) {
+            $this->sourceExpressions[$copy] = $node;
+        }
         foreach ($copy->getSubNodeNames() as $name) {
             $value = $copy->{$name};
             if ($value instanceof Node) {

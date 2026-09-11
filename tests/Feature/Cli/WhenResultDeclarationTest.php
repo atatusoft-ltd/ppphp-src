@@ -20,8 +20,7 @@ echo describeUsers([]), "|", describeUsers(["Maya"]);');
     $build->run();
     expect($build->getExitCode())->toBe(0, $build->getOutput());
     $generated = file_get_contents($root . '/build/ppphp/main.php');
-    expect($generated)->toContain('@var string $__ppphp_when_')
-        ->not->toMatch('/\$__ppphp_when_\d+(?:_\d+)? = null;/');
+    expect($generated)->not->toContain('@var string $__ppphp_when_', 'do {', 'while (true)');
     if ($body === 'return WHEN;') {
         GoldenFile::assertMatches(dirname(__DIR__, 2) . '/Golden/ProductionPhp/when-result.php.golden', $generated);
     }

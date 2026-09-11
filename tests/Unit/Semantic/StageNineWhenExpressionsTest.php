@@ -95,12 +95,8 @@ PPP);
     $runtime->run();
 
     expect($generated->contents)
-        ->toContain('do {')
-        ->toContain('$__ppphp_when_')
-        ->not->toContain('function () use')
-        ->and(substr_count($generated->contents, '@var string $label'))->toBe(1)
-        ->and(strpos($generated->contents, 'do {'))
-        ->toBeLessThan(strpos($generated->contents, '@var string $label'))
+        ->toContain('if ($score >= 80)', 'elseif ($score >= 50)', '$label =')
+        ->not->toContain('do {', '$__ppphp_when_', 'function () use', '@var string $label')
         ->and($lint->isSuccessful())->toBeTrue()
         ->and($runtime->getOutput())->toBe('mid');
 });
@@ -565,11 +561,11 @@ test('generated condition result and temporary spans map to the original when so
 <?php
 function label(int $score): string
 {
-    return when ($score >= 80) {
+    return strtolower(when ($score >= 80) {
         return 'Excellent';
     } else {
         return 'Fail';
-    };
+    });
 }
 PPP;
     $generated = lowerStageNineSource($source);

@@ -56,7 +56,26 @@ Checked errors from conditions, statements, results, nested `when` expressions, 
 
 The frontend keeps exact spans and hierarchical nested syntax, then parses conditions and branch bodies with the PHP 8.4 parser after applying descendant ++PHP normalization. Syntax, semantic, and backend diagnostics map to the original `.ppphp` file.
 
-Lowering emits prerequisite statements, a collision-free deterministic temporary, and ordinary `if`/`elseif`/`else` control flow inside compiler-owned `do` boundaries. It uses no synthetic closure, runtime helper, or exception for compiler control flow. Earlier call arguments and array elements are evaluated before the `when`; later siblings remain after it. Temporaries are cleaned up when control continues.
+When branch results are in tail position, lowering emits ordinary
+`if`/`elseif`/`else` statements. A plain local destination is assigned directly
+when the block does not read it and no branch `try` encloses the result.
+`return when …` keeps ordinary returns in those branches. Tail results inside
+conditional arms and switch cases follow the same rule; switch cases use their
+ordinary `break`. No synthetic loop, result annotation or scratch variable is
+needed for a direct destination.
+
+Embedded results and destinations that cannot be assigned directly use
+collision-free temporaries. Tail-result forms release them at their consuming
+expression, including when it throws. Nested calls finish their own argument
+cleanup before a later operand is evaluated. Retained values use protected
+cleanup, and a throwing destructor cannot postpone the remaining releases until
+after an outer catch. Non-reference-counted scalar results need no exceptional
+release wrapper.
+
+Other control-transfer shapes currently retain compiler-owned `do` boundaries.
+Lowering uses no synthetic closure, runtime helper or exception for compiler
+control flow. Earlier call arguments and array elements are evaluated before
+the `when`; later siblings remain after it.
 
 Nested consuming statements own their temporary cleanup. An enclosing `when`
 does not release those temporaries a second time or reach into a nested callable.

@@ -1,0 +1,12 @@
+<?php
+final class Item
+{
+    public function __construct(public string $name) {}
+    public function __destruct() { echo $this->name, '|'; }
+}
+function consume(Item $first, Item $second): void { echo 'consume|'; }
+consume(
+    when (getenv('BRANCH') !== 'other') { return new Item('first'); } else { return new Item('first'); },
+    when (getenv('BRANCH') !== 'other') { return new Item('second'); } else { return new Item('second'); },
+);
+echo 'after';
