@@ -16,7 +16,7 @@ use PhpParser\Node\Stmt;
 test('when lowering rejects surviving markers but permits authored null values', function (bool $loseSite): void {
     $source = new SourceFile('/project/main.ppphp', 'main.ppphp', FileKind::Ppphp, <<<'PPP'
 <?php
-?int $value = when (getenv('READY') === '1') { return null; } else { return 2; };
+?int $value = when (getenv('READY') === '1') { return null; } else when (getenv('READY') === '2') { return 1; } else { return 2; };
 PPP);
     $parse = (new PpphpParser())->parse($source);
     expect($parse->parsedFile)->not->toBeNull();
@@ -28,6 +28,8 @@ PPP);
     expect($analysis->isSuccessful)->toBeTrue()->and($model)->not->toBeNull();
     if ($loseSite) {
         // Simulate a future checker/lowerer mismatch after successful analysis.
+        // Keep a statement-level when: two bare branches normalize to a native
+        // expression before statement dispatch and would leave no marker here.
         // Normal unsupported input is rejected as P5005 before reaching this pass.
         $when = $model->whenExpressions->expressions[0];
         $model->whenExpressions->record(new WhenExpressionAnalysis(

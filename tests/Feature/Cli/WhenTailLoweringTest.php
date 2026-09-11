@@ -17,6 +17,13 @@ function buildWhenTailProject(string $root): ApplicationTester
     return $tester;
 }
 
+function createLifetimeWhen(string $value, bool $bare): string
+{
+    $last = $bare ? '' : 'else when (getenv("BRANCH") === "third") { return ' . $value . '; } ';
+
+    return 'when (getenv("BRANCH") === "first") { return ' . $value . '; } ' . $last . 'else { return ' . $value . '; }';
+}
+
 test('tail when branches build as ordinary conditional statements', function (string $body, string $expected, array $variants = []): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
@@ -65,10 +72,10 @@ test('homepage when build uses the approved shipping shape', function (): void {
     expect($run->getOutput())->toBe('1450|700')->and($run->getErrorOutput())->toBe('');
 });
 
-test('tail result temporaries preserve native lifetime on success and exceptions', function (): void {
+test('tail result temporaries preserve native lifetime on success and exceptions', function (bool $bare): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
-    $this->writeFile($root . '/src/main.ppphp', <<<'PPP'
+    $template = <<<'PPP'
 <?php
 ini_set('zend.exception_ignore_args', getenv('TRACE_ARGS') === '1' ? '0' : '1');
 final class LifetimeProbe {
@@ -84,16 +91,21 @@ function consume(LifetimeProbe $value): void throws RuntimeException {
     if (getenv('FAULT') === 'exception') { throw new RuntimeException('consumer'); }
 }
 try {
-    consume(when (getenv('BRANCH') !== 'other') { return new LifetimeProbe(); } else { return new LifetimeProbe(); });
+    consume(VALUE);
 } catch (Throwable $error) { echo 'caught:', $error::class, '|'; }
 echo 'after|';
-PPP);
+PPP;
+    $this->writeFile($root . '/src/main.ppphp', str_replace('VALUE', createLifetimeWhen('new LifetimeProbe()', $bare), $template));
     $build = buildWhenTailProject($root);
     expect($build->getStatusCode())->toBe(0, $build->getDisplay());
     $php = file_get_contents($root . '/build/ppphp/main.php');
-    expect($php)->toContain('finally {', 'unset(')->not->toContain('do {')
-        ->not->toContain('@var LifetimeProbe $__ppphp_when_');
-    $reference = str_replace("consume(when (getenv('BRANCH') !== 'other') { return new LifetimeProbe(); } else { return new LifetimeProbe(); });", 'consume(new LifetimeProbe());', file_get_contents($root . '/src/main.ppphp'));
+    expect($php)->not->toContain('do {')->not->toContain('@var LifetimeProbe $__ppphp_when_');
+    if ($bare) {
+        expect($php)->not->toContain('__ppphp_when_')->not->toContain('finally {');
+    } else {
+        expect($php)->toContain('finally {', 'unset(');
+    }
+    $reference = str_replace('VALUE', 'new LifetimeProbe()', $template);
     $reference = str_replace(' throws RuntimeException', '', $reference);
     $this->writeFile($root . '/reference.php', $reference);
     foreach (['0', '1'] as $trace) {
@@ -107,9 +119,9 @@ PPP);
                 ->and($compiled->getErrorOutput())->toBe('');
         }
     }
-});
+})->with(['native ternary' => [true], 'statement-level result' => [false]]);
 
-test('nested consumers release their own argument before the next operation', function (string $body): void {
+test('nested consumers release their own argument before the next operation', function (string $body, bool $bare): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
     $template = <<<'PHP'
@@ -136,8 +148,8 @@ echo 'after|';
 PHP;
     $template = str_replace('BODY', $body, $template);
     $source = str_replace(['FIRST', 'SECOND'], [
-        'when (getenv("BRANCH") !== "other") { return new Probe("first"); } else { return new Probe("first"); }',
-        'when (getenv("BRANCH") !== "other") { return new Probe("second"); } else { return new Probe("second"); }',
+        createLifetimeWhen('new Probe("first")', $bare),
+        createLifetimeWhen('new Probe("second")', $bare),
     ], $template);
     $this->writeFile($root . '/src/main.ppphp', $source);
     $this->writeFile($root . '/reference.php', str_replace(['FIRST', 'SECOND', 'int $sum'], ['new Probe("first")', 'new Probe("second")', '$sum'], $template));
@@ -167,9 +179,9 @@ PHP;
     'second nullsafe link' => ['maybe(getenv("READY") === "yes")?->optional(FIRST)?->consume(SECOND);'],
     'nullsafe return value' => ['function result(): ?int { return maybe(getenv("READY") === "yes")?->step(FIRST)->measure(SECOND); } echo result() ?? 0, "|";'],
     'nullsafe property chain' => ['maybe(getenv("READY") === "yes")?->following?->consume(FIRST);'],
-]);
+])->with(['native ternary' => [true], 'statement-level result' => [false]]);
 
-test('a throwing argument destructor does not defer later cleanup past the catch', function (): void {
+test('a throwing argument destructor does not defer later cleanup past the catch', function (bool $bare): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
     $template = <<<'PHP'
@@ -187,8 +199,8 @@ try { consume(FIRST, SECOND); } catch (Throwable) { echo 'catch|'; }
 echo 'after';
 PHP;
     $this->writeFile($root . '/src/main.ppphp', str_replace(['FIRST', 'SECOND'], [
-        'when (getenv("BRANCH") !== "other") { return new Probe("first"); } else { return new Probe("first"); }',
-        'when (getenv("BRANCH") !== "other") { return new Probe("second"); } else { return new Probe("second"); }',
+        createLifetimeWhen('new Probe("first")', $bare),
+        createLifetimeWhen('new Probe("second")', $bare),
     ], $template));
     $this->writeFile($root . '/reference.php', str_replace(['FIRST', 'SECOND'], ['new Probe("first")', 'new Probe("second")'], $template));
     $build = buildWhenTailProject($root);
@@ -199,9 +211,9 @@ PHP;
     $compiled->mustRun();
     expect($native->getOutput())->toBe('consume|first|second|catch|after')
         ->and($compiled->getOutput())->toBe($native->getOutput())->and($compiled->getErrorOutput())->toBe('');
-});
+})->with(['native ternary' => [true], 'statement-level result' => [false]]);
 
-test('access-chain cleanup preserves receiver order when a release throws', function (): void {
+test('access-chain cleanup preserves receiver order when a release throws', function (bool $bare): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
     $template = <<<'PHP'
@@ -222,8 +234,8 @@ catch (Throwable) { echo 'caught|'; }
 echo 'after';
 PHP;
     $this->writeFile($root . '/src/main.ppphp', str_replace(['FIRST', 'SECOND'], [
-        'when (getenv("BRANCH") !== "other") { return new Probe("first"); } else { return new Probe("first"); }',
-        'when (getenv("BRANCH") !== "other") { return new Probe("second"); } else { return new Probe("second"); }',
+        createLifetimeWhen('new Probe("first")', $bare),
+        createLifetimeWhen('new Probe("second")', $bare),
     ], $template));
     $this->writeFile($root . '/reference.php', str_replace(['FIRST', 'SECOND'], ['new Probe("first")', 'new Probe("second")'], $template));
     $build = buildWhenTailProject($root);
@@ -235,7 +247,7 @@ PHP;
         $compiled->mustRun();
         expect($compiled->getOutput())->toBe($native->getOutput(), $fault)->and($compiled->getErrorOutput())->toBe('');
     }
-});
+})->with(['native ternary' => [true], 'statement-level result' => [false]]);
 
 test('tail result golden preserves the required emitted shape', function (string $fixture, string $expected, array $variants = []): void {
     $root = $this->createTemporaryDirectory();
@@ -268,16 +280,16 @@ test('tail result golden preserves the required emitted shape', function (string
     ]],
 ]);
 
-test('refcounted tail arguments release retained memory before an outer catch', function (string $type, string $value): void {
+test('refcounted tail arguments release retained memory before an outer catch', function (string $type, string $value, bool $bare): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
-    $source = str_replace(['TYPE', 'VALUE'], [$type, $value], <<<'PPP'
+    $source = str_replace(['TYPE', 'VALUE'], [$type, createLifetimeWhen($value, $bare)], <<<'PPP'
 <?php
 ini_set('zend.exception_ignore_args', '1');
 function consume(TYPE $value): void { throw new Error('consumer'); }
 int $before = memory_get_usage(true);
 try {
-    consume(when (getenv('BRANCH') !== 'other') { return VALUE; } else { return VALUE; });
+    consume(VALUE);
 } catch (Error) {
     echo memory_get_usage(true) - $before < 8 * 1024 * 1024 ? 'released' : 'retained';
 }
@@ -286,7 +298,7 @@ PPP);
     $build = buildWhenTailProject($root);
     expect($build->getStatusCode())->toBe(0, $build->getDisplay());
     $reference = str_replace(
-        ["when (getenv('BRANCH') !== 'other') { return $value; } else { return $value; }", 'int $before', 'array<array<string>>', 'array<string>'],
+        [createLifetimeWhen($value, $bare), 'int $before', 'array<array<string>>', 'array<string>'],
         [$value, '$before', 'array', 'array'],
         $source,
     );
@@ -301,4 +313,4 @@ PPP);
     'string' => ['string', 'str_repeat("x", 16 * 1024 * 1024)'],
     'array' => ['array<string>', '[str_repeat("x", 16 * 1024 * 1024)]'],
     'nested array' => ['array<array<string>>', '[[str_repeat("x", 16 * 1024 * 1024)]]'],
-]);
+])->with(['native ternary' => [true], 'statement-level result' => [false]]);

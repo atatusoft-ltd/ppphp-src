@@ -15,6 +15,7 @@ test('stable destinations and operands have no prerequisite or cleanup wrapper',
     $php = file_get_contents($root . '/build/ppphp/main.php');
     GoldenFile::assertMatches($fixtures . '/' . $fixture . '.php', $php);
     expect($php)->not->toContain('__ppphp_when_prerequisite')->not->toContain('try {')->not->toContain('finally {');
+    expect($php)->toContain('elseif ($tier === 2)');
     if ($fixture === 'StableDestinations') {
         expect($php)->not->toContain('__ppphp_when_')->not->toContain('unset(');
     }
@@ -22,20 +23,20 @@ test('stable destinations and operands have no prerequisite or cleanup wrapper',
     $run->mustRun();
     expect($run->getOutput())->toBe($expected)->and($run->getErrorOutput())->toBe('');
 })->with([
-    ['StableDestinations', '90|9|100|10|90|9|100|10|'],
-    ['StableOperands', '7:1|7:1|7:2|7:2|7:1|7:1|7:2|7:2|'],
+    ['StableDestinations', '90|9|100|10|110|11|90|9|100|10|110|11|'],
+    ['StableOperands', '7:1|7:1|7:2|7:2|7:3|7:3|7:1|7:1|7:2|7:2|7:3|7:3|'],
 ]);
 
 test('stable non-call operands and resolved references need no prerequisite', function (string $body, string $expected): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
     $this->writeFile($root . '/src/main.ppphp', str_replace(['BODY', 'WHEN'], [
-        $body, 'when ($vip) { return 1; } else { return 2; }',
+        $body, 'when ($tier === 1) { return 1; } else when ($tier === 2) { return 2; } else { return 3; }',
     ], <<<'PPP'
 <?php
 function replace(int &$value, int $replacement): void { $value = $replacement; }
-function choose(int $left, bool $vip): mixed { BODY }
-echo json_encode(choose(7, true)), '|', json_encode(choose(7, false));
+function choose(int $left, int $tier): mixed { BODY }
+echo json_encode(choose(7, 1)), '|', json_encode(choose(7, 2));
 PPP));
     $build = new Process([PHP_BINARY, dirname(__DIR__, 3) . '/bin/ppphp', 'build', '--working-directory', $root, '--format=json']);
     $build->mustRun();
@@ -57,13 +58,13 @@ test('a property result temporary does not capture its direct variable receiver'
 <?php
 class Box {
     public int $total = 7;
-    public function apply(bool $vip): void {
-        $this->total = when ($vip) { return $this->total; } else { return 2; };
+    public function apply(int $tier): void {
+        $this->total = when ($tier === 1) { return $this->total; } else when ($tier === 2) { return 2; } else { return 3; };
         echo $this->total;
     }
 }
-(new Box())->apply(true);
-(new Box())->apply(false);
+(new Box())->apply(1);
+(new Box())->apply(2);
 PPP);
     $build = new Process([PHP_BINARY, dirname(__DIR__, 3) . '/bin/ppphp', 'build', '--working-directory', $root, '--format=json']);
     $build->mustRun();
@@ -89,13 +90,13 @@ test('capture elision preserves aliases and all intervening operands', function 
     }
 })->with([
     'later ordinary argument writes earlier operand' => [
-        'function show(int $a, int $b, int $c): void { echo $a, $b, $c; } function invoke(int $x, bool $vip): void { show($x, $x = 2, WHEN); } invoke(1, true); invoke(1, false);',
-        'when ($vip) { return 3; } else { return 4; }', '$vip ? 3 : 4', '123124',
+        'function show(int $a, int $b, int $c): void { echo $a, $b, $c; } function invoke(int $x, int $tier): void { show($x, $x = 2, WHEN); } invoke(1, 1); invoke(1, 2);',
+        'when ($tier === 1) { return 3; } else when ($tier === 2) { return 4; } else { return 5; }', '$tier === 1 ? 3 : ($tier === 2 ? 4 : 5)', '123124',
     ],
     'later when writes an operand skipped by an earlier when' => [
-        'function show(int $a, int $b, int $c): void { echo $a, $b, $c; } function invoke(int $x, bool $vip): void { show($x, WHEN); } invoke(1, true); invoke(1, false);',
-        'when ($vip) { return 3; } else { return 4; }, when ($vip) { $x = 7; return 5; } else { $x = 8; return 6; }',
-        '($vip ? 3 : 4), ($vip ? (($x = 7) - 2) : (($x = 8) - 2))', '135146',
+        'function show(int $a, int $b, int $c): void { echo $a, $b, $c; } function invoke(int $x, int $tier): void { show($x, WHEN); } invoke(1, 1); invoke(1, 2);',
+        'when ($tier === 1) { return 3; } else when ($tier === 2) { return 4; } else { return 5; }, when ($tier === 1) { $x = 7; return 5; } else { $x = 8; return 6; }',
+        '($tier === 1 ? 3 : ($tier === 2 ? 4 : 5)), ($tier === 1 ? (($x = 7) - 2) : (($x = 8) - 2))', '135146',
     ],
     'write through aliased parameter' => [
         'function show(int $a, int $b): void { echo $a, $b; } function invoke(int &$value, int &$alias, bool $vip): void { show($value, WHEN); echo $value; } function start(int $value): void { invoke($value, $value, true); } start(1);',
@@ -113,11 +114,11 @@ test('capture elision preserves aliases and all intervening operands', function 
         '$vip ? (($box = new Box())->total + 2) : 3', '2',
     ],
     'receiver expression evaluated before RHS' => [
-        'class Box { public int $total = 0; } function receiver(Box $box): Box { echo "receiver|"; return $box; } function branch(): int { echo "branch|"; return 2; } function invoke(Box $box, bool $vip): void { receiver($box)->total = WHEN; echo $box->total; } invoke(new Box(), true);',
-        'when ($vip) { return branch(); } else { return 3; }', '$vip ? branch() : 3', 'receiver|branch|2',
+        'class Box { public int $total = 0; } function receiver(Box $box): Box { echo "receiver|"; return $box; } function branch(): int { echo "branch|"; return 2; } function invoke(Box $box, int $tier): void { receiver($box)->total = WHEN; echo $box->total; } invoke(new Box(), 1);',
+        'when ($tier === 1) { return branch(); } else when ($tier === 2) { return 3; } else { return 4; }', '$tier === 1 ? branch() : ($tier === 2 ? 3 : 4)', 'receiver|branch|2',
     ],
     'by-reference call mutates earlier operand' => [
-        'function replace(int &$value): int { $value = 7; return 2; } function show(int $a, int $b): void { echo $a, $b; } function invoke(int $value, bool $vip): void { show($value, WHEN); echo $value; } invoke(1, true);',
-        'when ($vip) { return replace($value); } else { return 3; }', '$vip ? replace($value) : 3', '127',
+        'function replace(int &$value): int { $value = 7; return 2; } function show(int $a, int $b): void { echo $a, $b; } function invoke(int $value, int $tier): void { show($value, WHEN); echo $value; } invoke(1, 1);',
+        'when ($tier === 1) { return replace($value); } else when ($tier === 2) { return 3; } else { return 4; }', '$tier === 1 ? replace($value) : ($tier === 2 ? 3 : 4)', '127',
     ],
 ]);

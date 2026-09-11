@@ -2,41 +2,51 @@
 declare(strict_types=1);
 class Box {
     public function consume(int $literal, int $flag): void { echo $literal, ':', $flag, '|'; }
-    public function apply(bool $vip): void {
-        if ($vip) {
+    public function apply(int $tier): void {
+        if ($tier === 1) {
             $__ppphp_when_184 = 1;
-        } else {
+        } elseif ($tier === 2) {
             $__ppphp_when_184 = 2;
+        } else {
+            $__ppphp_when_184 = 3;
         }
         consume($this, 7, $__ppphp_when_184);
         unset($__ppphp_when_184);
-        if ($vip) {
-            $__ppphp_when_257 = 1;
+        if ($tier === 1) {
+            $__ppphp_when_302 = 1;
+        } elseif ($tier === 2) {
+            $__ppphp_when_302 = 2;
         } else {
-            $__ppphp_when_257 = 2;
+            $__ppphp_when_302 = 3;
         }
-        $this->consume(7, $__ppphp_when_257);
-        unset($__ppphp_when_257);
+        $this->consume(7, $__ppphp_when_302);
+        unset($__ppphp_when_302);
     }
 }
 function consume(Box $box, int $literal, int $flag): void { $box->consume($literal, $flag); }
-function apply(Box $box, bool $vip): void {
-    if ($vip) {
-        $__ppphp_when_471 = 1;
+function apply(Box $box, int $tier): void {
+    if ($tier === 1) {
+        $__ppphp_when_561 = 1;
+    } elseif ($tier === 2) {
+        $__ppphp_when_561 = 2;
     } else {
-        $__ppphp_when_471 = 2;
+        $__ppphp_when_561 = 3;
     }
-    consume($box, 7, $__ppphp_when_471);
-    unset($__ppphp_when_471);
-    if ($vip) {
-        $__ppphp_when_539 = 1;
+    consume($box, 7, $__ppphp_when_561);
+    unset($__ppphp_when_561);
+    if ($tier === 1) {
+        $__ppphp_when_674 = 1;
+    } elseif ($tier === 2) {
+        $__ppphp_when_674 = 2;
     } else {
-        $__ppphp_when_539 = 2;
+        $__ppphp_when_674 = 3;
     }
-    $box->consume(7, $__ppphp_when_539);
-    unset($__ppphp_when_539);
+    $box->consume(7, $__ppphp_when_674);
+    unset($__ppphp_when_674);
 }
-(new Box())->apply(true);
-(new Box())->apply(false);
-apply(new Box(), true);
-apply(new Box(), false);
+(new Box())->apply(1);
+(new Box())->apply(2);
+(new Box())->apply(3);
+apply(new Box(), 1);
+apply(new Box(), 2);
+apply(new Box(), 3);

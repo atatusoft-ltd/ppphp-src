@@ -1,17 +1,19 @@
 <?php
 class Box {
     public function consume(int $literal, int $flag): void { echo $literal, ':', $flag, '|'; }
-    public function apply(bool $vip): void {
-        consume($this, 7, when ($vip) { return 1; } else { return 2; });
-        $this->consume(7, when ($vip) { return 1; } else { return 2; });
+    public function apply(int $tier): void {
+        consume($this, 7, when ($tier === 1) { return 1; } else when ($tier === 2) { return 2; } else { return 3; });
+        $this->consume(7, when ($tier === 1) { return 1; } else when ($tier === 2) { return 2; } else { return 3; });
     }
 }
 function consume(Box $box, int $literal, int $flag): void { $box->consume($literal, $flag); }
-function apply(Box $box, bool $vip): void {
-    consume($box, 7, when ($vip) { return 1; } else { return 2; });
-    $box->consume(7, when ($vip) { return 1; } else { return 2; });
+function apply(Box $box, int $tier): void {
+    consume($box, 7, when ($tier === 1) { return 1; } else when ($tier === 2) { return 2; } else { return 3; });
+    $box->consume(7, when ($tier === 1) { return 1; } else when ($tier === 2) { return 2; } else { return 3; });
 }
-(new Box())->apply(true);
-(new Box())->apply(false);
-apply(new Box(), true);
-apply(new Box(), false);
+(new Box())->apply(1);
+(new Box())->apply(2);
+(new Box())->apply(3);
+apply(new Box(), 1);
+apply(new Box(), 2);
+apply(new Box(), 3);

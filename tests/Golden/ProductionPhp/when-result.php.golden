@@ -6,10 +6,6 @@ function identity(string $value): string { return $value; }
  */
 function describeUsers(array $names): string {
     /** @var int $count */ $count = count($names);
-    if ($count === 0) {
-        return "No users";
-    } else {
-        return $count . " users: " . implode(", ", $names);
-    }
+    return $count === 0 ? "No users" : $count . " users: " . implode(", ", $names);
 }
 echo describeUsers([]), "|", describeUsers(["Maya"]);

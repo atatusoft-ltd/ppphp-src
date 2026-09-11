@@ -557,18 +557,18 @@ PPP);
         ->and($runtime->getOutput())->toBe('value');
 });
 
-test('generated condition result and temporary spans map to the original when source', function (): void {
-    $source = <<<'PPP'
+test('generated condition result and temporary spans map to the original when source', function (bool $bare): void {
+    $source = str_replace('EXTRA', $bare ? '' : 'else when ($score >= 50) { return "Pass"; }', <<<'PPP'
 <?php
 function label(int $score): string
 {
     return strtolower(when ($score >= 80) {
         return 'Excellent';
-    } else {
+    } EXTRA else {
         return 'Fail';
     });
 }
-PPP;
+PPP);
     $generated = lowerStageNineSource($source);
     $condition = strpos($generated->contents, '$score >= 80');
     $result = strpos($generated->contents, "'Excellent'");
@@ -577,8 +577,15 @@ PPP;
 
     expect($condition)->toBeInt()
         ->and($result)->toBeInt()
-        ->and($temporary)->toBeInt()
         ->and($generated->sourceMap->resolveOriginalOffset($condition))->toBe(strpos($source, '$score >= 80'))
-        ->and($generated->sourceMap->resolveOriginalOffset($result))->toBe(strpos($source, "'Excellent'"))
-        ->and($generated->sourceMap->resolveOriginalOffset($temporary))->toBe(strpos($source, 'when'));
-});
+        ->and($generated->sourceMap->resolveOriginalOffset($result))->toBe(strpos($source, "'Excellent'"));
+    $fallback = strpos($generated->contents, "'Fail'");
+    expect($fallback)->toBeInt()
+        ->and($generated->sourceMap->resolveOriginalOffset($fallback))->toBe(strpos($source, "'Fail'"));
+    if ($bare) {
+        expect($temporary)->toBeNull()->and($generated->contents)->toContain(' ? ');
+    } else {
+        expect($temporary)->toBeInt()
+            ->and($generated->sourceMap->resolveOriginalOffset($temporary))->toBe(strpos($source, 'when'));
+    }
+})->with(['native ternary' => true, 'statement-level result' => false]);

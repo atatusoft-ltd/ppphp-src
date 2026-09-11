@@ -190,7 +190,9 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             }
             $end = $offset + strlen($text);
             if ($this->overlaps($start, $end, $occupied)) {
-                continue;
+                // Another expression on this line already owns the prefix.
+                // findUnmappedText proved the expression itself is still free.
+                $start = $offset;
             }
             $occupied[] = [$start, $end];
             $mappings[] = new SourceEditMapping($start, $end, $origin);
@@ -1819,6 +1821,18 @@ final class LowerWhenExpressionsPass implements TranspilationPass
     private function copyNode(Node $node): Node
     {
         $copy = clone $node;
+        if ($node instanceof Expr) {
+            $analysis = $this->context->semanticModel->whenExpressions->findPlaceholder($node);
+            $operands = $analysis === null ? null : (new WhenTailShape())->resolveTernaryOperands($analysis);
+            if ($operands !== null) {
+                // Expose native expressions before deciding whether a parent
+                // call or nullsafe chain needs any statement-level lowering.
+                $copy = new Expr\Ternary(
+                    ...$operands,
+                    attributes: array_diff_key($node->getAttributes(), ['ppphpWhenExpressionId' => true]),
+                );
+            }
+        }
         if ($copy instanceof Expr && $node instanceof Expr) {
             $this->sourceExpressions[$copy] = $node;
         }

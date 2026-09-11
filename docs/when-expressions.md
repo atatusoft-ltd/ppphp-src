@@ -56,7 +56,14 @@ Checked errors from conditions, statements, results, nested `when` expressions, 
 
 The frontend keeps exact spans and hierarchical nested syntax, then parses conditions and branch bodies with the PHP 8.4 parser after applying descendant ++PHP normalization. Syntax, semantic, and backend diagnostics map to the original `.ppphp` file.
 
-When branch results are in tail position, lowering emits ordinary
+Two branches containing only a result expression each become a native PHP
+ternary. For example, `when ($express) { return 1200; } else { return 500; }`
+emits `$express ? 1200 : 500`. PHP retains the condition's truthiness, lazy
+branch evaluation, argument binding and nullsafe short-circuiting without
+compiler temporaries. Branch-local statement comments retain their statement
+context instead of being discarded by this simplification.
+
+Other branch results in tail position lower to ordinary
 `if`/`elseif`/`else` statements. A destination with stable components, such as a
 plain local, `$this->property`, a named static property, or a property on a
 provably unchanged local receiver, is assigned directly when the block does

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Transpilation;
 
+use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionAnalysis;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
@@ -12,6 +13,30 @@ use PhpParser\Node\Stmt;
 /** Identifies branches whose results need no non-local control transfer. */
 final class WhenTailShape
 {
+    /** @return array{Expr, Expr, Expr}|null */
+    public function resolveTernaryOperands(WhenExpressionAnalysis $analysis): ?array
+    {
+        if (count($analysis->branches) !== 2) {
+            return null;
+        }
+        [$first, $last] = $analysis->branches;
+        if ($first->condition === null || !$last->syntax instanceof WhenElseBranch
+            || count($first->statements) !== 1 || count($last->statements) !== 1) {
+            return null;
+        }
+        $if = $first->statements[0];
+        $else = $last->statements[0];
+        if (!$if instanceof Stmt\Return_ || !$else instanceof Stmt\Return_
+            || $if->expr === null || $else->expr === null
+            // Statement comments can include branch-local type assertions.
+            // Keep their statement context rather than drop or relocate them.
+            || $if->getComments() !== [] || $else->getComments() !== []) {
+            return null;
+        }
+
+        return [$first->condition, $if->expr, $else->expr];
+    }
+
     public function accepts(WhenExpressionAnalysis $analysis): bool
     {
         foreach ($analysis->branches as $branch) {

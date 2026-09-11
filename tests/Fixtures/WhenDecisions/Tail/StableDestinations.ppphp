@@ -2,18 +2,20 @@
 class Box {
     public int $total = 0;
     public static int $shared = 0;
-    public function apply(bool $vip): void {
-        $this->total = when ($vip) { return 90; } else { return 100; };
-        self::$shared = when ($vip) { return 9; } else { return 10; };
+    public function apply(int $tier): void {
+        $this->total = when ($tier === 1) { return 90; } else when ($tier === 2) { return 100; } else { return 110; };
+        self::$shared = when ($tier === 1) { return 9; } else when ($tier === 2) { return 10; } else { return 11; };
         echo $this->total, '|', self::$shared, '|';
     }
 }
-function assignBox(Box $box, bool $vip): void {
-    $box->total = when ($vip) { return 90; } else { return 100; };
-    Box::$shared = when ($vip) { return 9; } else { return 10; };
+function assignBox(Box $box, int $tier): void {
+    $box->total = when ($tier === 1) { return 90; } else when ($tier === 2) { return 100; } else { return 110; };
+    Box::$shared = when ($tier === 1) { return 9; } else when ($tier === 2) { return 10; } else { return 11; };
     echo $box->total, '|', Box::$shared, '|';
 }
-(new Box())->apply(true);
-(new Box())->apply(false);
-assignBox(new Box(), true);
-assignBox(new Box(), false);
+(new Box())->apply(1);
+(new Box())->apply(2);
+(new Box())->apply(3);
+assignBox(new Box(), 1);
+assignBox(new Box(), 2);
+assignBox(new Box(), 3);
