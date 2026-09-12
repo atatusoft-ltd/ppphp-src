@@ -143,8 +143,13 @@ The fault-injection sequence uses the same progression code to reach pending lin
 rather than assuming one analyzer round; its complete sequential regression passes.
 
 Ordinary CI exhausted its existing 30-minute job budget while the expanded Pest
-suite was still passing. CI now runs four isolated shards per PHP host, retaining
-that deadline. All 2,169 listed tests occur exactly once across the four shards.
+suite was still passing. The initial four-way split also left its busiest shard
+near that limit: the final documentation run passed all 660 tests in that shard
+on PHP 8.4 in 1,737.80 seconds, while its PHP 8.5 counterpart hit the job deadline.
+CI now runs six isolated shards per PHP host, retaining that deadline. Timings
+from all four completed PHP 8.4 shards estimate the busiest new shard at about
+19 minutes; this is a scheduling estimate, not a new measured runtime result.
+All 2,169 listed tests occur exactly once across the six shards.
 The existing required PHP checks depend on every shard succeeding and then run
 `composer check:contracts`; `composer check` still includes those gates and the
 entire test suite. No test or aggregate check was removed.

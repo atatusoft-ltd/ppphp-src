@@ -87,14 +87,14 @@ jobs:
         run: git diff --exit-code
 
   tests:
-    name: PHP ${{ matrix.php }} tests (${{ matrix.shard }}/4)
+    name: PHP ${{ matrix.php }} tests (${{ matrix.shard }}/6)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         php: ['8.4', '8.5']
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -105,7 +105,7 @@ jobs:
           coverage: none
           tools: composer:2.10.3@sha256:7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
       - run: composer install --prefer-dist --no-progress --no-ansi
-      - run: composer test -- --shard=${{ matrix.shard }}/4 --fail-on-empty-test-suite
+      - run: composer test -- --shard=${{ matrix.shard }}/6 --fail-on-empty-test-suite
       - run: git diff --exit-code
 
   distribution:
