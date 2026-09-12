@@ -297,14 +297,19 @@ class NativeTests(unittest.TestCase):
         patched = source_build.patch_link_recording(invoke)
         self.assertTrue(patched.endswith(invoke))
         self.assertIn('record-link "${args[@]}" ${EMCC_FLAGS:-}', patched)
+        self.assertIn('export EMCC_DEBUG=1 EMCC_TEMP_DIR=/tmp/ppphp-final-link', patched)
+        self.assertIn('mkdir "$EMCC_TEMP_DIR"', patched)
         with self.assertRaises(ValueError):
             source_build.patch_link_recording(invoke + '\n' + invoke)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'command.json'
             arguments = ['input with space.c', '-o', '/build/output/php.js', '-sASYNCIFY=1']
-            source_build.record_link(arguments, path)
+            with patch.dict('os.environ', {'EMCC_DEBUG': '1', 'EMCC_TEMP_DIR': '/tmp/ppphp-final-link'}):
+                source_build.record_link(arguments, path)
             self.assertEqual(json.loads(path.read_text())['argv'],
                 ['/root/emsdk/upstream/emscripten/emcc2', *arguments])
+            self.assertEqual(json.loads(path.read_text())['environment'],
+                {'EMCC_DEBUG': '1', 'EMCC_TEMP_DIR': '/tmp/ppphp-final-link'})
             with self.assertRaises(FileExistsError):
                 source_build.record_link(arguments, path)
 

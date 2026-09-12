@@ -23,6 +23,8 @@ def patch_link_recording(wrapper: str) -> str:
     invoke = '/root/emsdk/upstream/emscripten/emcc2 "${args[@]}" ${EMCC_FLAGS:-}'
     return prepare.replace_exact(wrapper, invoke,
         'if [[ " ${args[*]} " == *" -o /build/output/php.js "* ]]; then\n'
+        '    export EMCC_DEBUG=1 EMCC_TEMP_DIR=/tmp/ppphp-final-link\n'
+        '    mkdir "$EMCC_TEMP_DIR"\n'
         '    python3 /builder/source-build.py record-link "${args[@]}" ${EMCC_FLAGS:-}\n'
         'fi\n' + invoke)
 
@@ -30,6 +32,7 @@ def patch_link_recording(wrapper: str) -> str:
 def record_link(arguments: list[str], destination: Path) -> None:
     with destination.open('xb') as output:
         output.write(native.canonical({'cwd': os.getcwd(),
+            'environment': {key: os.environ[key] for key in ('EMCC_DEBUG', 'EMCC_TEMP_DIR') if key in os.environ},
             'argv': ['/root/emsdk/upstream/emscripten/emcc2', *arguments]}))
 
 

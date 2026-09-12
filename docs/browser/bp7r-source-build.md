@@ -103,6 +103,13 @@ dereferences installed symlinks. Validate archive paths and internal links befor
 extracting `native-checkpoint.tar` into its build directory for comparison.
 Comparison checks every installed inventory against its producing receipt before
 comparing the two builds; identical transport damage cannot count as reproducibility.
+The final link alone uses Emscripten's canonical temporary-directory mode
+(`EMCC_DEBUG=1` with a fresh `EMCC_TEMP_DIR`). The pinned SDK otherwise generates
+random temporary object paths that leak into its link map. This supported setting
+retains linker intermediates and enables build logging; the explicit optimization,
+PHP debug and Asyncify settings remain unchanged. Its two environment values are
+recorded with the final command. The map is compared unchanged, not rewritten
+after linking or omitted from reproducibility evidence.
 Ordinary CI runs fast recipe tests, not the expensive historical two-profile build.
 The workflow caches only fully verified source downloads, immediately after
 acquisition so a later compile failure does not discard them. Cache identity
