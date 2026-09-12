@@ -98,6 +98,17 @@ class NativeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 native_recipes.patch_source(path, 'overflow2', 'gd_checked_multiply_overflow')
 
+    def test_gd_uses_the_real_static_avif_package_and_imported_target(self):
+        source = ('FIND_PACKAGE(libavif 0.8.2 REQUIRED CONFIG)\n'
+                  'SET(HAVE_LIBAVIF 1)\nSET(AVIF_LIBRARIES avif)\nSET(AVIF_FOUND 1)')
+        patched = native_recipes.patch_gd_avif_config(source)
+        self.assertIn('PKG_CHECK_MODULES(AVIF REQUIRED IMPORTED_TARGET libavif>=0.8.2)', patched)
+        self.assertIn('SET(AVIF_LIBRARIES PkgConfig::AVIF)', patched)
+        self.assertIn('SET(HAVE_LIBAVIF 1)', patched)
+        for invalid in [patched, source + source, source.replace('SET(AVIF_LIBRARIES avif)', '')]:
+            with self.assertRaises(ValueError):
+                native_recipes.patch_gd_avif_config(invalid)
+
     def test_bcmath_security_patch_updates_the_copy_endpoint_once(self):
         source = ('\t\t\t\tstr_scale -= fractional_end - fractional_new_end; /* fractional_end >= fractional_new_end */\n'
                   '\t\t\t}')

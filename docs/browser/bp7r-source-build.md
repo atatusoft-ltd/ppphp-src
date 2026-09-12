@@ -44,6 +44,13 @@ The recipe records before/after hashes; strict patch-context checks reject drift
 This is a specific source correction, not a claim that smoke tests exhaustively
 prove memory safety. Fresh candidate execution remains required.
 
+GD's AVIF discovery consumes libavif's installed pkg-config metadata and imported
+target. This static libavif profile does not install a CMake config package;
+pretending to be a VCPKG/shared build would misdescribe the producer. GD's private
+overflow helper is renamed without removing its checks to avoid a final-link
+symbol collision. Its font-cache cleanup is empty only in the retained no-FreeType
+profile, where no font cache exists. Source patch receipts retain each change.
+
 The same review checks PHP-bundled libraries rather than trusting the version
 label alone. The pinned PHP source already bounds PHAR link traversal by the
 manifest size; the native suite tests short, long and tail-into-cycle archives.

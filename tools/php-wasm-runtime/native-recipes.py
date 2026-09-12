@@ -44,6 +44,14 @@ def patch_gif_decoder(content: str) -> str:
                           '\t\t\tif(count != 0) {\n\t\t\t\treturn -2;\n\t\t\t}\n\t\t\treturn -2;\n\t\t}\n\n\t\tincode = code;')
 
 
+def patch_gd_avif_config(content: str) -> str:
+    # libavif exports pkg-config metadata for static builds; its CMake package
+    # is installed only for shared/VCPKG builds. Keep the actual imported target.
+    content = replace_exact(content, 'FIND_PACKAGE(libavif 0.8.2 REQUIRED CONFIG)',
+                            'FIND_PACKAGE(PkgConfig REQUIRED)\n\t\tPKG_CHECK_MODULES(AVIF REQUIRED IMPORTED_TARGET libavif>=0.8.2)')
+    return replace_exact(content, 'SET(AVIF_LIBRARIES avif)', 'SET(AVIF_LIBRARIES PkgConfig::AVIF)')
+
+
 def build(name: str) -> None:
     source = MANIFEST['sources'][name]
     prefix = PREFIX_ROOT / name
@@ -179,6 +187,8 @@ def build(name: str) -> None:
               '-DAVIF_CODEC_RAV1E=OFF', '-DAVIF_CODEC_SVT=OFF', '-DAVIF_LIBYUV=OFF',
               '-DAVIF_BUILD_APPS=OFF', '-DAVIF_BUILD_TESTS=OFF', '-DAVIF_ENABLE_GTEST=OFF')
     elif name == 'libgd':
+        configuration = (root / 'CMakeLists.txt').read_text()
+        patch('CMakeLists.txt', configuration, patch_gd_avif_config(configuration))
         original = (root / 'src/gd_gif_in.c').read_text()
         patch('src/gd_gif_in.c', original, patch_gif_decoder(original))
         # Rename only GD's private helper; keep each implementation's overflow checks intact.
