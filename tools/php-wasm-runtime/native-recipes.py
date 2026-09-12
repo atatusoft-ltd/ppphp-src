@@ -101,7 +101,7 @@ def build(name: str) -> None:
     elif name == 'sqlite':
         run('emcc', *PROFILE['cflags'].split(), '-DSQLITE_THREADSAFE=0',
             '-DSQLITE_ENABLE_COLUMN_METADATA=1', '-DSQLITE_ENABLE_FTS5=1', '-DSQLITE_USE_URI=1',
-            '-DSQLITE_OMIT_LOAD_EXTENSION=1', '-c', 'sqlite3.c', '-o', 'sqlite3.o')
+            '-c', 'sqlite3.c', '-o', 'sqlite3.o')
         run('emar', 'rcsD', 'libsqlite3.a', 'sqlite3.o')
         copy('libsqlite3.a', 'lib/libsqlite3.a')
         copy('sqlite3.h', 'include/sqlite3.h')

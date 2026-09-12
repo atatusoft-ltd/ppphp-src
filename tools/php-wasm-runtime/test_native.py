@@ -6,6 +6,7 @@ import subprocess
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import native
@@ -45,6 +46,32 @@ class NativeTests(unittest.TestCase):
             source['sha256'] = '0' * 64
             with self.assertRaisesRegex(ValueError, 'checksum'):
                 native.verify_source(path, source)
+
+    def test_acquisition_retries_transport_only_and_never_admits_corrupt_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = root / 'valid.tar.gz'
+            source = {**self.archive(archive, [('root/file', b'ok', tarfile.REGTYPE)]),
+                      'url': 'https://example.invalid/source.tar.gz'}
+            manifest = {'sources': {'source': source}}
+            def download(command, **kwargs):
+                self.assertEqual(command[command.index('--retry') + 1], '3')
+                self.assertEqual(command[command.index('--retry-max-time') + 1], '600')
+                self.assertEqual(kwargs['timeout'], 620)
+                Path(command[-1]).write_bytes(archive.read_bytes())
+            with patch.object(native.subprocess, 'run', side_effect=download) as transport:
+                native.acquire(root / 'store', manifest)
+                native.acquire(root / 'store', manifest)
+                self.assertEqual(transport.call_count, 1)
+                (root / 'store/source.tar.gz').write_bytes(b'corrupt')
+                with self.assertRaisesRegex(ValueError, 'checksum'):
+                    native.acquire(root / 'store', manifest)
+                self.assertEqual(transport.call_count, 1)
+            with patch.object(native.subprocess, 'run', side_effect=lambda command, **kw: Path(command[-1]).write_bytes(b'corrupt')) as transport:
+                with self.assertRaisesRegex(ValueError, 'checksum'):
+                    native.acquire(root / 'bad', manifest)
+                self.assertEqual(transport.call_count, 1)
+                self.assertEqual(list((root / 'bad').iterdir()), [])
 
     def test_valid_internal_links_are_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:

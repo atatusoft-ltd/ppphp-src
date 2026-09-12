@@ -170,6 +170,7 @@ def acquire(destination: Path, manifest: dict) -> None:
             try:
                 subprocess.run(['curl', '--fail', '--location', '--proto', '=https', '--proto-redir', '=https',
                                 '--silent', '--show-error', '--connect-timeout', '15', '--max-time', '600',
+                                '--retry', '3', '--retry-max-time', '600',
                                 '--max-filesize', str(source.get('maxBytes', source.get('bytes'))),
                                 source['url'], '--output', str(partial)], check=True, timeout=620)
                 verify_source(partial, source)
