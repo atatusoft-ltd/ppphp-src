@@ -1,7 +1,18 @@
-name: PHP-WASM experimental rebuild
+name: PHP-WASM source rebuild
 
 on:
   workflow_dispatch:
+    inputs:
+      profile:
+        description: Source-built replacement or historical Fiber comparison
+        type: choice
+        options: [source-built, historical]
+        default: source-built
+      clean_builds:
+        description: Independent clean builds (use two for reproducibility qualification)
+        type: choice
+        options: ['1', '2']
+        default: '1'
   push:
     branches: [develop]
     paths:
@@ -16,7 +27,86 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  recipes:
+    name: Verify source-build tooling
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: |
+          python3 -m unittest discover -s tools/php-wasm-runtime -p 'test_*.py' -v
+          node --test tools/php-wasm-runtime/verify-built.test.mjs
+          bash -n tools/php-wasm-runtime/rebuild.sh
+  source-built:
+    name: Build and test source-pinned candidate
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'source-built'
+    needs: recipes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      COMPOSER_NO_INTERACTION: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      CLEAN_BUILDS: ${{ inputs.clean_builds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: composer:2.10.3@sha256:7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.16.0'
+      - name: Preflight and locked harness
+        run: |
+          docker info --format '{{.OSType}} {{.Architecture}} {{.MemTotal}}'
+          df -h /tmp
+          free -h
+          composer install --prefer-dist --no-progress --no-ansi
+          npm ci --prefix tools/web-spike --no-audit --no-fund
+      - name: Acquire and verify sources before compilation
+        timeout-minutes: 30
+        run: python3 tools/php-wasm-runtime/native.py acquire --store /tmp/ppphp-native-inputs
+      - name: Build clean target libraries and PHP, then test each candidate
+        run: |
+          for iteration in $(seq 1 "$CLEAN_BUILDS"); do
+            python3 tools/php-wasm-runtime/source-build.py build --clean --store /tmp/ppphp-native-inputs --output "/tmp/ppphp-source-build-$iteration"
+            node tools/php-wasm-runtime/verify-built.mjs --runtime "/tmp/ppphp-source-build-$iteration/candidate" --expect candidate --output "/tmp/ppphp-source-build-$iteration/compatibility"
+          done
+      - name: Retain source-built outputs and provenance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: php-wasm-source-built-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            /tmp/ppphp-source-build-*/candidate/
+            /tmp/ppphp-source-build-*/native-checkpoint/
+            /tmp/ppphp-source-build-*/execution.json
+            /tmp/ppphp-source-build-*/context/*.Dockerfile
+            /tmp/ppphp-source-build-*/context/acquisitions.json
+            /tmp/ppphp-source-build-*/compatibility/report.json
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Retain verified downloads (durable owner handoff still required)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: php-wasm-source-inputs-${{ github.sha }}-${{ github.run_attempt }}
+          path: /tmp/ppphp-native-inputs/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Verify compiler checkout remains unchanged
+        if: always()
+        run: git diff --exit-code
   rebuild:
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'historical'
+    needs: recipes
     name: Compare symbol baseline and experimental Fiber backend
     runs-on: ubuntu-24.04
     timeout-minutes: 45

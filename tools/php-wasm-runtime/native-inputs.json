@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "profile": "source-built-asyncify",
+  "productionReady": false,
+  "toolchain": {
+    "image": "emscripten/emsdk@sha256:5e56ae2aa3f847c79f5939c13e1de21600a96e7d6934b2dc563904754cfd3ca2",
+    "platform": "linux/amd64",
+    "emscripten": "4.0.19",
+    "emsdkCommit": "5eb0bde7585670252e8ba05e9d361627bffd08b5",
+    "emscriptenCommit": "08e2de1031913e4ba7963b1c56f35f036a7d4d56",
+    "ubuntuSnapshot": "20260910T000000Z",
+    "hostPackages": ["autoconf", "automake", "bison", "flex", "libtool", "pkgconf", "re2c"],
+    "sourceDateEpoch": 1757110237,
+    "jobs": 2,
+    "cflags": "-O3 -fPIC -ffile-prefix-map=/src=/source -ffile-prefix-map=/work=/build",
+    "target": "wasm32-unknown-emscripten",
+    "phpIntegerBytes": 8,
+    "pointerBytes": 4
+  },
+  "sources": {
+    "wordpress-playground": {
+      "version": "a6ed3872674399baa47c2f55fe1e660633fc8051",
+      "url": "https://codeload.github.com/WordPress/wordpress-playground/tar.gz/a6ed3872674399baa47c2f55fe1e660633fc8051",
+      "sha256": "21616f016ec7debc8409762037bb17e6c9a4e225743f04dd1607f1ed820a079b",
+      "bytes": 166342802,
+      "stripRoot": true,
+      "role": "PHP integration source and reviewed patches; never native dist inputs",
+      "notices": ["LICENSE"]
+    },
+    "php-src": {
+      "version": "8.4.23",
+      "commit": "52cee85adfeeb6f017f2ac796ab7973353702c20",
+      "url": "https://codeload.github.com/php/php-src/tar.gz/52cee85adfeeb6f017f2ac796ab7973353702c20",
+      "sha256": "81ca06b82286b75f35e5a4eaadbbd58f8558cd1c99e0a0bb45268419c990f689",
+      "bytes": 21771825,
+      "stripRoot": true,
+      "role": "PHP and bundled extensions/libraries",
+      "notices": ["LICENSE", "Zend/LICENSE", "TSRM/LICENSE"]
+    },
+    "zlib": {
+      "version": "1.3.2",
+      "url": "https://zlib.net/fossils/zlib-1.3.2.tar.gz",
+      "sha256": "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16",
+      "bytes": 1502830,
+      "stripRoot": true,
+      "dependencies": [],
+      "libraries": ["lib/libz.a"],
+      "notices": ["LICENSE"],
+      "selection": "Current maintenance release includes security audit fixes; one producer for every consumer."
+    },
+    "openssl": {
+      "version": "3.5.8",
+      "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz",
+      "sha256": "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2",
+      "bytes": 53213818,
+      "stripRoot": true,
+      "dependencies": [],
+      "libraries": ["lib/libssl.a", "lib/libcrypto.a"],
+      "notices": ["LICENSE.txt"],
+      "selection": "Current patch of the owner-selected Apache-2.0 OpenSSL 3.5 LTS line. Static default/base providers; no legacy provider."
+    },
+    "libiconv": {
+      "version": "1.18",
+      "url": "https://ftp.gnu.org/pub/gnu/libiconv/libiconv-1.18.tar.gz",
+      "sha256": "3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8",
+      "bytes": 5822590,
+      "stripRoot": true,
+      "dependencies": [],
+      "libraries": ["lib/libiconv.a", "lib/libcharset.a"],
+      "notices": ["COPYING", "COPYING.LIB"],
+      "selection": "Traceable GNU maintenance release; retain static-link relinking materials for LGPL-covered library files."
+    },
+    "oniguruma": {
+      "version": "6.9.10",
+      "url": "https://github.com/kkos/oniguruma/releases/download/v6.9.10/onig-6.9.10.tar.gz",
+      "sha256": "2a5cfc5ae259e4e97f86b68dfffc152cdaffe94e2060b770cb827238d769fc05",
+      "bytes": 979159,
+      "stripRoot": true,
+      "dependencies": [],
+      "libraries": ["lib/libonig.a"],
+      "notices": ["COPYING"],
+      "selection": "Latest published upstream release. Upstream is archived; security review and bounded mbregex tests remain qualification gates."
+    },
+    "libxml2": {
+      "version": "2.15.4",
+      "url": "https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.tar.xz",
+      "sha256": "98087fd181d9070724f3fbc65c7377db03038eb92bd882374daff44940138821",
+      "bytes": 3177444,
+      "stripRoot": true,
+      "dependencies": ["libiconv"],
+      "libraries": ["lib/libxml2.a"],
+      "notices": ["Copyright"],
+      "selection": "Maintained security-fix line; PHP API compatibility must pass before admission. No guest HTTP/FTP."
+    },
+    "sqlite": {
+      "version": "3.53.4",
+      "url": "https://sqlite.org/2026/sqlite-autoconf-3530400.tar.gz",
+      "sha256": "0e9483900e92cd5de8fd48d16bf9200145a61f7fd5be542a5ac81d8a9516eb9c",
+      "bytes": 3283177,
+      "stripRoot": true,
+      "dependencies": [],
+      "libraries": ["lib/libsqlite3.a"],
+      "notices": ["sqlite3.c"],
+      "selection": "Official generated amalgamation, including WAL-reset fixes. Its generator provenance is the official release, not an unrecorded host generator."
+    },
+    "curl": {
+      "version": "8.22.0",
+      "url": "https://curl.se/download/curl-8.22.0.tar.gz",
+      "sha256": "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1",
+      "bytes": 4408679,
+      "stripRoot": true,
+      "dependencies": ["openssl", "zlib"],
+      "libraries": ["lib/libcurl.a"],
+      "notices": ["COPYING"],
+      "selection": "Maintained release rebuilt against the selected OpenSSL and zlib. Host network denial remains mandatory."
+    },
+    "libzip": {
+      "version": "1.11.4",
+      "url": "https://libzip.org/download/libzip-1.11.4.tar.gz",
+      "sha256": "82e9f2f2421f9d7c2466bbc3173cd09595a88ea37db0d559a9d0a2dc60dc722e",
+      "bytes": 1301153,
+      "stripRoot": true,
+      "dependencies": ["zlib", "openssl"],
+      "libraries": ["lib/libzip.a"],
+      "notices": ["LICENSE"],
+      "selection": "Current maintenance release with explicit OpenSSL and zlib inputs."
+    },
+    "libjpeg-turbo": {
+      "version": "3.2.0",
+      "url": "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.0/libjpeg-turbo-3.2.0.tar.gz",
+      "sha256": "6f30092cef9fb839779646608f4ee14ae3cbac989c47fa05e841b0841f09878e",
+      "bytes": 2537858,
+      "stripRoot": true,
+      "dependencies": [],
+      "libraries": ["lib/libjpeg.a"],
+      "notices": ["LICENSE.md", "README.ijg"],
+      "selection": "Verified published maintenance source, portable C codec; no native SIMD assembly."
+    },
+    "libpng": {
+      "version": "1.6.58",
+      "url": "https://download.sourceforge.net/libpng/libpng-1.6.58.tar.gz",
+      "sha256": "8c9b05b675ca7301a458df2c2e46f26e1d41ff36b8863f8c33530bc58c2e6225",
+      "bytes": 1582074,
+      "stripRoot": true,
+      "dependencies": ["zlib"],
+      "libraries": ["lib/libpng16.a"],
+      "notices": ["LICENSE"],
+      "selection": "Includes current security fixes and the 1.6.56 regression correction."
+    },
+    "libwebp": {
+      "version": "1.6.0",
+      "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz",
+      "sha256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+      "bytes": 4296070,
+      "stripRoot": true,
+      "dependencies": [],
+      "libraries": ["lib/libwebp.a", "lib/libsharpyuv.a"],
+      "notices": ["COPYING", "PATENTS"],
+      "selection": "Official stable source; SharpYUV is built from this same tree."
+    },
+    "libaom": {
+      "version": "3.13.1",
+      "commit": "d772e334cc724105040382a977ebb10dfd393293",
+      "gitTree": "3a742c6fb952d1ea921b282b1cab4b62ff5db863",
+      "url": "https://aomedia.googlesource.com/aom/+archive/d772e334cc724105040382a977ebb10dfd393293.tar.gz",
+      "maxBytes": 8388608,
+      "stripRoot": false,
+      "dependencies": [],
+      "libraries": ["lib/libaom.a"],
+      "notices": ["LICENSE", "PATENTS"],
+      "selection": "Retain the existing AVIF codec version. Gitiles stamps archive entries at request time; verify the immutable Git tree including modes and symlinks, and receipt the acquired archive hash."
+    },
+    "libavif": {
+      "version": "1.3.0",
+      "url": "https://codeload.github.com/AOMediaCodec/libavif/tar.gz/refs/tags/v1.3.0",
+      "sha256": "0a545e953cc049bf5bcf4ee467306a2f113a75110edf59e61248873101cd26c1",
+      "bytes": 14062497,
+      "stripRoot": true,
+      "dependencies": ["libaom"],
+      "libraries": ["lib/libavif.a"],
+      "notices": ["LICENSE"],
+      "selection": "Retain the integration version with explicitly supplied AOM, no local FetchContent or hidden codec download."
+    },
+    "libgd": {
+      "version": "2.3.3",
+      "url": "https://github.com/libgd/libgd/releases/download/gd-2.3.3/libgd-2.3.3.tar.gz",
+      "sha256": "dd3f1f0bb016edcc0b2d082e8229c822ad1d02223511997c80461481759b1ed2",
+      "bytes": 3593182,
+      "stripRoot": true,
+      "dependencies": ["zlib", "libpng", "libjpeg-turbo", "libwebp", "libavif", "libiconv"],
+      "libraries": ["lib/libgd.a"],
+      "notices": ["COPYING"],
+      "selection": "Retain the PHP integration's GD release and formats. Compile against real iconv, avoiding the old globally exported fake iconv implementations. Security review remains an admission gate."
+    }
+  }
+}
