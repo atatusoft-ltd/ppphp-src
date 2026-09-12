@@ -32,6 +32,8 @@ jobs:
       - run: node --test tools/web-spike/scripts/compiler-archive.test.mjs
   quality:
     name: PHP ${{ matrix.php }}
+    needs: tests
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -39,6 +41,10 @@ jobs:
       matrix:
         php: ['8.4', '8.5']
     steps:
+      - name: Require every test shard
+        env:
+          TEST_RESULT: ${{ needs.tests.result }}
+        run: test "$TEST_RESULT" = success
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -61,8 +67,8 @@ jobs:
       - name: Audit locked dependencies
         if: matrix.php == '8.4'
         run: composer audit --locked --abandoned=fail
-      - name: Run the aggregate quality gate
-        run: composer check
+      - name: Run the remaining aggregate quality gates
+        run: composer check:contracts
       - name: Reject retired project identities
         shell: bash
         run: |
@@ -79,6 +85,28 @@ jobs:
           php bin/ppphp list
       - name: Verify checks did not modify tracked files
         run: git diff --exit-code
+
+  tests:
+    name: PHP ${{ matrix.php }} tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.4', '8.5']
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer:2.10.3@sha256:7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
+      - run: composer install --prefer-dist --no-progress --no-ansi
+      - run: composer test -- --shard=${{ matrix.shard }}/4 --fail-on-empty-test-suite
+      - run: git diff --exit-code
 
   distribution:
     name: Installed package distribution
