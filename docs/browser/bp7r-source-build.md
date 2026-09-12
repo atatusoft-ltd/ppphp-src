@@ -30,8 +30,8 @@ Host package versions are recorded; the task does not rebuild LLVM or Ubuntu.
 
 The initial comparison keeps PHP 8.4.23 and Emscripten 4.0.19. These are explicit
 candidate inputs, not a permanent platform ceiling. OpenSSL 3.5.8 replaces the
-legacy implementation in the proposed graph; that replacement is not established
-until compilation, link provenance and runtime checks pass. Oniguruma 6.9.10 has
+legacy implementation in the executed source-built graph; compilation, link
+provenance and runtime checks establish that replacement. Oniguruma 6.9.10 has
 traceable source but an archived upstream. Version selection alone is not a
 security or licensing qualification.
 
@@ -42,7 +42,8 @@ API and image formats with the [PHP upstream GIF correction](https://github.com/
 for CVE-2026-9672: initialize the decoder state/table and stop on the end code.
 The recipe records before/after hashes; strict patch-context checks reject drift.
 This is a specific source correction, not a claim that smoke tests exhaustively
-prove memory safety. Fresh candidate execution remains required.
+prove memory safety. The candidate's separately recorded execution tests below
+verify its retained functionality and bounded failure contracts.
 
 GD's AVIF discovery consumes libavif's installed pkg-config metadata and imported
 target. This static libavif profile does not install a CMake config package;
@@ -155,7 +156,7 @@ entire test suite. No test or aggregate check was removed.
 - Source-built native compilation and PHP relink: PASS in
   [run 34702000916](https://github.com/atatusoft-ltd/ppphp-src/actions/runs/34702000916).
   All 14 producers compiled and their archives contain WASM objects. The complete
-  build took 1,519.294 seconds; OpenSSL took 119.437 seconds and curl 187.257 seconds,
+  build took about 25.3 minutes; OpenSSL took 119.437 seconds and curl 187.257 seconds,
   mostly configuration. The native prefixes survived PHP compilation, but GitHub's
   ZIP transport flattened three libpng symlinks. That downloaded checkpoint is not
   accepted as intact reproducibility evidence; subsequent runs retain it in tar.
@@ -187,12 +188,72 @@ entire test suite. No test or aggregate check was removed.
   identity. The pinned template emits `DEPS` from unsorted Perl hash keys. A
   recorded one-line template patch sorts that complete set before generation.
   Two local configuration runs reproduce the difference before the patch and
-  identical configuration bytes afterward. Full clean-build proof is still pending;
-  the failed receipts are not rewritten or excluded from comparison.
-- New runtime compatibility, containment, full client/page/HTTPS qualification:
-  pending the new executable pair; historical results are not substituted.
-- Two-build byte comparison execution, matching distribution/source, durable owner retention
-  and BP-8 handoff: pending.
+  identical configuration bytes afterward. The failed receipts remain unchanged.
+- The corrected two-clean-build run
+  [34707400759](https://github.com/atatusoft-ltd/ppphp-src/actions/runs/34707400759)
+  passes at compiler commit `8cb510f1e8697d53039e700070248d3ae0706b96`.
+  Both builds used `--no-cache` for native libraries and PHP, sharing only verified
+  downloads and the pinned host-tool image. Build times were 1,481.433 and 1,452.364
+  seconds. Every installed file, canonical producer/runtime receipt, WASM, loader
+  and final-link record matches. Safe checkpoint extraction and local comparison
+  reproduce the same PASS, including the installed symlinks. Cross-host
+  reproducibility is NOT RUN; peak build RSS and active engineering time were not
+  metered. Each candidate passes 15 runtime/PHPStan, eight Fiber and 17 native
+  compatibility/security checks.
+- The retained execution records cover five completed builds: the initial
+  candidate, the first two-build comparison, and the corrected pair. Their
+  compilation totals approximately 126.1 minutes, excluding earlier interrupted
+  attempts, acquisition, browser qualification and active engineering work.
+  The first comparison's two builds took 1,644.447 and 1,470.346 seconds.
+  This is measured completed-build effort, not the total task duration.
+- The final runtime receipt is
+  `5c5720b30972072723b3a23d663eb18dc246cf308a9ec5daa352bdb4e972d8bc`;
+  WASM is `ec3b5374a6315cd07a0f76ff1ce4051ba3de7f8068f00dd02df8d31f4a1059db`
+  (32,919,008 bytes), and its matching loader is
+  `8b4674837fccc8ba115282413da317a13e306420681579b8f333520045a53320`
+  (381,974 bytes). Both full comparison inventories hash to
+  `87581087b60d8157037bbb729931b8ef4b2a0250d63cd40f59eb418f9f3b3312`.
+- Fresh BP-4: all 48 compiler/teaching cases and the sequential fault/recovery
+  checks PASS, with complete-corpus, native-output and stale-owner assertions.
+  This run used the new source-built executable pair above, unchanged by the
+  later receipt-ordering correction, not the historical comparison runtime.
+- Two clean Website packages using the separate native-build outputs match all
+  86 members, sidecars and the compressed archive. Safe outer/source extraction,
+  eight byte-identical frontend outputs reconstructed from supplied source, and
+  exact reconstruction of the Linux build context from its 18 packaged source
+  inputs and five recipes all PASS. This does not claim another native build on
+  macOS. See the Website `docs/browser/bp7r-evidence.md` for package identities.
+- The current-input BP-3 refresh passes all 48 cases against compiler `8cb510f`,
+  its current dependency lock and the final runtime receipt. Fresh local controls
+  pass 15 runtime/PHPStan, eight Fiber and 17 native/security cases.
+- Full client qualification found historical-only admission pins in the Website
+  client and program worker. Website `cc8fb1a` binds builder, client and workers
+  to one reviewed WASM/loader/receipt/size profile. Wrong pairs and corrupt bytes
+  are rejected before interpreter allocation; actual Build/Run smoke, type checks,
+  contract tests, editor regressions and Website CI pass. The final package pair
+  was rebuilt after this correction; its source contains 144 safely checked
+  members and reproduces the frontend and native context exactly.
+- Full client qualification now passes 75 checks and all ten additional real-client
+  boundary checks, including actual 256-operation rotation and recovery. Chrome
+  completes the full suite; Firefox completes a limited real-execution smoke.
+  WebKit is NOT RUN because its automation binary is not installed.
+- Installed HTTPS delivery passes all 14 checks, including complete source
+  download, cache/fault recovery, and coherent rollback between two replacement
+  packages. It is local Apache evidence, not public-host qualification.
+- All 49 actual-page checks pass against the installed HTTPS package, including
+  all 18 teaching inputs, native diagnostic/artifact comparison, multi-round
+  annotations, lifecycle/security recovery, and the limited Firefox lesson
+  check. The final source-identity and no-execution-traffic assertions pass.
+- The selected package, compatible rollback-test package, original native
+  checkpoints, external sidecars and bounded evidence are retained in the
+  owner's Downloads folder `ppphp-bp7r-source-built-2026-09-12`, with its README
+  and manifest as the entry point. The 80-member evidence archive is 2,723,314
+  bytes, SHA-256 `0c2effcaa2e81b21bbfc222e928d606f15015a17af9c55508b35b1e91e1a01b4`.
+  It includes failures and intermediate results as such, excludes private
+  application/profile/key/log material, and passes safe member/hash verification.
+  BP-7R is complete and hands these exact inputs to BP-8. Wider device acceptance
+  and BP-9 hosting/publication/activation remain NOT RUN; historical results
+  have not been substituted for these new executable bytes.
 
 The local machine has no running Docker daemon and insufficient spare disk for
 this native build. The existing Linux workflow is the selected execution route.

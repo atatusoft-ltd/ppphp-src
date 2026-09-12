@@ -11,15 +11,28 @@ client and isolated Run, with complete qualification on its recorded Chrome prof
 see the [application handoff](browser/bp5-handoff.md). BP-6 is owner-approved in
 the website repository. BP-7 implements the locked production compiler closure,
 shared archive validation and website packaging/static-delivery pipeline; its
-source-distribution gate remains incomplete. See the
+original runtime's source-distribution gate remains incomplete. See the
 [compiler archive record](browser/bp7-archive-inputs.md) and the website's
 `docs/browser/bp7-evidence.md` for exact qualification and distribution identities.
 BP-8/BP-9 remain outstanding. Production routes and execution remain guarded.
-The bounded 2026-09-10 source-distribution closure preserves these executable
+The historical 2026-09-10 source-distribution closure preserves these executable
 inputs. GPLv3 is owner-selected for the applicable browser combination; exact
 Oniguruma source recovery and legacy OpenSSL/native permission review remain
 separate gates. The website's closure work order and existing evidence record
 govern packaging, source access, retention and the BP-8 handoff.
+
+The owner-authorized [BP-7R work order](ppphp-browser-production-native-rebuild-codex-prompt.md)
+supersedes historical recovery as the route to a replacement candidate. Its
+[source-build record](browser/bp7r-source-build.md) establishes a pinned-source
+native graph, maintained OpenSSL replacement and two executed, byte-identical
+clean builds. The old runtime and its unresolved findings remain unchanged for
+local comparison only; they are not an approved public rollback target. The
+replacement's independent compiler/client, actual-page and installed-delivery
+suites now pass; matching packages, source and bounded evidence are preserved
+in the owner-controlled BP-8 handoff. BP-7R is complete. The website's
+`docs/browser/bp7r-evidence.md` records its exact input set and limitations.
+This supplement does not renumber BP-0 through BP-10, start the full BP-8 device
+campaign or authorize BP-9 activation.
 > Product outcome: Enable the production playground and interactive Learn routes with complete browser-side Check, Build PHP and Run.
 > Canonical home: `atatusoft-ltd/ppphp-src`, `docs/ppphp-browser-production-plan.md`.
 
