@@ -112,6 +112,7 @@ self.onmessage = async ({ data: probe }) => {
       } });
       result = await read(await php.runStream({ code: probe.code }));
     }
+    if (probe.entropyDenied) result.entropyReads = entropyReads;
     result.loadedResources = performance.getEntriesByType('resource').map((entry) => entry.name).slice(0, 40);
     self.postMessage({ id: caseId, type: 'result', result });
   } catch (error) {

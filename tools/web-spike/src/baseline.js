@@ -1,6 +1,6 @@
 import { probes, assess } from './baseline-probes.js';
 import { fiberContractProbes } from './fiber-contract-probes.mjs';
-import { nativeContractProbes } from './native-contract-probes.mjs';
+import { nativeContractProbes, assessEntropyFailure } from './native-contract-probes.mjs';
 
 const suite = new URL(location.href).searchParams.get('suite') || 'baseline';
 if (!['baseline', 'fiber-contract', 'native-contract'].includes(suite)) throw new Error('Unknown diagnostic suite');
@@ -51,7 +51,7 @@ function runCase(probe) {
 for (const probe of selectedProbes) {
   const result = await runCase(probe);
   result.semantics = probe.entropyDenied
-    ? result.kind === 'trap' && result.entropyReads > 0 && /BP-7R entropy unavailable/.test(result.error || '') ? 'PASS' : 'FAIL'
+    ? assessEntropyFailure(result) ? 'PASS' : 'FAIL'
     : probe.compiler
     ? result.kind === 'completed' && result.validPhpStanJson === true && result.exitCode === 0 ? 'PASS' : 'FAIL'
     : assess(probe, result);

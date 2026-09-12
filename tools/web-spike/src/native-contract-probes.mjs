@@ -15,6 +15,7 @@ export const nativeContractProbes = [
       check(extension_loaded($extension));
     }
     check(str_starts_with(OPENSSL_VERSION_TEXT, ${JSON.stringify('OpenSSL ' + manifest.sources.openssl.version + ' ')}));
+    check(MB_ONIGURUMA_VERSION === ${JSON.stringify(manifest.sources.oniguruma.version)});
     check(LIBXML_DOTTED_VERSION === ${JSON.stringify(manifest.sources.libxml2.version)});
     check(SQLite3::version()['versionString'] === ${JSON.stringify(manifest.sources.sqlite.version)});
   `),
@@ -114,10 +115,17 @@ export const nativeContractProbes = [
     check(imagesx($decoded) === 4 && imagesy($decoded) === 4);
     check(@imagecreatefromstring('not an image') === false);
   `)),
-  { id: 'native-entropy-failure', entropyDenied: true, code: '<?php echo bin2hex(random_bytes(32));' },
+  { id: 'native-entropy-failure', entropyDenied: true, code: `<?php
+    try { random_bytes(32); } catch (Random\\RandomException $error) { echo 'entropy-unavailable'; }
+  ` },
   { id: 'native-lint-valid', cliLint: true, code: '<?php file_put_contents(__DIR__ . "/side-effect", "executed");', exitCode: 0 },
   { id: 'native-lint-invalid', cliLint: true, code: '<?php function broken( {', exitCode: 255 },
 ];
+
+export function assessEntropyFailure(result) {
+  return result.kind === 'completed' && result.exitCode === 0 && result.entropyReads > 0
+    && result.stdout === 'entropy-unavailable' && result.stderr === '';
+}
 
 export function assessNativeContract(data) {
   if (data?.suite !== 'native-contract' || data.done !== true || !Array.isArray(data.cases)
@@ -125,7 +133,7 @@ export function assessNativeContract(data) {
   return nativeContractProbes.every(probe => {
     const result = data.cases.find(item => item.id === probe.id);
     if (!result || result.computeStarted !== true || result.semantics !== 'PASS') return false;
-    if (probe.entropyDenied) return result.kind === 'trap' && result.entropyReads > 0 && /BP-7R entropy unavailable/.test(result.error);
+    if (probe.entropyDenied) return assessEntropyFailure(result);
     if (probe.cliLint) return result.kind === 'completed' && result.exitCode === probe.exitCode && result.sideEffect === false;
     return result.kind === 'completed' && result.exitCode === 0 && result.stdout === 'ok' && result.stderr === '';
   });
