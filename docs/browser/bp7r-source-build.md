@@ -92,6 +92,10 @@ two jobs. The native phase has a 90-minute budget; PHP's phase has three hours.
 The manual workflow has a four-hour total limit, so its total is also bounded.
 Completed native prefixes and receipts are copied out before PHP compilation.
 Ordinary CI runs fast recipe tests, not the expensive historical two-profile build.
+The workflow caches only fully verified source downloads, immediately after
+acquisition so a later compile failure does not discard them. Cache identity
+includes the manifest and acquisition implementation; every restored file is
+checked again before use. Compiled libraries are excluded from this cache.
 
 The manual **PHP-WASM source rebuild** workflow selects `source-built` by default.
 Use one clean build during integration; two independent clean builds are required

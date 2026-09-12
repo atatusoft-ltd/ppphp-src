@@ -152,6 +152,8 @@ def git_tree(archive: tarfile.TarFile, members: dict[str, tarfile.TarInfo]) -> s
 
 
 def verify_source(path: Path, source: dict) -> dict:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f'{path.name}: source must be a regular file, not a link')
     size = path.stat().st_size
     if size > source.get('maxBytes', source.get('bytes', 0)):
         raise ValueError(f'{path.name}: oversized source')

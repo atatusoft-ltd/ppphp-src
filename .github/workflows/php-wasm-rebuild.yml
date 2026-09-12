@@ -70,9 +70,21 @@ jobs:
           free -h
           composer install --prefer-dist --no-progress --no-ansi
           npm ci --prefix tools/web-spike --no-audit --no-fund
+      - name: Restore verified source downloads (never compiled libraries)
+        id: source-inputs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: /tmp/ppphp-native-inputs
+          key: php-wasm-source-inputs-${{ hashFiles('tools/php-wasm-runtime/native-inputs.json', 'tools/php-wasm-runtime/native.py') }}
       - name: Acquire and verify sources before compilation
         timeout-minutes: 30
         run: python3 tools/php-wasm-runtime/native.py acquire --store /tmp/ppphp-native-inputs
+      - name: Save verified downloads before expensive compilation
+        if: steps.source-inputs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: /tmp/ppphp-native-inputs
+          key: ${{ steps.source-inputs.outputs.cache-primary-key }}
       - name: Build clean target libraries and PHP, then test each candidate
         run: |
           for iteration in $(seq 1 "$CLEAN_BUILDS"); do

@@ -130,6 +130,15 @@ class NativeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'checksum'):
                 native.verify_source(path, source)
 
+    def test_cached_source_rejects_links_even_when_the_target_bytes_match(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = self.archive(root / 'source.tar.gz', [('root/file', b'ok', tarfile.REGTYPE)])
+            (root / 'link.tar.gz').symlink_to('source.tar.gz')
+            for path in [root / 'link.tar.gz', root, root / 'missing.tar.gz']:
+                with self.assertRaisesRegex(ValueError, 'regular file'):
+                    native.verify_source(path, source)
+
     def test_preferred_source_projection_is_pinned_reproducible_and_excludes_prebuilt_inputs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
