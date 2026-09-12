@@ -67,7 +67,7 @@ const outputs = (response) => {
     return { path, base64: btoa(binary) };
   });
 };
-const operate = async (fixture, operation) => {
+const operate = async (fixture, operation, stopAtValidation = false) => {
   const started = performance.now();
   const transcript = [];
   const continuations = new Set(), invocations = new Set();
@@ -86,6 +86,7 @@ const operate = async (fixture, operation) => {
     if (continuations.has(response.continuation)) throw new Error('Replayed compiler continuation');
     continuations.add(response.continuation);
     validating = response.status === 'pending-validation';
+    if (stopAtValidation && validating) return { response, transcript, outputs: null, platform: observed.observation.platform };
     const results = [];
     for (const invocation of response.invocations) {
       if (invocation.kind !== (validating ? 'php-lint' : 'phpstan')) throw new Error('Invalid compiler phase progression');
@@ -170,16 +171,11 @@ window.runWorkflowSequence = () => {
         && outputs(evidence.sentinel.response).find((file) => file.path === 'Context.php').base64 === evidence.context.outputs.find((file) => file.path === 'Context.php').base64;
       // Labelled transport faults reuse real observations. They are never counted
       // as analyzer or lint success and cannot acquire publication authority.
-      const guardedStart = await request({ version: 3, action: 'start', operationId: 'validation-guards', sequence: ++sequence,
-        operation: 'build', selection: { path: null }, runtime: assets.runtime });
-      const observedAnalysis = [];
-      for (const invocation of guardedStart.response.invocations) observedAnalysis.push(processRecord(invocation, (await phase({ invocation })).process));
-      const guardedPending = await request({ version: 3, action: 'complete-analysis', operationId: 'validation-guards', sequence,
-        continuation: guardedStart.response.continuation, results: observedAnalysis });
+      const guardedPending = evidence.guardedPending = await operate({ id: 'validation-guards' }, 'build', true);
       if (guardedPending.response.status !== 'pending-validation') throw new Error('Validation guard did not prepare production');
       const observedLint = [];
       for (const invocation of guardedPending.response.invocations) observedLint.push(processRecord(invocation, (await phase({ invocation })).process));
-      const validation = { version: 3, action: 'complete-lint', operationId: 'validation-guards', sequence,
+      const validation = { version: 3, action: 'complete-lint', operationId: guardedPending.response.operationId, sequence: guardedPending.response.sequence,
         continuation: guardedPending.response.continuation, results: observedLint };
       const priorGuard = JSON.stringify(outputs(evidence.sentinel.response));
       evidence.validationGuards = [];

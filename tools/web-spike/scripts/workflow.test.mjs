@@ -108,17 +108,22 @@ test('workflow follows fresh analysis rounds beyond four turns and rejects repla
   const operation = source.slice(source.indexOf('const operate ='), source.indexOf('window.runWorkflowCase ='));
   const pending = (id, kind = 'phpstan') => ({ status: kind === 'phpstan' ? 'pending-analysis' : 'pending-validation',
     continuation: 'continuation-' + id, invocations: [{ identity: 'invocation-' + id, kind }] });
-  const exercise = async (responses, duration = 0) => {
+  const exercise = async (responses, duration = 0, stopAtValidation = false) => {
     let calls = 0, clock = 0;
     const context = { sequence: 0, assets: { runtime: {} }, performance: { now: () => (clock++ ? duration : 0) },
       WORKFLOW_LIMITS: { operationMs: 1000 }, setTimeout, clearTimeout, window: {}, outputs: () => null, processRecord,
       request: async () => { assert.ok(calls < responses.length, 'Unexpected extra compiler request'); return { response: responses[calls++], observation: {} }; },
       phase: async () => ({ process: { kind: 'completed', exitCode: 0, stdout: '', stderr: '' } }) };
     runInNewContext(operation + '; globalThis.run = operate;', context);
-    return context.run({ id: 'rounds' }, 'build');
+    return context.run({ id: 'rounds' }, 'build', stopAtValidation);
   };
   const rounds = [1, 2, 3, 4, 5].map(id => pending(id));
   assert.equal((await exercise([...rounds, pending(6, 'php-lint'), { status: 'complete' }])).response.status, 'complete');
+  const paused = await exercise([...rounds, pending(6, 'php-lint')], 0, true);
+  assert.equal(paused.response.status, 'pending-validation');
+  assert.equal(paused.outputs, null);
+  assert.equal(paused.transcript.filter(item => item.invocation).length, 5);
+  assert.ok(paused.transcript.filter(item => item.invocation).every(item => item.invocation.kind === 'phpstan'));
   await assert.rejects(exercise([pending(1), pending(2), pending(1)]), /Replayed compiler continuation/);
   await assert.rejects(exercise([pending(1), { ...pending(2), invocations: pending(1).invocations }]), /Replayed compiler invocation/);
   await assert.rejects(exercise([pending(1, 'php-lint'), pending(2)]), /Invalid compiler phase progression/);

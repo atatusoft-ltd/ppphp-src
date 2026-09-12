@@ -25,7 +25,8 @@ test('the version verifier confirms current source and release metadata', functi
 
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
         ->and($process->getOutput())->toContain(Compiler::VERSION)
-        ->and(array_count_values($composer['scripts']['check'])['@verify:version'] ?? 0)->toBe(1);
+        ->and($composer['scripts']['check'])->toBe(['@check:contracts', '@test'])
+        ->and(array_count_values($composer['scripts']['check:contracts'])['@verify:version'] ?? 0)->toBe(1);
 });
 
 test('release validation accepts an exact matching expected version and tag', function (): void {
