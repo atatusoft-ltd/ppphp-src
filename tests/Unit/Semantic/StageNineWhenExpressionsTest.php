@@ -70,6 +70,81 @@ function resolveStageNineCodes(SemanticAnalysisResult $analysis): array
     );
 }
 
+test('a declare body retains when result ownership and completion', function (string $body, bool $complete): void {
+    $source = '<?php function choose(bool $ready, bool $select): int {
+        int $value = when ($ready) { ' . $body . ' } else { return 0; };
+        echo "after|"; return $value;
+    } echo choose(true, true), "|", choose(false, false);';
+    [, $analysis] = analyzeStageNineSource($source);
+    expect(resolveStageNineCodes($analysis))->toBe($complete ? [] : ['P5002']);
+    if ($complete) {
+        $generated = lowerStageNineSource($source);
+        $run = new Process([PHP_BINARY, '-r', substr($generated->contents, 5)]);
+        $run->mustRun();
+        expect($run->getOutput())->toBe('after|5|after|0')
+            ->and($generated->contents)->not->toContain('while (true)');
+    }
+})->with([
+    'tail declaration block' => ['declare(ticks=1) { return 5; }', true],
+    'declaration block with fallthrough' => ['declare(ticks=1) { if ($select) { return 5; } }', false],
+    'declaration block with continuation' => ['declare(ticks=1) { if ($select) { return 5; } } return 7;', true],
+]);
+
+test('trailing branch comments do not require a control flow wrapper', function (string $body): void {
+    $source = '<?php function choose(bool $ready, bool $select): int {
+        int $value = when ($ready) { ' . $body . ' } else { return 0; };
+        echo "after|"; return $value;
+    } echo choose(true, true), "|", choose(false, false);';
+    $generated = lowerStageNineSource($source);
+    expect($generated->contents)->not->toContain('do {')->not->toContain('while (true)')
+        ->and(substr_count($generated->contents, 'Keep this explanation.'))->toBe(1);
+    $run = new Process([PHP_BINARY, '-r', substr($generated->contents, 5)]);
+    $run->mustRun();
+    expect($run->getOutput())->toBe('after|5|after|0');
+})->with([
+    'branch tail' => 'return 5; /* Keep this explanation. */',
+    'conditional arm tail' => 'if ($select) { return 5; /* Keep this explanation. */ } else { return 6; }',
+    'loop tail' => 'foreach ([5] as int $item) { return $item; /* Keep this explanation. */ }',
+    'protected tail' => 'try { return 5; /* Keep this explanation. */ } finally { echo ""; }',
+]);
+
+test('a fully returning conditional cannot run a following when continuation', function (): void {
+    $generated = lowerStageNineSource(<<<'PPP'
+<?php
+function choose(bool $ready, bool $select): int {
+    int $value = when ($ready) {
+        if ($select) { return 5; } else { return 6; }
+        echo 'unreachable|';
+        return 7;
+    } else { return 0; };
+    echo 'after|';
+    return $value;
+}
+echo choose(true, true), '|', choose(true, false), '|', choose(false, false);
+PPP);
+    $run = new Process([PHP_BINARY, '-r', substr($generated->contents, 5)]);
+    $run->mustRun();
+    expect($run->getOutput())->toBe('after|5|after|6|after|0');
+});
+
+test('unreachable result tails need no synthetic loop', function (string $body, string $expected): void {
+    $generated = lowerStageNineSource('<?php function choose(bool $ready): int {
+        int $value = when ($ready) { ' . $body . ' } else { return 0; };
+        echo "after|"; return $value;
+    } echo choose(true), "|", choose(false);');
+    expect($generated->contents)->not->toContain('do {')->not->toContain('while (true)')
+        ->not->toContain('__ppphp_when_pending_error')->not->toContain('catch (\\Throwable')
+        ->and(substr_count($generated->contents, 'Retain the unreachable source.'))->toBe(1);
+    $run = new Process([PHP_BINARY, '-r', substr($generated->contents, 5)]);
+    $run->mustRun();
+    expect($run->getOutput())->toBe($expected);
+})->with([
+    'branch' => ['return 5; /* Retain the unreachable source. */ echo "wrong|";', 'after|5|after|0'],
+    'declare body' => ['declare(ticks=1) { return 5; /* Retain the unreachable source. */ echo "wrong|"; }', 'after|5|after|0'],
+    'protected body' => ['try { return 5; /* Retain the unreachable source. */ echo "wrong|"; } finally { echo "cleanup|"; }', 'cleanup|after|5|after|0'],
+    'finally body' => ['try { return 7; } finally { return 5; /* Retain the unreachable source. */ echo "wrong|"; }', 'after|5|after|0'],
+]);
+
 test('when loop completion follows entry and the actual transfer target', function (string $body, bool $complete): void {
     [, $analysis] = analyzeStageNineSource('<?php
         function pick(bool $ready, bool $stop, bool $again, int $n, array<int> $values): int {
@@ -278,6 +353,207 @@ PPP);
         ->and(resolveStageNineCodes($byReference))->toContain(DiagnosticCode::WhenByReferenceArgumentNotAllowed->value);
 });
 
+test('A2 finally results preserve pending checked errors', function (string $body): void {
+    [, $analysis] = analyzeStageNineSource('<?php
+        function load(): int throws RuntimeException { throw new RuntimeException(); }
+        function invalid(bool $ready): int {
+            return when ($ready) { ' . $body . ' } else { return 0; };
+        }');
+    expect(resolveStageNineCodes($analysis))->toContain('P4003');
+})->with([
+    'explicit throw' => 'try { throw new RuntimeException(); } finally { return 9; }',
+    'throwing result operand' => 'try { return load(); } finally { return 9; }',
+    'nested finally result' => 'try { throw new RuntimeException(); } finally { try { return 9; } finally { echo "cleanup|"; } }',
+    'declaration block in finally' => 'try { throw new RuntimeException(); } finally { declare(ticks=1) { return 9; } }',
+]);
+
+test('A2 finally result types require a successful protected path', function (string $body, string $type): void {
+    [, $analysis] = analyzeStageNineSource('<?php
+        function choose(bool $ready, bool $select): int throws RuntimeException {
+            return when ($ready) { ' . $body . ' } else { return 0; };
+        }');
+    expect($analysis->isSuccessful)->toBeTrue()
+        ->and($analysis->findModel('/project/src/When.ppphp')->whenExpressions->expressions[0]->branches[0]->resultType->canonical)
+        ->toBe($type);
+})->with([
+    'unconditional finally result after throw' => ['try { throw new RuntimeException(); } finally { return 9; }', 'never'],
+    'declaration result after throw' => ['try { throw new RuntimeException(); } finally { declare(ticks=1) { return 9; } }', 'never'],
+    'conditional finally result after throw' => ['try { throw new RuntimeException(); } finally { if ($select) { return 9; } }', 'never'],
+    'overridden successful result' => ['try { return "old"; } finally { return 9; }', 'int'],
+    'result supplied on fallthrough' => ['try { echo "body|"; } finally { return 9; }', 'int'],
+    'catch supplies successful path' => ['try { throw new RuntimeException(); } catch (RuntimeException $error) { return 1; } finally { return 9; }', 'int'],
+]);
+
+test('A2 leaves native callable finally returns and replacement throws intact', function (): void {
+    [, $analysis] = analyzeStageNineSource(<<<'PPP'
+<?php
+function replaced(bool $ready): int throws LogicException {
+    return when ($ready) {
+        try { throw new RuntimeException(); } finally { throw new LogicException(); }
+    } else { return 0; };
+}
+function native(bool $ready): int {
+    return when ($ready) {
+        Closure $callback = function (): int {
+            try { throw new RuntimeException(); } finally { return 9; }
+        };
+        return 1;
+    } else { return 0; };
+}
+PPP);
+    expect(resolveStageNineCodes($analysis))->toBe([]);
+});
+
+test('when result types exclude only values cancelled by correlated finally paths', function (string $body, string $type): void {
+    [, $analysis] = analyzeStageNineSource('<?php
+        function resetFlag(bool &$flag): string { $flag = false; return "kept"; }
+        function choose(bool $ready, bool $select, bool $other): int|string {
+            return when ($ready) { ' . $body . ' return 7; } else { return 0; };
+        }');
+    expect(resolveStageNineCodes($analysis))->toBe([])
+        ->and($analysis->findModel('/project/src/When.ppphp')->whenExpressions->expressions[0]->resultType->canonical)
+        ->toBe($type);
+})->with([
+    'same true condition' => ['try { if ($select) { return "cancelled"; } } finally { if ($select) { throw new Error(); } }', 'int'],
+    'same false condition' => ['try { if (!$select) { return "cancelled"; } } finally { if (!$select) { throw new Error(); } }', 'int'],
+    'equivalent boolean condition' => ['try { if ($select === true) { return "cancelled"; } } finally { if ($select) { throw new Error(); } }', 'int'],
+    'else result condition' => ['try { if ($select) { echo "body|"; } else { return "cancelled"; } } finally { if (!$select) { throw new Error(); } }', 'int'],
+    'condition written before result' => ['try { if ($select) { $select = false; return "kept"; } } finally { if ($select) { throw new Error(); } }', 'int|string'],
+    'result operand changes condition by reference' => ['try { if ($select) { return resetFlag($select); } } finally { if ($select) { throw new Error(); } }', 'int|string'],
+    'finally writes condition before testing it' => ['try { if ($select) { return "kept"; } } finally { $select = false; if ($select) { throw new Error(); } }', 'int|string'],
+    'independent cleanup condition' => ['try { if ($select) { return "kept"; } } finally { if ($other) { throw new Error(); } }', 'int|string'],
+    'conjunction implies cleanup condition' => ['try { if ($select && $other) { return "cancelled"; } } finally { if ($select) { throw new Error(); } }', 'int'],
+    'continuing disjunction requires both false' => ['try { if ($select) { return "cancelled"; } } finally { if ($select || $other) { throw new Error(); } }', 'int'],
+    'cleanup test precedes a write' => ['try { if ($select) { return "cancelled"; } } finally { if ($select) { throw new Error(); } $select = true; }', 'int'],
+    'finally value cannot recover a correlated throw' => ['try { if ($select) { throw new Error(); } return 1; } finally { if ($select) { return "cancelled"; } }', 'int'],
+    'finally replaces a correlated result' => ['try { if ($select) { return "cancelled"; } } finally { if ($select) { return 1; } }', 'int'],
+    'compound condition call can change an earlier operand' => ['try { if ($select && resetFlag($select) !== "") { return "kept"; } } finally { if ($select) { throw new Error(); } }', 'int|string'],
+    'nested finally condition follows an outer write' => ['try { if ($select) { throw new Error(); } return 1; } finally { $select = true; try {} finally { if ($select) { return "kept"; } } }', 'int|string'],
+    'nested finally result follows a protected write' => ['try { if ($select) { throw new Error(); } return 1; } finally { try { $select = true; } finally { if ($select) { return "kept"; } } }', 'int|string'],
+    'nested protected result keeps its outer entry requirement' => ['try { if ($select) { return "cancelled"; } } finally { if ($select) { try {} finally { return 1; } } }', 'int'],
+    'unrelated nested cleanup retains stable conditions' => ['try { if ($select) { return "cancelled"; } } finally { try {} finally {} if ($select) { throw new Error(); } }', 'int'],
+]);
+
+test('replacing a pending result can change a condition through its destructor', function (): void {
+    [$parse, $analysis] = analyzeStageNineSource(<<<'PPP'
+<?php
+final class ResetOnRelease {
+    public function __construct(private bool &$flag) {}
+    public function __destruct() { $this->flag = false; }
+}
+function choose(bool $ready, bool $select): int|string|ResetOnRelease {
+    return when ($ready) {
+        try {
+            try { return new ResetOnRelease($select); }
+            finally { if ($select) { return "kept"; } }
+        } finally { if ($select) { throw new Error(); } }
+    } else { return 0; };
+}
+PPP);
+    expect(resolveStageNineCodes($analysis))->toBe([])
+        ->and($analysis->findModel('/project/src/When.ppphp')->whenExpressions->expressions[0]->resultType->includes('string'))
+        ->toBeTrue();
+    $generated = (new PhpLowerer())->lower($parse->parsedFile, $analysis->findModel('/project/src/When.ppphp'));
+    $path = $this->createTemporaryDirectory() . '/ReleaseCondition.php';
+    $this->writeFile($path, $generated->contents . <<<'PHP'
+
+foreach ([[true, true], [true, false], [false, true]] as $arguments) {
+    $value = choose(...$arguments);
+    echo is_object($value) ? $value::class : $value, '|';
+}
+PHP);
+    $runtime = new Process([PHP_BINARY, $path], timeout: 5);
+    $runtime->mustRun();
+    expect($runtime->getOutput())->toBe('kept|ResetOnRelease|0|')->and($runtime->getErrorOutput())->toBe('');
+});
+
+test('a transfer cancelled before its result capable cleanup needs no deferred state', function (): void {
+    $generated = lowerStageNineSource(<<<'PPP'
+<?php
+function choose(bool $ready, bool $select): int {
+    return when ($ready) {
+        foreach ([1, 2] as int $value) {
+            try {
+                try {
+                    try { continue; } finally { throw new Error(); }
+                } catch (Error $error) { echo 'caught|'; }
+                echo 'between|';
+            } finally { if ($select) { return 9; } echo 'cleanup|'; }
+            echo 'tail|';
+        }
+        return -1;
+    } else { return 0; };
+}
+echo choose(true, false), '|', choose(true, true), '|', choose(false, true);
+PPP);
+    expect($generated->contents)->not->toContain('__ppphp_when_transfer');
+    $path = $this->createTemporaryDirectory() . '/CancelledTransfer.php';
+    $this->writeFile($path, $generated->contents);
+    $runtime = new Process([PHP_BINARY, $path], timeout: 5);
+    $runtime->mustRun();
+    expect($runtime->getOutput())->toBe('caught|between|cleanup|tail|caught|between|cleanup|tail|-1|caught|between|9|0')
+        ->and($runtime->getErrorOutput())->toBe('');
+});
+
+test('a single terminal transfer needs no transfer discriminator', function (string $transfer, string $expected, string $type): void {
+    $generated = lowerStageNineSource('<?php
+        function choose(bool $ready, bool $select): ' . $type . ' {
+            return when ($ready) {
+                foreach ([1, 2] as int $value) {
+                    try {
+                        // Keep this transfer explanation.
+                        ' . $transfer . '
+                    } finally {
+                        if ($select) { return 9; }
+                        echo "cleanup|";
+                    }
+                }
+                return -1;
+            } else { return 0; };
+        }
+        echo choose(true, false), "|", choose(true, true), "|", choose(false, true);');
+    expect($generated->contents)->not->toContain('__ppphp_when_transfer')
+        ->and(substr_count($generated->contents, '// Keep this transfer explanation.'))->toBe(1);
+    $path = $this->createTemporaryDirectory() . '/SingleTransfer.php';
+    $this->writeFile($path, $generated->contents);
+    $runtime = new Process([PHP_BINARY, $path], timeout: 5);
+    $runtime->mustRun();
+    expect($runtime->getOutput())->toBe($expected)->and($runtime->getErrorOutput())->toBe('');
+})->with([
+    'continue' => ['continue;', 'cleanup|cleanup|-1|9|0', 'int'],
+    'break' => ['break;', 'cleanup|-1|9|0', 'int'],
+    'nested nullable result scope' => [
+        'try { continue; } finally { if (!$select) { return null; } echo "inner|"; }',
+        'cleanup||inner|9|0', 'int|null',
+    ],
+    'nested string result scope' => [
+        'try { continue; } finally { if (!$select) { return "inner-result"; } echo "inner|"; }',
+        'cleanup|inner-result|inner|9|0', 'int|string',
+    ],
+]);
+
+test('when local lowering preserves authored declaration comments', function (string $declaration, string $comment): void {
+    $generated = lowerStageNineSource('<?php
+        function choose(bool $ready): int {
+            return when ($ready) { ' . $declaration . ' return $local; } else { return 0; };
+        }
+        echo choose(true), "|", choose(false);');
+    expect(substr_count($generated->contents, $comment))->toBe(1)
+        ->and($generated->contents)->toContain('@var int $local');
+    $path = $this->createTemporaryDirectory() . '/DeclarationComments.php';
+    $this->writeFile($path, $generated->contents);
+    $runtime = new Process([PHP_BINARY, $path], timeout: 5);
+    $runtime->mustRun();
+    expect($runtime->getOutput())->toBe('7|0')->and($runtime->getErrorOutput())->toBe('');
+})->with([
+    'leading PHPDoc' => ['/** Keep this local explanation. */ int $local = 7;', 'Keep this local explanation.'],
+    'inside typed prefix' => ['int /* Keep this inline explanation. */ $local = 7;', 'Keep this inline explanation.'],
+    'inside readonly prefix' => ['readonly /* Keep this readonly explanation. */ int $local = 7;', 'Keep this readonly explanation.'],
+    'line comment inside typed prefix' => ["int // Keep this line explanation.\r\n" . '$local = 7;', 'Keep this line explanation.'],
+    'for binding prefix' => ['int $local = 7; for (int /* Keep this for explanation. */ $n = 0; $n < 1; ++$n) {}', 'Keep this for explanation.'],
+    'foreach binding prefix' => ['int $local = 7; foreach ([1] as int /* Keep this foreach explanation. */ $n) {}', 'Keep this foreach explanation.'],
+]);
+
 test('finally results override earlier branch results', function (): void {
     $generated = lowerStageNineSource(<<<'PPP'
 <?php
@@ -301,9 +577,9 @@ PPP);
 });
 
 test('nested finally completion reaches the owning when without losing overrides', function (string $body, string $output): void {
-    $generated = lowerStageNineSource('<?php function result(): string {
+    $generated = lowerStageNineSource('<?php function result(): string throws RuntimeException {
         return when (true) { ' . $body . ' } else { return "else"; };
-    } echo result();');
+    } try { echo result(); } catch (RuntimeException $error) { echo "exception:" . $error->getMessage(); }');
     $path = $this->createTemporaryDirectory() . '/NestedFinally.php';
     $this->writeFile($path, $generated->contents);
     $runtime = new Process([PHP_BINARY, $path]);
@@ -314,13 +590,13 @@ test('nested finally completion reaches the owning when without losing overrides
 })->with([
     ['try { try { return "value"; } finally { echo "inner|"; } } finally { echo "outer|"; }', 'inner|outer|value'],
     ['try { return "original"; } finally { try { return "replacement"; } finally { echo "inner|"; } }', 'inner|replacement'],
-    ['try { throw new RuntimeException("pending"); } finally { try { return "recovered"; } finally { echo "inner|"; } }', 'inner|recovered'],
+    ['try { throw new RuntimeException("pending"); } finally { try { return "recovered"; } finally { echo "inner|"; } }', 'inner|exception:pending'],
 ]);
 
-test('finally results suppress pending exceptions while finally throws supersede pending results', function (): void {
+test('finally results preserve pending exceptions while finally throws supersede pending results', function (): void {
     $generated = lowerStageNineSource(<<<'PPP'
 <?php
-function recovered(): string
+function recovered(): string throws RuntimeException
 {
     return when (true) {
         try { throw new RuntimeException('pending'); } finally { return 'recovered'; }
@@ -332,7 +608,7 @@ function replaced(): string throws RuntimeException
         try { return 'pending'; } finally { throw new RuntimeException('final'); }
     } else { return 'else'; };
 }
-echo recovered();
+try { recovered(); } catch (RuntimeException $error) { echo $error->getMessage(); }
 try { replaced(); } catch (RuntimeException $error) { echo ':' . $error->getMessage(); }
 PPP);
     $path = $this->createTemporaryDirectory() . '/FinallyExceptions.php';
@@ -341,7 +617,7 @@ PPP);
     $runtime->run();
 
     expect($runtime->isSuccessful())->toBeTrue()
-        ->and($runtime->getOutput())->toBe('recovered:final');
+        ->and($runtime->getOutput())->toBe('pending:final');
 });
 
 test('all required value positions lower and compiler temporaries are collision safe and cleaned up', function (): void {
@@ -603,9 +879,10 @@ PPP);
 test('generated condition result and temporary spans map to the original when source', function (bool $bare): void {
     $source = str_replace('EXTRA', $bare ? '' : 'else when ($score >= 50) { return "Pass"; }', <<<'PPP'
 <?php
+function normalizeLabel(string $value): string { return $value; }
 function label(int $score): string
 {
-    return strtolower(when ($score >= 80) {
+    return normalizeLabel(when ($score >= 80) {
         return 'Excellent';
     } EXTRA else {
         return 'Fail';

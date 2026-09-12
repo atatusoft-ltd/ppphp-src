@@ -25,6 +25,7 @@ use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
 use Atatusoft\Ppphp\Frontend\Ast\WhenExpression;
 use Atatusoft\Ppphp\Frontend\Normalization\NormalizationEdit;
 use Atatusoft\Ppphp\Frontend\Normalization\NormalizationPlan;
+use Atatusoft\Ppphp\Frontend\Normalization\SourceMask;
 use Atatusoft\Ppphp\Frontend\Token\Token;
 use Atatusoft\Ppphp\Frontend\Token\TokenStream;
 use Atatusoft\Ppphp\Source\SourceFile;
@@ -1651,18 +1652,14 @@ final class ExtensionSyntaxParser
 
     private function mask(string $text): string
     {
-        $result = '';
-
-        for ($offset = 0, $length = strlen($text); $offset < $length; $offset++) {
-            $result .= in_array($text[$offset], ["\r", "\n"], true) ? $text[$offset] : ' ';
-        }
-
-        return $result;
+        return SourceMask::erase($text);
     }
 
     private function placeholder(string $text): string
     {
-        $replacement = $this->mask($text);
+        // An owning when is parsed separately; its comments belong to its
+        // branches, not to the outer placeholder expression.
+        $replacement = SourceMask::erase($text, preserveComments: false);
 
         return substr_replace($replacement, 'null', 0, 4);
     }

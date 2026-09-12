@@ -38,6 +38,26 @@ final class PhpStanConfigBuilder
         ]);
         $this->appendList($lines, 'scanDirectories', $project->composerScanDirectories);
         $this->appendList($lines, 'stubFiles', $project->stubFiles);
+        $contracts = $completedResults = [];
+        foreach ($project->selectedFiles as $file) {
+            if ($file->localContracts !== []) {
+                $contracts[$file->analysisPath] = $file->localContracts;
+            }
+            if ($file->completedResults !== []) {
+                $completedResults[$file->analysisPath] = $file->completedResults;
+            }
+        }
+        $lines[] = 'services:';
+        $lines[] = '    -';
+        $lines[] = '        class: ' . GeneratedLocalContractRule::class;
+        $lines[] = '        arguments:';
+        $lines[] = '            contracts: ' . json_encode($contracts, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $lines[] = '        tags: [phpstan.rules.rule]';
+        $lines[] = '    -';
+        $lines[] = '        class: ' . CompletedWhenResultExtension::class;
+        $lines[] = '        arguments:';
+        $lines[] = '            results: ' . json_encode($completedResults, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $lines[] = '        tags: [phpstan.rules.rule, phpstan.broker.expressionTypeResolverExtension]';
         $contents = implode("\n", $lines) . "\n";
 
         if (@file_put_contents($configurationPath, $contents) === false) {

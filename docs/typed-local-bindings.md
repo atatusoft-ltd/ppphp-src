@@ -53,6 +53,18 @@ The binding pass checks types it can resolve definitively: literals, broad array
 A declaration may be broader than its initial value: `string $summary = $name . ': done';`
 and `Animal $animal = new Dog();` are valid when `Dog` extends `Animal`.
 Generated PHPDoc does not turn these declarations into narrower-type assertions.
+The full check validates the value being assigned before generated PHPDoc can
+assert the destination's type. An unresolved call result does not become an
+`int` merely because its destination is declared `int`; use a callable with a
+known compatible return contract, or check the value before assigning it.
+This applies to initializers and later assignments, including those inside
+`when` branches. Authored comments remain in the emitted output.
+
+Parameters in `.ppphp` files also keep their declared storage type on assignment.
+For example, an `int $count` parameter cannot be overwritten with a string or
+an unverified call result. Use `mixed` when the variable must hold unrelated
+types, or check the new value before assigning it. Ordinary `.php` files keep
+PHP's native assignment behavior.
 
 Closure literals and arrow functions are `Closure` values and can be stored in
 either `Closure` or `callable` locals:

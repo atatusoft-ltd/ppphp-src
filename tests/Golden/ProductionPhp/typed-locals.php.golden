@@ -20,7 +20,7 @@ function describe(string $name): string
  * @var string $key
  * @var int $score
  */
-foreach ($scores as  $key =>  $score) {
+foreach ($scores as $key => $score) {
     /** @var string $line */ $line = $key . ': ' . $score;
     echo $line;
 }

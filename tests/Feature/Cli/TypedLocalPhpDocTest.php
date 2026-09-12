@@ -158,6 +158,52 @@ test('authored assertions immediately before generated declarations remain check
     'for' => 'for (int $n = 0; $n < 1; ++$n) { echo $n; }',
 ])->with(['@var', '@phpstan-var', '@psalm-var']);
 
+test('when local PHPDoc preserves authored assertions beside its generated type', function (string $tag): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/main.ppphp', '<?php function show(bool $enabled): int {
+        return when ($enabled) {
+            /** ' . $tag . ' string $missing */
+            int $value = 7;
+            return $value;
+        } else { return 0; };
+    } echo show(true);');
+    $check = runTypedLocalCommand($root);
+    expect($check->getExitCode())->toBe(1, $check->getOutput())
+        ->and($check->getOutput())->toContain('Variable $missing');
+})->with(['@var', '@phpstan-var', '@psalm-var']);
+
+test('when builds retain local and loop comments with their generated type contracts', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/main.ppphp', <<<'PPP'
+<?php
+function total(bool $ready): int {
+    return when ($ready) {
+        /** Accumulate each value. */
+        int $sum = 0;
+        for (int /* Visit once. */ $index = 0; $index < 1; ++$index) {
+            foreach ([7] as int /* Add this item. */ $item) {
+                $sum += $item;
+            }
+        }
+        return $sum;
+    } else { return 0; };
+}
+echo total(true), '|', total(false);
+PPP);
+    $build = runTypedLocalCommand($root, 'build');
+    expect($build->getExitCode())->toBe(0, $build->getOutput());
+    $path = $root . '/build/ppphp/main.php';
+    $php = file_get_contents($path);
+    foreach (['Accumulate each value.', 'Visit once.', 'Add this item.', '@var int $sum', '@var int $index', '@var int $item'] as $text) {
+        expect(substr_count($php, $text))->toBe(1);
+    }
+    $runtime = new Process([PHP_BINARY, $path], timeout: 5);
+    $runtime->mustRun();
+    expect($runtime->getOutput())->toBe('7|0')->and($runtime->getErrorOutput())->toBe('');
+});
+
 test('fixed local types still reject later writes and bad calls', function (string $body, string $code): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);

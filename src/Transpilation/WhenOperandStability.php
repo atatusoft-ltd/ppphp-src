@@ -8,6 +8,7 @@ use Atatusoft\Ppphp\Semantic\SemanticModel;
 use Atatusoft\Ppphp\Semantic\Type\AtomicType;
 use Atatusoft\Ppphp\Semantic\Type\Interfaces\Type;
 use Atatusoft\Ppphp\Semantic\Type\TypedArrayType;
+use Atatusoft\Ppphp\Semantic\When\WhenValueLifetime;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Scalar;

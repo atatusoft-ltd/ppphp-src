@@ -16,6 +16,7 @@ use Atatusoft\Ppphp\Semantic\Pass\CheckGenericTypesPass;
 use Atatusoft\Ppphp\Semantic\Pass\CheckStrictTypesDeclarationPass;
 use Atatusoft\Ppphp\Semantic\Pass\CheckTypesPass;
 use Atatusoft\Ppphp\Semantic\Pass\CheckWhenExpressionsPass;
+use Atatusoft\Ppphp\Semantic\Pass\CheckWhenCallBoundariesPass;
 use Atatusoft\Ppphp\Semantic\Pass\DeclareSymbolsPass;
 use Atatusoft\Ppphp\Semantic\Pass\Interfaces\SemanticPass;
 use Atatusoft\Ppphp\Semantic\Pass\ResolveNamesPass;
@@ -51,6 +52,7 @@ final readonly class SemanticAnalyzer
             new CheckTypesPass(),
             new CheckGenericTypesPass(),
             new AnalyzeTypeFlowPass(),
+            new CheckWhenCallBoundariesPass(),
             new CheckErrorEffectsPass(),
         ];
         $this->declareSymbols = $declareSymbols ?? new DeclareSymbolsPass();

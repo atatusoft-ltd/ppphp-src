@@ -10,7 +10,7 @@ use PhpParser\Node\Stmt;
 
 final readonly class SourceNameResolver
 {
-    public function resolve(ParsedFile $file, string $name, int $offset): string
+    public function resolve(ParsedFile $file, string $name, int $offset, ?int $useType = null): string
     {
         $name = trim($name);
 
@@ -37,6 +37,9 @@ final readonly class SourceNameResolver
         foreach ($statements as $statement) {
             if ($statement instanceof Stmt\Use_) {
                 foreach ($statement->uses as $use) {
+                    if ($useType !== null && ($use->type ?: $statement->type) !== $useType) {
+                        continue;
+                    }
                     if (strtolower($use->getAlias()->toString()) !== $alias) {
                         continue;
                     }
@@ -47,6 +50,9 @@ final readonly class SourceNameResolver
                 }
             } elseif ($statement instanceof Stmt\GroupUse) {
                 foreach ($statement->uses as $use) {
+                    if ($useType !== null && ($use->type ?: $statement->type) !== $useType) {
+                        continue;
+                    }
                     if (strtolower($use->getAlias()->toString()) !== $alias) {
                         continue;
                     }

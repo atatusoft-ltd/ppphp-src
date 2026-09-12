@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Atatusoft\Ppphp\Analysis\GeneratedTypeDeclarationIndex;
+use Atatusoft\Ppphp\Analysis\GeneratedLocalContractIndex;
 use Atatusoft\Ppphp\Frontend\PpphpParser;
 use Atatusoft\Ppphp\Project\ProjectParseResult;
 use Atatusoft\Ppphp\Semantic\SemanticAnalyzer;
@@ -54,3 +55,32 @@ function describe(bool $ready, callable $factory): string { return combine(' . i
     $generated = (new PhpLowerer())->lower($parsed->parsedFile, $analysis->findModel($source->path));
     expect((new GeneratedTypeDeclarationIndex())->collect($generated, $parsed->parsedFile, $analysis))->toBe([]);
 })->with([true, false]);
+
+test('local contracts follow exact writes through regenerated when bodies', function (): void {
+    $source = new SourceFile('/project/main.ppphp', 'main.ppphp', FileKind::Ppphp, <<<'PPP'
+<?php
+function choose(bool $ready, callable $factory): int {
+    int $destination = when ($ready) {
+        int $member = 1;
+        $member = $factory();
+        try { return $member; } finally { echo 'cleanup|'; }
+    } else { return 0; };
+    return $destination;
+}
+PPP);
+    $parsed = (new PpphpParser())->parse($source);
+    $analysis = (new SemanticAnalyzer())->analyze(new ProjectParseResult(
+        [$source->path => $parsed->parsedFile], [$source->path => $source], $parsed->diagnostics,
+    ));
+    $model = $analysis->findModel($source->path);
+    $generated = (new PhpLowerer())->lower($parsed->parsedFile, $model);
+    $contracts = (new GeneratedLocalContractIndex())->collect($generated, $model);
+    expect($contracts)->toHaveCount(3);
+    foreach (['$member = 1' => true, '$member = $factory()' => false, '$destination = $__ppphp_when_' => true] as $text => $initializer) {
+        $offset = strpos($generated->contents, $text);
+        expect($contracts[$offset])->toBe([
+            'name' => str_starts_with($text, '$member') ? 'member' : 'destination',
+            'type' => 'int', 'initializer' => $initializer,
+        ]);
+    }
+});

@@ -50,7 +50,7 @@ PPP);
         ->and(file_exists($root . '/build/ppphp/main.php'))->toBeFalse();
 });
 
-test('experimental internal transfer builds expose runtime success or known finally limitations', function (string $body, string $expected, bool $knownFinallyFailure = false): void {
+test('internal transfers build with their native targets and cleanup', function (string $body, string $expected): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
     $source = <<<'PPP'
@@ -67,12 +67,6 @@ echo choose(true, [1, 2, 3, 4]), '|', choose(true, []), '|', choose(false, [1]);
 PPP;
     $this->writeFile($root . '/src/main.ppphp', str_replace('BODY', $body, $source));
     $build = buildWhenTransferExperiment($root);
-    if ($knownFinallyFailure) {
-        // The checker accepts these internal targets. Existing finally lowering still fails its gate.
-        expect($build->getStatusCode())->toBe(1, $build->getDisplay())
-            ->and($build->getDisplay())->toContain('P2099')->not->toContain('P5006');
-        return;
-    }
     expect($build->getStatusCode())->toBe(0, $build->getDisplay());
     $path = $root . '/build/ppphp/main.php';
     $lint = new Process([PHP_BINARY, '-l', $path]);
@@ -126,12 +120,10 @@ PPP;
     'a loop wholly inside try does not cross its finally wrapper' => [
         'try { foreach ($values as int $value) { if ($value > 2) { $result = $value; break; } } return $result; } finally { return 9; }',
         '9|9|-1',
-        true,
     ],
     'a loop wholly inside finally can break locally' => [
         'try { return 0; } finally { foreach ($values as int $value) { if ($value > 2) { $result = $value; break; } } return $result; }',
         '3|0|-1',
-        true,
     ],
     'continue two crosses an inner foreach to an internal outer foreach' => [
         'foreach ($values as int $value) { foreach ($values as int $other) { if ($other < 2) { continue 2; } $result += $value; } } return $result;',
@@ -140,6 +132,14 @@ PPP;
     'a no match loop preserves the tail result' => [
         'foreach ($values as int $value) { if ($value > 10) { $result = $value; break; } } return $result;',
         '0|0|-1',
+    ],
+    'break across result capable cleanup' => [
+        'foreach ($values as int $value) { try { break; } finally { if ($value === 2) { return 9; } echo $value; } } return 1;',
+        '11|1|-1',
+    ],
+    'continue across result capable cleanup' => [
+        'foreach ($values as int $value) { try { continue; } finally { if ($value === 2) { return 9; } echo $value; } } return 1;',
+        '19|1|-1',
     ],
 ]);
 
@@ -170,8 +170,6 @@ PPP;
     'continue two cannot target an outer loop' => ['foreach ($values as int $value) { continue 2; } return 1;', 'P5006', 'would leave the `when` branch'],
     'break cannot leave finally' => ['foreach ($values as int $value) { try { echo $value; } finally { break; } } return 1;', 'P5006', 'cannot leave a `finally` block'],
     'continue cannot leave finally' => ['foreach ($values as int $value) { try { echo $value; } finally { continue; } } return 1;', 'P5006', 'cannot leave a `finally` block'],
-    'break across a protected try is deferred' => ['foreach ($values as int $value) { try { break; } finally { echo $value; } } return 1;', 'P5006', 'across `try`/`finally`'],
-    'continue across a protected try is deferred' => ['foreach ($values as int $value) { try { continue; } finally { echo $value; } } return 1;', 'P5006', 'across `try`/`finally`'],
     'continue targeting switch is not silently interpreted as break' => ['switch (count($values)) { default: continue; } return 1;', 'P5006', '`continue` targets a switch'],
     'switch break without branch result is incomplete' => ['switch (count($values)) { case 4: return 4; default: break; }', 'P5002', 'Every reachable path'],
     'nested break two still requires a branch tail' => ['switch (count($values)) { default: switch ($outer) { default: break 2; } return 1; }', 'P5002', 'Every reachable path'],

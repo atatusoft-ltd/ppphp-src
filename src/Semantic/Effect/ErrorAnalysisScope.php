@@ -14,6 +14,7 @@ final readonly class ErrorAnalysisScope
         public ?CallableErrorContract $contract,
         public ?string $currentClass,
         public array $variableTypes = [],
+        public bool $ownsWhenResults = false,
     ) {}
 
     public function includeVariable(string $name, Type $type): self
@@ -21,6 +22,6 @@ final readonly class ErrorAnalysisScope
         $variables = $this->variableTypes;
         $variables[$name] = $type;
 
-        return new self($this->kind, $this->contract, $this->currentClass, $variables);
+        return new self($this->kind, $this->contract, $this->currentClass, $variables, $this->ownsWhenResults);
     }
 }

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Atatusoft\Ppphp\Transpilation;
+namespace Atatusoft\Ppphp\Semantic\When;
 
 use Atatusoft\Ppphp\Semantic\Type\AtomicType;
 use Atatusoft\Ppphp\Semantic\Type\Interfaces\Type;

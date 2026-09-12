@@ -696,6 +696,10 @@ final class AnalyzeTypeFlowPass implements SemanticPass
             $this->analyzeClosure($expression, $scope, $state, $class);
         } elseif ($expression instanceof Expr\ArrowFunction) {
             $this->analyzeArrowFunction($expression, $scope, $state, $class);
+        } elseif ($expression instanceof Expr\Array_) {
+            // ArrayItem is a structural node, not an Expr. Visit its key and
+            // value in order so nested calls retain their verified bindings.
+            $this->analyzeNodeExpressions($expression, $scope, $state, $class);
         } elseif ($expression instanceof Expr\BinaryOp\BooleanAnd) {
             $this->analyzeExpression($expression->left, $scope, $state, $class);
             $rightState = $this->narrow($expression->left, $state->copy(), true);
@@ -897,7 +901,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
     {
         if ($new->class instanceof Stmt\Class_) {
             $this->analyzeUnindexedClassLike($new->class);
-            $this->analyzeCallArguments($new->args, $scope, $state, $class);
+            $this->analyzeCallArguments($new->args, $scope, $state, $class, $new->class->getMethod('__construct')?->params);
             return;
         }
 
@@ -1047,12 +1051,20 @@ final class AnalyzeTypeFlowPass implements SemanticPass
         }
     }
 
-    /** @param array<Arg|Node\VariadicPlaceholder> $arguments */
-    private function analyzeCallArguments(array $arguments, Scope $scope, FlowState $state, ?ClassSymbol $class): void
+    /**
+     * @param array<Arg|Node\VariadicPlaceholder> $arguments
+     * @param array<Node\Param>|null $parameters
+     */
+    private function analyzeCallArguments(array $arguments, Scope $scope, FlowState $state, ?ClassSymbol $class, ?array $parameters = null): void
     {
+        if ($parameters !== null) {
+            $this->context->model->argumentPassing->recordParameters($parameters, $arguments);
+        }
         foreach ($arguments as $argument) {
             if ($argument instanceof Arg) {
-                $this->context->model->argumentPassing->record($argument, ArgumentPassingMode::Unknown);
+                if ($parameters === null) {
+                    $this->context->model->argumentPassing->record($argument, ArgumentPassingMode::Unknown);
+                }
                 $this->analyzeExpression($argument->value, $scope, $state, $class);
             }
         }

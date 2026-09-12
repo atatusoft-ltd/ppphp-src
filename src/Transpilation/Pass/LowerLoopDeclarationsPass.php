@@ -112,6 +112,6 @@ final class LowerLoopDeclarationsPass implements TranspilationPass
             $trivia .= substr($token->text, $overlapStart - $token->start, $overlapEnd - $overlapStart);
         }
 
-        return trim($trivia) === '' ? ' ' : $trivia;
+        return ltrim($trivia, " \t");
     }
 }

@@ -13,6 +13,8 @@ test('a common case exit requires every path to finish the result', function (st
     expect((new WhenTailShape())->completesCase($statements ?? []))->toBe($completes);
 })->with([
     'tail result' => ['return 1;', true],
+    'comment after tail result' => ['return 1; /* Explain this result. */', true],
+    'comment after conditional result' => ['if ($x) { return 1; } else { return 2; } /* Explain these results. */', true],
     'conditional break before result' => ['if ($leave) { break; } return 1;', false],
     'conditional continue before result' => ['if ($leave) { continue; } return 1;', false],
     'conditional earlier result cannot share the tail exit' => ['if ($take) { return 1; } return 2;', false],
@@ -63,6 +65,30 @@ test('partial guards never duplicate their shared continuation', function (int $
             ->and(strlen($php))->toBeLessThan(strlen($body) * 4);
     }
 })->with([1, 8, 64]);
+
+test('a gated continuation still uses its sole continuing arm', function (string $guard, string $expected): void {
+    $parser = (new ParserFactory())->createForNewestSupportedVersion();
+    $prefix = 'if ($a) { echo "prefix|"; if ($b) { return 1; } }';
+    $source = $parser->parse('<?php ' . $prefix . $guard . ' echo "tail|"; return 3;');
+    $before = (new NodeDumper())->dump($source);
+    $rewritten = (new WhenTailShape())->rewriteGuards($source, new Expr\BooleanNot(new Expr\Variable('complete')));
+    $reference = $parser->parse('<?php ' . $prefix . ' if (!$complete) { ' . $expected . ' }');
+    expect((new NodeDumper())->dump($rewritten))->toBe((new NodeDumper())->dump($reference))
+        ->and((new NodeDumper())->dump($source))->toBe($before);
+})->with([
+    'continuing else' => [
+        'if ($c) { return 2; } else { echo "else|"; }',
+        'if ($c) { return 2; } else { echo "else|"; echo "tail|"; return 3; }',
+    ],
+    'continuing first arm' => [
+        'if ($c) { echo "first|"; } else { return 2; }',
+        'if ($c) { echo "first|"; echo "tail|"; return 3; } else { return 2; }',
+    ],
+    'continuing elseif' => [
+        'if ($c) { return 2; } elseif ($d) { echo "middle|"; } else { return 4; }',
+        'if ($c) { return 2; } elseif ($d) { echo "middle|"; echo "tail|"; return 3; } else { return 4; }',
+    ],
+]);
 
 test('a preassigned guard fallback needs one self-contained partial statement and an uncommented tail', function (string $body, bool $eligible): void {
     $source = (new ParserFactory())->createForNewestSupportedVersion()->parse('<?php ' . $body);

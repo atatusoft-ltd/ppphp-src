@@ -974,6 +974,7 @@ final class CheckBindingsPass implements SemanticPass
 
             $symbol->binding?->recordWrite($span);
             $symbol->binding?->markInitialized();
+            $this->context->model->bindings->recordWriteContract($symbol, $span);
 
             return;
         }

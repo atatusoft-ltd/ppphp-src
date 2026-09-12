@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Transpilation;
 
-use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionAnalysis;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionIndex;
 use PhpParser\Node;
@@ -15,30 +14,6 @@ use PhpParser\Node\Stmt;
 final class WhenTailShape
 {
     public function __construct(private readonly ?WhenExpressionIndex $expressions = null) {}
-
-    /** @return array{Expr, Expr, Expr}|null */
-    public function resolveTernaryOperands(WhenExpressionAnalysis $analysis): ?array
-    {
-        if (count($analysis->branches) !== 2) {
-            return null;
-        }
-        [$first, $last] = $analysis->branches;
-        if ($first->condition === null || !$last->syntax instanceof WhenElseBranch
-            || count($first->statements) !== 1 || count($last->statements) !== 1) {
-            return null;
-        }
-        $if = $first->statements[0];
-        $else = $last->statements[0];
-        if (!$if instanceof Stmt\Return_ || !$else instanceof Stmt\Return_
-            || $if->expr === null || $else->expr === null
-            // Statement comments can include branch-local type assertions.
-            // Keep their statement context rather than drop or relocate them.
-            || $if->getComments() !== [] || $else->getComments() !== []) {
-            return null;
-        }
-
-        return [$first->condition, $if->expr, $else->expr];
-    }
 
     public function accepts(WhenExpressionAnalysis $analysis, bool $allowGuards = false): bool
     {
@@ -51,6 +26,44 @@ final class WhenTailShape
         return true;
     }
 
+    public function canReturnNatively(WhenExpressionAnalysis $analysis): bool
+    {
+        foreach ($analysis->branches as $branch) {
+            foreach ($branch->statements as $statement) {
+                if ($this->containsFinallyResult($statement)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private function containsFinallyResult(Node $node): bool
+    {
+        if ($node instanceof Node\FunctionLike || $node instanceof Stmt\ClassLike) {
+            return false;
+        }
+        if ($node instanceof Stmt\Finally_ && $this->containsResult($node, completingOnly: true)) {
+            return true;
+        }
+        foreach ($node->getSubNodeNames() as $name) {
+            foreach (is_array($node->$name) ? $node->$name : [$node->$name] as $child) {
+                if ($child instanceof Node && $this->containsFinallyResult($child)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public function requiresFinallyLoopExit(Stmt\TryCatch $statement): bool
+    {
+        // A protected result already leaves the loop through a native break;
+        // finally can replace its value without another unreachable exit.
+        return $statement->finally !== null && $this->containsResult($statement->finally, completingOnly: true)
+            && !($this->expressions?->resolveTryBodyTermination($statement) ?? false);
+    }
+
     /**
      * Moves a guard's remaining siblings onto its sole continuing arm. When
      * several arms can continue, a supplied pending test shares the remainder
@@ -60,11 +73,46 @@ final class WhenTailShape
      * @param list<Stmt> $statements
      * @return list<Stmt>
      */
-    public function rewriteGuards(array $statements, ?Expr $pending = null, bool $shareContinuation = false): array
+    public function rewriteGuards(array $statements, ?Expr $pending = null, bool $foldPendingGuards = false): array
     {
         $rewritten = [];
         foreach ($statements as $index => $statement) {
-            if ($this->resolveLoop($statement) && $pending !== null && $this->containsResult($statement)) {
+            if ($pending !== null && $statement instanceof Stmt\Return_
+                && $this->containsResult($statement, completingOnly: true)) {
+                // Keep unreachable authored statements available to analysis,
+                // but never let erasing this return activate their execution.
+                return [...$rewritten, $statement, ...$this->buildGuardedContinuation(
+                    array_slice($statements, $index + 1), $pending,
+                )];
+            }
+            if ($statement instanceof Stmt\Declare_ && $statement->stmts !== null) {
+                $body = $statement->stmts;
+                $statement = clone $statement;
+                $statement->stmts = $this->rewriteGuards(array_values($body), $pending);
+                $remainder = array_slice($statements, $index + 1);
+                if ($pending !== null && $remainder !== [] && $this->containsResult($statement, completingOnly: true)) {
+                    return [...$rewritten, $statement, ...$this->buildGuardedContinuation($remainder, $pending)];
+                }
+            }
+            if ($statement instanceof Stmt\TryCatch) {
+                $statement = clone $statement;
+                $statement->stmts = $this->rewriteGuards(array_values($statement->stmts));
+                $statement->catches = array_map(static fn (Stmt\Catch_ $catch): Stmt\Catch_ => clone $catch, $statement->catches);
+                foreach ($statement->catches as $catch) {
+                    $catch->stmts = $this->rewriteGuards(array_values($catch->stmts));
+                }
+                if ($statement->finally !== null) {
+                    $statement->finally = clone $statement->finally;
+                    // Finally runs even when the protected body has a result.
+                    // Its own partial continuations receive a separate state.
+                    $statement->finally->stmts = $this->rewriteGuards(array_values($statement->finally->stmts));
+                }
+                $remainder = array_slice($statements, $index + 1);
+                if ($pending !== null && $remainder !== [] && $this->containsResult($statement, completingOnly: true)) {
+                    return [...$rewritten, $statement, ...$this->buildGuardedContinuation($remainder, $pending)];
+                }
+            }
+            if ($this->resolveLoop($statement) && $pending !== null && $this->containsResult($statement, completingOnly: true)) {
                 // The result breaks out of the real loops. Only statements
                 // after the outer loop need a shared continuation gate.
                 $remainder = array_slice($statements, $index + 1);
@@ -79,7 +127,7 @@ final class WhenTailShape
                     $case->stmts = $this->rewriteGuards(array_values($case->stmts), $pending);
                 }
                 $remainder = array_slice($statements, $index + 1);
-                if ($pending !== null && $remainder !== [] && $this->containsResult($statement)) {
+                if ($pending !== null && $remainder !== [] && $this->containsResult($statement, completingOnly: true)) {
                     return [...$rewritten, $statement, ...$this->buildGuardedContinuation($remainder, $pending)];
                 }
             }
@@ -96,12 +144,19 @@ final class WhenTailShape
                 $arm->stmts = $this->rewriteGuards(array_values($arm->stmts), $pending);
             }
 
-            $remainder = $this->containsResult($statement) ? array_slice($statements, $index + 1) : [];
+            $remainder = $this->containsResult($statement, completingOnly: true) ? array_slice($statements, $index + 1) : [];
             if ($remainder !== []) {
                 $continuing = array_values(array_filter($arms, fn (Stmt $arm): bool =>
                     !$this->completesStatements($arm->stmts, transferCompletes: true)));
                 $paths = count($continuing) + ($statement->else === null ? 1 : 0);
-                if ($pending !== null && ($paths > 1 || $shareContinuation)) {
+                // A plain if can share the pending test in its condition.
+                // Existing alternative arms cannot: keep their sole continuing
+                // arm available for the ordinary else-move inside the gate.
+                $foldCondition = $foldPendingGuards && $statement->else === null && $statement->elseifs === [];
+                // Zero continuing arms must not expose an unreachable tail
+                // either. Retain it behind the completion test so authored
+                // code/trivia remains available to supplemental diagnostics.
+                if ($pending !== null && ($paths !== 1 || $foldCondition)) {
                     return [...$rewritten, $statement, ...$this->buildGuardedContinuation($remainder, $pending)];
                 } elseif ($paths === 1) {
                     if ($continuing === []) {
@@ -139,9 +194,12 @@ final class WhenTailShape
      */
     private function buildGuardedContinuation(array $statements, Expr $pending): array
     {
+        if ($this->filterExecutableStatements($statements) === []) {
+            return $statements;
+        }
         $guarded = [];
         $group = [];
-        foreach ($this->rewriteGuards($statements, $pending, shareContinuation: true) as $statement) {
+        foreach ($this->rewriteGuards($statements, $pending, foldPendingGuards: true) as $statement) {
             if ($statement instanceof Stmt\If_ && $statement->else === null && $statement->elseifs === []
                 && $statement->getAttribute('ppphpGuardContinuation') !== true) {
                 // An else/elseif chain must retain its outer gate: folding
@@ -171,15 +229,38 @@ final class WhenTailShape
     /** @param list<Stmt> $statements */
     private function acceptsStatements(array $statements, bool $allowGuards = false, bool $insideLoop = false): bool
     {
+        $statements = $this->filterExecutableStatements($statements);
         foreach ($statements as $index => $statement) {
-            if (!$this->containsResult($statement)) {
+            if (!$this->containsResult($statement, completingOnly: true)) {
                 continue;
             }
             if (!$insideLoop && $index !== array_key_last($statements)
-                && !($allowGuards && ($statement instanceof Stmt\If_ || $statement instanceof Stmt\Switch_ || $this->resolveLoop($statement)))) {
+                && !($allowGuards && ($statement instanceof Stmt\If_ || $statement instanceof Stmt\Switch_
+                    || $statement instanceof Stmt\TryCatch || $statement instanceof Stmt\Declare_
+                    || $statement instanceof Stmt\Return_ || $this->resolveLoop($statement)))) {
                 return false;
             }
             if ($statement instanceof Stmt\Return_) {
+                continue;
+            }
+            if ($statement instanceof Stmt\Declare_ && $statement->stmts !== null) {
+                if (!$this->acceptsStatements(array_values($statement->stmts), $allowGuards, $insideLoop)) {
+                    return false;
+                }
+                continue;
+            }
+            if ($statement instanceof Stmt\TryCatch) {
+                if (!$this->acceptsStatements(array_values($statement->stmts), $allowGuards, $insideLoop)) {
+                    return false;
+                }
+                foreach ($statement->catches as $catch) {
+                    if (!$this->acceptsStatements(array_values($catch->stmts), $allowGuards, $insideLoop)) {
+                        return false;
+                    }
+                }
+                if ($statement->finally !== null && !$this->acceptsStatements(array_values($statement->finally->stmts), true)) {
+                    return false;
+                }
                 continue;
             }
             if ($this->resolveLoop($statement)) {
@@ -236,24 +317,9 @@ final class WhenTailShape
         return $statements[1];
     }
 
-    private function containsResult(Node $node): bool
+    public function containsResult(Node $node, bool $completingOnly = false): bool
     {
-        if ($node instanceof Stmt\Return_) {
-            return true;
-        }
-        if ($node instanceof Stmt\Function_ || $node instanceof Stmt\ClassLike
-            || $node instanceof Expr\Closure || $node instanceof Expr\ArrowFunction) {
-            return false;
-        }
-        foreach ($node->getSubNodeNames() as $name) {
-            foreach (is_array($node->$name) ? $node->$name : [$node->$name] as $child) {
-                if ($child instanceof Node && $this->containsResult($child)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return ($this->expressions ?? new WhenExpressionIndex())->containsResult($node, $completingOnly);
     }
 
     /** @phpstan-assert-if-true Stmt\For_|Stmt\Foreach_|Stmt\While_|Stmt\Do_ $statement */
@@ -266,16 +332,18 @@ final class WhenTailShape
     /** @param array<Stmt> $statements */
     public function completesCase(array $statements): bool
     {
+        $statements = $this->filterExecutableStatements($statements);
         $tail = $statements === [] ? null : $statements[array_key_last($statements)];
 
         // Only result-bearing paths need a case exit. An all-throwing subtree
         // already terminates; appending a break there would be unreachable.
-        return $tail !== null && $this->containsResult($tail) && $this->completesStatements($statements);
+        return $tail !== null && $this->containsResult($tail, completingOnly: true) && $this->completesStatements($statements);
     }
 
     /** @param array<Stmt> $statements */
     private function completesStatements(array $statements, bool $fallthroughCompletes = false, bool $transferCompletes = false): bool
     {
+        $statements = $this->filterExecutableStatements($statements);
         foreach (array_slice($statements, 0, -1) as $statement) {
             // An earlier result must exit immediately, not overwrite the
             // destination and then run this tail. Only source transfers fully
@@ -287,6 +355,9 @@ final class WhenTailShape
         $tail = $statements === [] ? null : $statements[array_key_last($statements)];
         if ($tail instanceof Stmt\Return_) {
             return true;
+        }
+        if ($tail instanceof Stmt\Declare_ && $tail->stmts !== null) {
+            return $this->completesStatements($tail->stmts, $fallthroughCompletes, $transferCompletes);
         }
         if ($tail instanceof Stmt\Expression && ($tail->expr instanceof Expr\Throw_ || $tail->expr instanceof Expr\Exit_)) {
             return true;
@@ -321,6 +392,16 @@ final class WhenTailShape
         }
 
         return $fallthroughCompletes;
+    }
+
+    /** @param array<Stmt> $statements
+     * @return list<Stmt>
+     */
+    private function filterExecutableStatements(array $statements): array
+    {
+        // Trailing comments are carried by Nop nodes. They remain in the
+        // printed tree, but cannot make a result non-tail or require a gate.
+        return array_values(array_filter($statements, static fn (Stmt $statement): bool => !$statement instanceof Stmt\Nop));
     }
 
     private function containsEscapingTransfer(Node $node, int $depth = 0): bool

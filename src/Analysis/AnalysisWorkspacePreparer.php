@@ -93,17 +93,22 @@ final readonly class AnalysisWorkspacePreparer
                 }
 
                 $analysisPath = $this->resolveAnalysisPath($workspace, $source, $selected);
-                $this->writeFile($analysisPath, $generated->contents);
+                $analysisContents = (new AnalysisSourceProjector())->project($generated);
+                $this->writeFile($analysisPath, $analysisContents);
                 $analysisFile = new AnalysisFile(
                     $sourceFile,
                     $analysisPath,
-                    $generated->contents,
+                    $analysisContents,
                     $source->kind,
                     $selected,
-                    new AnalysisSourceMap($analysisPath, $generated->contents, $generated->sourceMap),
+                    new AnalysisSourceMap($analysisPath, $analysisContents, $generated->sourceMap),
                     $source->kind === FileKind::Ppphp
                         ? (new GeneratedTypeDeclarationIndex())->collect($generated, $parsedFile, $semanticResult)
                         : [],
+                    $source->kind === FileKind::Ppphp && $selected
+                        ? (new GeneratedLocalContractIndex())->collect($generated, $model)
+                        : [],
+                    $selected ? $generated->completedResults : [],
                 );
 
                 if ($selected) {

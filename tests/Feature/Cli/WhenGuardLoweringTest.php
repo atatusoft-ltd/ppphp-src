@@ -99,6 +99,66 @@ PHP;
     ],
 ])->with(['return' => false, 'assignment' => true]);
 
+test('gated sole continuing arms build and preserve every native path', function (string $guard, bool $nullable): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $type = $nullable ? '?int' : 'int';
+    $branch = 'if ($a) { echo "prefix|"; if ($b) { return ' . ($nullable ? 'null' : '1') . '; } }'
+        . $guard . ' /* Keep the continuation. */ echo "tail|"; return 3;';
+    $header = '<?php function choose(bool $a, bool $b, bool $c, bool $d): ' . $type . ' { ';
+    $calls = [];
+    foreach ([false, true] as $a) {
+        foreach ([false, true] as $b) {
+            foreach ([false, true] as $c) {
+                foreach ([false, true] as $d) {
+                    $calls[] = 'echo json_encode(choose(' . implode(', ', array_map(
+                        static fn (bool $value): string => $value ? 'true' : 'false', [$a, $b, $c, $d],
+                    )) . ')), "|";';
+                }
+            }
+        }
+    }
+    $driver = implode("\n", $calls);
+    $source = $header . $type . ' $result = when ($a || $b || $c || $d) { ' . $branch
+        . ' } else { return -1; }; return $result; } ' . $driver;
+    $reference = $header . 'if ($a || $b || $c || $d) { ' . $branch . ' } else { return -1; } } ' . $driver;
+    $this->writeFile($root . '/src/main.ppphp', $source);
+    $this->writeFile($root . '/reference.php', $reference);
+    $build = new Process([PHP_BINARY, dirname(__DIR__, 3) . '/bin/ppphp', 'build', '--working-directory', $root, '--format=json']);
+    $build->mustRun();
+    $php = file_get_contents($root . '/build/ppphp/main.php');
+    expect(substr_count($php, 'Keep the continuation.'))->toBe(1)
+        ->and(substr_count($php, 'tail|'))->toBe(1)
+        ->and($php)->not->toContain('do {')->not->toContain('goto ');
+    $native = new Process([PHP_BINARY, $root . '/reference.php']);
+    $native->mustRun();
+    $run = new Process([PHP_BINARY, $root . '/build/ppphp/main.php']);
+    $run->mustRun();
+    expect($run->getOutput())->toBe($native->getOutput())
+        ->and($run->getErrorOutput())->toBe('')->and($native->getErrorOutput())->toBe('');
+})->with([
+    'continuing else' => 'if ($c) { return 2; } else { echo "else|"; }',
+    'continuing first arm' => 'if ($c) { echo "first|"; } else { return 2; }',
+    'continuing elseif' => 'if ($c) { return 2; } elseif ($d) { echo "middle|"; } else { return 4; }',
+])->with(['non-null' => false, 'nullable' => true]);
+
+test('unreachable authored continuations remain reported after complete when guards', function (bool $assignment): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $expression = 'when ($ready) {
+        if ($select) { return 5; } else { return 6; }
+        /* This unreachable source must remain available for diagnostics. */
+        echo "unreachable|";
+        return 7;
+    } else { return 0; }';
+    $statement = $assignment ? 'int $result = ' . $expression . '; return $result;' : 'return ' . $expression . ';';
+    $this->writeFile($root . '/src/main.ppphp', '<?php function choose(bool $ready, bool $select): int { ' . $statement . ' }');
+    $check = new Process([PHP_BINARY, dirname(__DIR__, 3) . '/bin/ppphp', 'check', '--working-directory', $root, '--format=json']);
+    $check->run();
+    expect($check->getExitCode())->toBe(1, $check->getOutput())
+        ->and(array_column(json_decode($check->getOutput(), true)['diagnostics'], 'code'))->toContain('P2099');
+})->with(['return' => false, 'assignment' => true]);
+
 test('shared guard completion preserves null results and failed assignments without output growth', function (bool $nullable): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);

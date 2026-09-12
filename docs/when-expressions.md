@@ -16,14 +16,23 @@ string $label = when ($score >= 80) {
 
 Inside the lexical body of a branch, `return expression;` produces the value of the `when`; it does not return from the enclosing callable. Returns inside nested functions, methods, closures, and arrow functions keep their ordinary PHP meaning. `return;` is invalid. Every reachable branch path must produce a value, throw, exit, or end in a resolved `never` expression. A possibly empty loop does not establish a result. A guaranteed-entry loop needs no fallback if no reachable break or condition can let it finish without a result. Breaks and continues consumed by inner loops do not create an exit from an outer loop.
 
+A nested `declare { … }` body is still part of the branch: its returns produce
+the `when` result, and it does not add a level to `break` or `continue` targets.
+
 `break` and `continue` may target loops and switches wholly inside the branch,
 including numbered transfers; they cannot escape the `when` or leave a
 `finally`. A `continue` targeting a switch is rejected with guidance to use
-`break` or target a surrounding loop. Transfers crossing a `try` with `finally`
-are not yet supported. `goto`, labels, `yield`, and `yield from` are rejected
+`break` or target a surrounding loop. Cleanup runs before a transfer takes
+effect. If that cleanup produces a `when` result, the result takes priority;
+otherwise the transfer resumes at its original target. A caught cleanup failure
+cancels the interrupted transfer. `goto`, labels, `yield`, and `yield from` are rejected
 outside a nested callable boundary.
 
-Conditions use ordinary PHP truthiness. They run from left to right, at most once, and only until a branch is selected. Only that branch body runs. `try`, `catch`, and `finally` retain PHP behavior; a result produced by `finally` supersedes an earlier pending result or exception, and an exception thrown by `finally` supersedes both.
+A `return` operand that throws or calls a `never` function does not produce a
+result. Its failure keeps normal exception handling; it does not complete the
+`when` or replace another pending value.
+
+Conditions use ordinary PHP truthiness. They run from left to right, at most once, and only until a branch is selected. Only that branch body runs. `try`, `catch`, and `finally` retain their native exception handling and cleanup. A result produced by `finally` replaces an earlier pending value, but never cancels a pending exception or error. An exception thrown by `finally` supersedes the pending value or exception. The destination is written only after the whole expression succeeds; a throw leaves its previous value unchanged.
 
 ## Positions
 
@@ -46,9 +55,21 @@ are assignments and returns in loop bodies. Moving a loop-header expression
 outside the loop changes how often it runs; put the computation in the loop
 body when it must run on each iteration.
 
+A call argument that needs statement-level lowering also needs known parameter
+bindings for itself and all earlier arguments. An unresolved callable cannot
+silently change a value into a reference, or a reference into a copy. Likewise,
+an earlier unpacked argument must bind its individual elements before the block
+runs. These unresolved cases report P5005, identifying the argument involved.
+Use an explicit function or method signature and explicit arguments where this
+binding is required. Bare two-branch results that remain native ternaries do
+not have this restriction; they retain PHP's own argument evaluation and binding.
+
 ## Types, Scopes, And Errors
 
 The result type is the canonical union of reachable branch-result types. Equal types collapse and `never` branches do not widen the union. Unknown results remain conservative for backend refinement. Compatibility is checked against local, assignment, return, parameter, and typed-array contexts. Composite types, invariant generics, typed lists, and typed maps retain their existing contracts.
+
+A throwing path contributes no value or extra `null` alternative to the result
+type. A value produced by `finally` does not turn that throwing path into success.
 
 Each branch has a child binding scope. It sees outer bindings and may mutate mutable ones, but may not write readonly outer bindings. Branch locals do not escape, sibling branches may reuse a name, and a branch local may not shadow a visible outer local.
 
@@ -61,7 +82,7 @@ Checked errors from conditions, statements, results, nested `when` expressions, 
 
 ## Lowering And Diagnostics
 
-The frontend keeps exact spans and hierarchical nested syntax, then parses conditions and branch bodies with the PHP 8.4 parser after applying descendant ++PHP normalization. Syntax, semantic, and backend diagnostics map to the original `.ppphp` file.
+The frontend keeps exact spans and hierarchical nested syntax, then parses conditions and branch bodies after applying descendant ++PHP normalization. Syntax, semantic, and backend diagnostics map to the original `.ppphp` file.
 
 Two branches containing only a result expression each become a native PHP
 ternary. For example, `when ($express) { return 1200; } else { return 500; }`
@@ -70,6 +91,10 @@ branch evaluation, argument binding and nullsafe short-circuiting without
 compiler temporaries. Branch-local statement comments retain their statement
 context instead of being discarded by this simplification. Nested ternaries
 are explicitly parenthesized so their grouping remains clear.
+
+Typed local declarations retain their comments and existing PHPDoc alongside
+the generated type information. User-written assertions are still checked,
+not replaced or treated as compiler-generated guarantees.
 
 Other branch results in tail position lower to ordinary
 `if`/`elseif`/`else` statements. A destination with stable components, such as a
@@ -134,7 +159,23 @@ expression, including when it throws. Nested calls finish their own argument
 cleanup before a later operand is evaluated. Retained values use protected
 cleanup, and a throwing destructor cannot postpone the remaining releases until
 after an outer catch. Non-reference-counted scalar results need no exceptional
-release wrapper.
+release wrapper. Cleanup accounts for intermediate pending values too: a scalar
+result from `finally` does not remove the need to release an earlier object or
+container if cleanup throws before replacing it.
+
+Cleanup also preserves whether an exception is already active. For example,
+PHP can skip a user stream wrapper's close callback during exception unwinding;
+generated cleanup must not invoke that callback merely because it runs inside
+a `finally`. Values passed by reference retain that reference through release,
+including when an earlier destructor changes the referenced value.
+
+A nested protected result stays separate from an earlier pending value until
+its own cleanup succeeds. If a source `catch` handles a cleanup failure, the
+failed inner value is released before the catch variable is replaced; the
+earlier pending value remains available. This applies to iterator teardown as
+well as explicit `finally` blocks. A successful handoff stays inside its source
+handler, so that handler can also catch a failure from destroying the replaced
+value.
 
 Call arguments preserve their resolved parameter bindings: by-value
 arguments keep their evaluated values, and known by-reference arguments retain
@@ -156,10 +197,11 @@ receiver is read at the eventual property write, even if the right-hand side
 replaces that variable. A receiver-producing call is evaluated before the
 right-hand side and its result is retained until the write.
 
-Other control-transfer shapes currently retain compiler-owned `do` boundaries.
-Lowering uses no synthetic closure, runtime helper or exception for compiler
-control flow. Observable evaluation and binding of earlier call arguments and
-array elements remain before the `when`; later siblings remain after it.
+Other statement-bearing results use native branches and loops, with completion
+state only where several paths can continue. Lowering uses no synthetic loop,
+closure, runtime helper or exception for compiler control flow. In supported
+call and array positions, observable evaluation and binding of earlier operands
+remain before the `when`; later siblings remain after it.
 
 Nested consuming statements own their temporary cleanup. An enclosing `when`
 does not release those temporaries a second time or reach into a nested callable.

@@ -43,6 +43,44 @@ function resolvePostStageTwelveCodes(SemanticAnalysisResult $result): array
     );
 }
 
+test('absolute types retain their identity inside namespaces and generic scopes', function (): void {
+    [, $analysis] = analyzePostStageTwelveSource(<<<'PPP'
+<?php
+namespace {
+    class T {}
+    class Box<A> { public function __construct(public A $value) {} }
+}
+namespace Sample {
+    class Holder<T> {
+        public function copy(\T $global, T $parameter, \Closure $callback): \T {
+            \T $absolute = $global;
+            T $local = $parameter;
+            array<\T> $items = [$global];
+            \Box<\T> $box = new \Box($global);
+            \Closure $read = $callback;
+            return $absolute;
+        }
+    }
+}
+PPP);
+    expect(resolvePostStageTwelveCodes($analysis))->toBe([]);
+    $bindings = [];
+    foreach ($analysis->models as $model) {
+        foreach ($model->bindings->bindings as $binding) {
+            $bindings[$binding->name] = $binding->type->semanticType;
+        }
+    }
+    expect($bindings['$absolute'])->toBeInstanceOf(AtomicType::class)
+        ->and($bindings['$absolute']->renderPhpDoc())->toBe('\\T')
+        ->and($bindings['$local'])->toBeInstanceOf(TypeParameter::class)
+        ->and($bindings['$items']->renderPhpDoc())->toBe('list<\\T>')
+        ->and($bindings['$box']->renderPhpDoc())->toBe('\\Box<\\T>')
+        ->and($bindings['$read']->renderPhpDoc())->toBe('\\Closure');
+    $method = $analysis->symbols->findClass('Sample\\Holder')->findMethod('copy');
+    expect($method->parameters[0]->type->semanticType)->toBeInstanceOf(AtomicType::class)
+        ->and($method->returnType->semanticType)->toBeInstanceOf(AtomicType::class);
+});
+
 test('owner-qualified type parameters survive symbols locals loops and callbacks', function (): void {
     [, $analysis] = analyzePostStageTwelveSource(<<<'PPP'
 <?php

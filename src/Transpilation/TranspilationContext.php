@@ -23,9 +23,13 @@ final class TranspilationContext
         get => $this->recordedEdits;
     }
 
-    /** @param list<SourceEditMapping> $mappings */
-    public function replace(Span $span, string $replacement, array $mappings = []): void
-    {
+    /** @param list<SourceEditMapping> $mappings
+     * @param array<int, array{name: string, definitions: list<int>}> $completedResults
+     * @param list<array{start: int, end: int}> $unwindCleanups
+     */
+    public function replace(
+        Span $span, string $replacement, array $mappings = [], array $completedResults = [], array $unwindCleanups = [],
+    ): void {
         if ($span->sourceFile !== $this->parsedFile->sourceFile) {
             throw new \InvalidArgumentException('A lowering edit must belong to the file being transpiled.');
         }
@@ -42,7 +46,24 @@ final class TranspilationContext
             $previousEnd = $mapping->replacementEnd;
         }
 
-        $this->recordedEdits[] = new SourceEdit($span, $replacement, $mappings);
+        foreach ($completedResults as $offset => $fact) {
+            foreach ([$offset, ...$fact['definitions']] as $position) {
+                if ($position < 0 || $position >= $replacementLength || $replacement[$position] !== '$') {
+                    throw new \InvalidArgumentException('Completed-result positions must identify variables within their edit.');
+                }
+            }
+        }
+        $previousEnd = 0;
+        foreach ($unwindCleanups as $range) {
+            if ($range['start'] < $previousEnd || $range['end'] > $replacementLength
+                || $range['end'] <= $range['start']
+                || substr($replacement, $range['start'], 5) !== 'catch'
+                || $replacement[$range['end'] - 1] !== '}') {
+                throw new \InvalidArgumentException('Unwind cleanup ranges must identify ordered catch bodies within their edit.');
+            }
+            $previousEnd = $range['end'];
+        }
+        $this->recordedEdits[] = new SourceEdit($span, $replacement, $mappings, $completedResults, $unwindCleanups);
     }
 
     public function generate(): GeneratedPhp
@@ -83,6 +104,8 @@ final class TranspilationContext
         $sourceFile = $this->parsedFile->sourceFile;
         $contents = '';
         $segments = [];
+        $completedResults = [];
+        $unwindCleanups = [];
         $originalCursor = 0;
         $generatedCursor = 0;
 
@@ -105,6 +128,15 @@ final class TranspilationContext
             }
 
             $contents .= $edit->replacement;
+            foreach ($edit->completedResults as $offset => $fact) {
+                $completedResults[$generatedCursor + $offset] = [
+                    'name' => $fact['name'],
+                    'definitions' => array_map(static fn (int $position): int => $generatedCursor + $position, $fact['definitions']),
+                ];
+            }
+            foreach ($edit->unwindCleanups as $range) {
+                $unwindCleanups[] = ['start' => $generatedCursor + $range['start'], 'end' => $generatedCursor + $range['end']];
+            }
             $replacementLength = strlen($edit->replacement);
 
             if ($replacementLength > 0) {
@@ -162,6 +194,8 @@ final class TranspilationContext
             $contents,
             new GeneratedSourceMap($sourceFile, $generatedCursor, $segments),
             $edits,
+            $completedResults,
+            $unwindCleanups,
         );
     }
 }
