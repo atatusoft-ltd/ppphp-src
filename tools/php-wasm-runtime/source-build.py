@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 import time
 from pathlib import Path
@@ -16,6 +17,20 @@ import native
 import prepare
 
 HERE = Path(__file__).resolve().parent
+
+
+def patch_link_recording(wrapper: str) -> str:
+    invoke = '/root/emsdk/upstream/emscripten/emcc2 "${args[@]}" ${EMCC_FLAGS:-}'
+    return prepare.replace_exact(wrapper, invoke,
+        'if [[ " ${args[*]} " == *" -o /build/output/php.js "* ]]; then\n'
+        '    python3 /builder/source-build.py record-link "${args[@]}" ${EMCC_FLAGS:-}\n'
+        'fi\n' + invoke)
+
+
+def record_link(arguments: list[str], destination: Path) -> None:
+    with destination.open('xb') as output:
+        output.write(native.canonical({'cwd': os.getcwd(),
+            'argv': ['/root/emsdk/upstream/emscripten/emcc2', *arguments]}))
 
 
 def compare_builds(first: Path, second: Path, manifest: dict) -> dict:
@@ -90,6 +105,10 @@ def php_recipe(original: str, manifest: dict) -> str:
                            'RUN python3 /builder/source-build.py exports')
     source = prepare.replace_exact(source, '$(cat /root/.emcc-php-wasm-sources)',
                            '$(cat /root/.emcc-php-wasm-sources) $(python3 /builder/source-build.py link-arguments)')
+    source = prepare.replace_exact(source, '# Build the final .wasm file\n',
+                                    '# Build the final .wasm file\nRUN mkdir /relink\n')
+    source = prepare.replace_exact(source, '-o /build/output/php.js',
+                                    '-o /build/output/php.js -Wl,-Map=/relink/final-link.map')
     # Keep the historical PHP-only compiler wrapper, never apply it to native libraries.
     setup = '''RUN cp /emsdk/upstream/emscripten/emcc /emsdk/upstream/emscripten/emcc2 && \\
     cp /emsdk/upstream/emscripten/emcc.py /emsdk/upstream/emscripten/emcc2.py && \\
@@ -155,6 +174,8 @@ def prepare_context(store: Path, destination: Path, manifest: dict) -> None:
     shutil.copyfile(HERE / 'prepare.py', destination / 'compile/ppphp-prepare.py')
     bridge = destination / 'compile/php/phpwasm-emscripten-library.js'
     bridge.write_text(prepare.patch_bridge_errno(bridge.read_text()))
+    wrapper = destination / 'compile/base-image/emcc-for-php-wasm.sh'
+    wrapper.write_text(patch_link_recording(wrapper.read_text()))
     original = (destination / 'compile/php/Dockerfile').read_text()
     (destination / 'Toolchain.Dockerfile').write_text(tools_recipe(manifest))
     layers = '''ARG TOOLCHAIN_IMAGE
@@ -240,6 +261,7 @@ def build(store: Path, output: Path, manifest: dict, clean: bool) -> None:
     container = subprocess.check_output(['docker', 'create', '--network=none', image_tag], text=True).strip()
     try:
         for source, target in [('/root/output', 'asyncify'), ('/receipts', 'native'),
+                               ('/relink', 'relink'),
                                ('/root/php-src/Zend/zend_fibers.c', 'zend_fibers.c'),
                                ('/root/.emcc-php-asyncify-flags', 'asyncify-flags.txt'),
                                ('/root/.emcc-php-wasm-flags', 'link-flags.txt')]:
@@ -247,6 +269,8 @@ def build(store: Path, output: Path, manifest: dict, clean: bool) -> None:
     finally:
         run('docker', 'rm', container, timeout=20)
     (artifact / 'build-arguments.txt').write_text('\n'.join(flags) + '\n')
+    (artifact / 'toolchain.txt').write_bytes(native.canonical(json.loads(
+        (artifact / 'native/runtime-build.json').read_text())['toolVersions']))
     (artifact / 'artifacts.json').write_bytes(native.canonical({'profile': 'candidate', 'productionReady': False,
                                                               'files': native.inventory(artifact)}))
     print(json.dumps({'candidate': str(artifact), 'elapsedSeconds': round(time.monotonic() - started, 3)}))
@@ -277,6 +301,7 @@ def inside(command: str, manifest: dict) -> None:
                    'phpConfiguration': native.digest(Path('/root/php-src/main/php_config.h')),
                    'fiberSource': native.digest(Path('/root/php-src/Zend/zend_fibers.c')),
                    'runtimeFiles': native.inventory(Path('/root/output')),
+                   'relinkFiles': native.inventory(Path('/relink')),
                    'toolVersions': {tool: subprocess.check_output(argv, text=True, stderr=subprocess.STDOUT, timeout=20).strip()
                                     for tool, argv in {'emcc': ['emcc', '--version'], 'cmake': ['cmake', '--version'],
                                                        'packages': ['dpkg-query', '-W', '-f=${Package}=${Version}\n']}.items()}}
@@ -284,6 +309,11 @@ def inside(command: str, manifest: dict) -> None:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == 'record-link':
+        # Called by the retained PHP compiler wrapper *after* its argument
+        # filtering/deduplication, immediately before the actual final emcc.
+        record_link(sys.argv[2:], Path('/relink/command.json'))
+        return
     parser = argparse.ArgumentParser()
     parser.add_argument('command', choices=['prepare', 'build', 'compare', 'extract-php', 'exports', 'link-arguments', 'receipt'])
     parser.add_argument('--store', type=Path)

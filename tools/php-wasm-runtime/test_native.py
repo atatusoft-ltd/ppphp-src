@@ -166,6 +166,22 @@ class NativeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 source_build.replace_block(text, 'first', 'last', 'new')
 
+    def test_final_link_record_preserves_expanded_arguments_and_cannot_be_overwritten(self):
+        invoke = '/root/emsdk/upstream/emscripten/emcc2 "${args[@]}" ${EMCC_FLAGS:-}'
+        patched = source_build.patch_link_recording(invoke)
+        self.assertTrue(patched.endswith(invoke))
+        self.assertIn('record-link "${args[@]}" ${EMCC_FLAGS:-}', patched)
+        with self.assertRaises(ValueError):
+            source_build.patch_link_recording(invoke + '\n' + invoke)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'command.json'
+            arguments = ['input with space.c', '-o', '/build/output/php.js', '-sASYNCIFY=1']
+            source_build.record_link(arguments, path)
+            self.assertEqual(json.loads(path.read_text())['argv'],
+                ['/root/emsdk/upstream/emscripten/emcc2', *arguments])
+            with self.assertRaises(FileExistsError):
+                source_build.record_link(arguments, path)
+
     def test_clean_comparison_checks_headers_receipts_and_runtime_not_only_wasm(self):
         with tempfile.TemporaryDirectory() as tmp:
             first, second = Path(tmp) / 'first', Path(tmp) / 'second'
