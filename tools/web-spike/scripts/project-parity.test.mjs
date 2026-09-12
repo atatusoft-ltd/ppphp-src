@@ -159,7 +159,7 @@ test('test adapter uses real compiler mapping and rejects stale source/configura
     assert.equal(preparedProcess.exitCode, 0, preparedProcess.stderr);
     const prepared = JSON.parse(preparedProcess.stdout); assert.equal(prepared.status, 'prepared');
     const path = prepared.phpStan.resultPath.replace('/result.json', '/') + prepared.continuation.workspaceManifest.find((item) => item.path.startsWith('selected/')).path;
-    const json = JSON.stringify({ totals: { errors: 0, file_errors: 1 }, files: { [path]: { errors: 1, messages: [{ message: "Function value() should return int but returns string.", line: 3, ignorable: true, identifier: 'return.type' }] } }, errors: [] });
+    const json = JSON.stringify({ totals: { errors: 0, file_errors: 1 }, files: { [path]: { errors: 1, messages: [{ message: "Function value() should return int but returns string.", line: 3, ignorable: true, identifier: 'return.type' }] } }, errors: [], localAnnotationOmissions: [] });
     const base = { command: prepared.phpStan.command, stdout: json, stderr: 'retained stderr', exitCode: 1, timedOut: false, outputLimitExceeded: false, executionFailure: null };
     const complete = (patch = {}) => {
       writeFileSync(join(directory, 'input.json'), JSON.stringify({ prepared, selection: null, process: { ...base, ...patch } }));
@@ -168,7 +168,7 @@ test('test adapter uses real compiler mapping and rejects stale source/configura
     };
     const valid = complete(); assert.equal(valid.exitCode, 0, valid.stderr);
     const mapped = JSON.parse(valid.stdout); assert.equal(mapped.status, 1);
-    assert.equal(mapped.diagnostics.diagnostics[0].code, 'P2016');
+    assert.equal(mapped.diagnostics.diagnostics[0].code, 'P2016', JSON.stringify(mapped.diagnostics));
     assert.equal(mapped.diagnostics.diagnostics[0].location.file, 'src/main.php');
     assert.equal(mapped.diagnostics.diagnostics[0].location.range.start.line, 3);
     assert.equal(mapped.identities[0].identity, 'return.type'); assert.equal(mapped.backendMetadata.stderr, 'retained stderr');
@@ -177,6 +177,7 @@ test('test adapter uses real compiler mapping and rejects stale source/configura
       [{ executionFailure: 'spawn failed' }, 'P6005', 'failed to complete'], [{ exitCode: 7 }, 'P6005', 'exit status 7'],
       [{ stdout: '{' }, 'P6006', 'malformed JSON'], [{ stdout: '{}' }, 'P6006', 'unexpected result format'],
       [{ stdout: '{"files":{"a":{"messages":[{}]}},"errors":[]}' }, 'P6006', 'invalid diagnostic'],
+      [{ stdout: '{"files":{},"errors":[]}' }, 'P6006', 'invalid annotation advice'],
     ]) {
       const response = complete(patch); assert.equal(response.exitCode, 0, response.stderr);
       const error = JSON.parse(response.stdout).diagnostics.diagnostics[0];

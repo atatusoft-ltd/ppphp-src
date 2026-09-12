@@ -163,13 +163,13 @@
       "version": "3.13.1",
       "commit": "d772e334cc724105040382a977ebb10dfd393293",
       "gitTree": "3a742c6fb952d1ea921b282b1cab4b62ff5db863",
-      "url": "https://aomedia.googlesource.com/aom/+archive/d772e334cc724105040382a977ebb10dfd393293.tar.gz",
+      "url": "https://aomedia.googlesource.com/aom/+archive/refs/tags/v3.13.1.tar.gz",
       "maxBytes": 8388608,
       "stripRoot": false,
       "dependencies": [],
       "libraries": ["lib/libaom.a"],
       "notices": ["LICENSE", "PATENTS"],
-      "selection": "Retain the existing AVIF codec version. Gitiles stamps archive entries at request time; verify the immutable Git tree including modes and symlinks, and receipt the acquired archive hash."
+      "selection": "Retain the existing AVIF codec version. Acquire the release-tag archive because the commit archive endpoint returns 503; accept only the independently pinned commit tree above, including modes and symlinks. Gitiles stamps archive entries at request time, so receipt the acquired archive hash separately."
     },
     "libavif": {
       "version": "1.3.0",

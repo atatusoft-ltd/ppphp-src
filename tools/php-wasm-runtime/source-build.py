@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -15,6 +16,47 @@ import native
 import prepare
 
 HERE = Path(__file__).resolve().parent
+
+
+def compare_builds(first: Path, second: Path, manifest: dict) -> dict:
+    if first.resolve() == second.resolve():
+        raise ValueError('Reproducibility requires two independent build directories')
+    inventories = []
+    for root in (first, second):
+        execution = json.loads((root / 'execution.json').read_text())
+        if execution.get('cleanCompiledLayers') is not True:
+            raise ValueError('Both builds must bypass compiled-library caches')
+        candidate = root / 'candidate'
+        receipt = json.loads((candidate / 'native/runtime-build.json').read_text())
+        if receipt['manifest'] != manifest or receipt['productionReady'] is not False:
+            raise ValueError('Candidate does not match the selected source-build profile')
+        if (not receipt['runtimeFiles'] or receipt['runtimeFiles'] != native.inventory(candidate / 'asyncify')
+                or not any(row['path'].endswith('.wasm') for row in receipt['runtimeFiles'])
+                or not any(row['path'].endswith('.js') for row in receipt['runtimeFiles'])):
+            raise ValueError('Missing or changed runtime output')
+        for name, source in manifest['sources'].items():
+            if 'libraries' not in source:
+                continue
+            for library in source['libraries']:
+                native.verify_wasm_archive(root / 'native-checkpoint/prefixes' / name / library)
+        # Compare all installed files (including headers/configuration), every
+        # native receipt, and the complete candidate. Only the separate execution
+        # observations contain wall time and per-run Docker image identities.
+        inventories.append({section: native.inventory(root / section) for section in
+                            ['native-checkpoint/prefixes', 'native-checkpoint/receipts', 'candidate']})
+    differences = []
+    for section in inventories[0]:
+        rows = [{row['path']: row for row in inventory[section]} for inventory in inventories]
+        if not rows[0] or not rows[1]:
+            raise ValueError('Incomplete build outputs cannot establish reproducibility')
+        for path in sorted(rows[0].keys() | rows[1].keys()):
+            if rows[0].get(path) != rows[1].get(path):
+                differences.append(section + '/' + path)
+    return {'schemaVersion': 1, 'status': 'FAIL' if differences else 'PASS',
+            'scope': 'Two independent clean builds under the same pinned Linux profile',
+            'crossHostReproducibility': 'NOT RUN', 'productionReady': False,
+            'inventorySha256': [hashlib.sha256(native.canonical(rows)).hexdigest() for rows in inventories],
+            'differences': differences}
 
 
 def replace_block(source: str, start: str, end: str, replacement: str) -> str:
@@ -243,13 +285,24 @@ def inside(command: str, manifest: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['prepare', 'build', 'extract-php', 'exports', 'link-arguments', 'receipt'])
+    parser.add_argument('command', choices=['prepare', 'build', 'compare', 'extract-php', 'exports', 'link-arguments', 'receipt'])
     parser.add_argument('--store', type=Path)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--clean', action='store_true')
+    parser.add_argument('--first', type=Path)
+    parser.add_argument('--second', type=Path)
     args = parser.parse_args()
     manifest = native.load_manifest()
-    if args.command in ('prepare', 'build'):
+    if args.command == 'compare':
+        if not args.first or not args.second or not args.output:
+            parser.error('--first, --second and --output are required')
+        report = compare_builds(args.first, args.second, manifest)
+        with native.require_temporary(args.output).open('xb') as stream:
+            stream.write(native.canonical(report))
+        print(json.dumps(report))
+        if report['status'] != 'PASS':
+            raise SystemExit(1)
+    elif args.command in ('prepare', 'build'):
         if not args.store or not args.output:
             parser.error('--store and --output are required')
         if args.command == 'prepare':

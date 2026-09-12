@@ -151,6 +151,43 @@ class NativeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 source_build.replace_block(text, 'first', 'last', 'new')
 
+    def test_clean_comparison_checks_headers_receipts_and_runtime_not_only_wasm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            first, second = Path(tmp) / 'first', Path(tmp) / 'second'
+            manifest = {'sources': {'example': {'libraries': ['lib/example.a']}}}
+            for root in (first, second):
+                for path in ['candidate/native', 'candidate/asyncify', 'native-checkpoint/prefixes/example/lib',
+                             'native-checkpoint/prefixes/example/include', 'native-checkpoint/receipts']:
+                    (root / path).mkdir(parents=True)
+                (root / 'execution.json').write_text('{"cleanCompiledLayers":true}')
+                body = b'\0asm\x01\0\0\0'
+                header = f'{"example.o/":<16}{0:<12}{0:<6}{0:<6}{100644:<8}{len(body):<10}`\n'.encode()
+                (root / 'native-checkpoint/prefixes/example/lib/example.a').write_bytes(b'!<arch>\n' + header + body)
+                (root / 'native-checkpoint/prefixes/example/include/example.h').write_text('header')
+                (root / 'native-checkpoint/receipts/example.json').write_text('{}')
+                (root / 'candidate/asyncify/runtime.wasm').write_bytes(body)
+                (root / 'candidate/asyncify/runtime.js').write_text('// test loader')
+                (root / 'candidate/native/runtime-build.json').write_bytes(native.canonical({
+                    'manifest': manifest, 'productionReady': False,
+                    'runtimeFiles': native.inventory(root / 'candidate/asyncify')}))
+            self.assertEqual(source_build.compare_builds(first, second, manifest)['status'], 'PASS')
+            for path in ['native-checkpoint/prefixes/example/include/example.h', 'native-checkpoint/receipts/example.json']:
+                file = second / path
+                original = file.read_bytes()
+                file.write_bytes(original + b'changed')
+                result = source_build.compare_builds(first, second, manifest)
+                self.assertEqual(result['status'], 'FAIL')
+                self.assertEqual(result['differences'], [path])
+                file.write_bytes(original)
+            (second / 'candidate/asyncify/runtime.js').write_text('changed')
+            with self.assertRaisesRegex(ValueError, 'changed runtime'):
+                source_build.compare_builds(first, second, manifest)
+            with self.assertRaisesRegex(ValueError, 'independent'):
+                source_build.compare_builds(first, first, manifest)
+            (second / 'execution.json').write_text('{"cleanCompiledLayers":false}')
+            with self.assertRaisesRegex(ValueError, 'bypass'):
+                source_build.compare_builds(first, second, manifest)
+
     def test_toolchain_snapshot_does_not_float(self):
         recipe = source_build.tools_recipe(native.load_manifest())
         self.assertIn('snapshot.ubuntu.com/ubuntu/20260910T000000Z/', recipe)

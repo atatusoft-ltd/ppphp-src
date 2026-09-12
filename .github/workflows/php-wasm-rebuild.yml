@@ -82,6 +82,9 @@ jobs:
             node tools/web-spike/scripts/run-fiber-contract.mjs --wasm-sha256 "$wasm_sha256" --output "/tmp/ppphp-source-build-$iteration/fiber-contract"
             node tools/web-spike/scripts/run-fiber-contract.mjs --suite native-contract --wasm-sha256 "$wasm_sha256" --output "/tmp/ppphp-source-build-$iteration/native-contract"
           done
+          if [ "$CLEAN_BUILDS" = 2 ]; then
+            python3 tools/php-wasm-runtime/source-build.py compare --first /tmp/ppphp-source-build-1 --second /tmp/ppphp-source-build-2 --output /tmp/ppphp-reproducibility.json
+          fi
       - name: Retain source-built outputs and provenance
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -96,6 +99,7 @@ jobs:
             /tmp/ppphp-source-build-*/compatibility/report.json
             /tmp/ppphp-source-build-*/fiber-contract/report.json
             /tmp/ppphp-source-build-*/native-contract/report.json
+            /tmp/ppphp-reproducibility.json
           retention-days: 7
           if-no-files-found: warn
       - name: Retain verified downloads (durable owner handoff still required)
