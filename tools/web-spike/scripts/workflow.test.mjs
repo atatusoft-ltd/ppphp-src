@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { runInNewContext } from 'node:vm';
 import { hash, canonical, validateWorkspace, validateInvocation, relativePath, processRecord } from '../src/workflow-contract.mjs';
 import { ROOT, SPIKE, runProcess } from './run-project-parity.mjs';
@@ -25,6 +26,34 @@ test('workflow host rejects general commands and changed approved identities', a
     changed.identity = await hash(canonical(changed));
     await assert.rejects(validateInvocation(changed));
   }
+});
+test('workflow accepts the compiler-generated analyzer plan but no alternative capabilities', async () => {
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'ppphp-workflow-plan-')));
+  try {
+    const result = runProcess(process.env.PHP_BINARY || 'php', ['-d', 'memory_limit=256M', '-r',
+      'require $argv[1]."/vendor/autoload.php"; $project = new Atatusoft\\Ppphp\\Analysis\\AnalysisProject($argv[2], $argv[2], [], [], [], [], [], "8.4"); '
+      + 'echo json_encode((new Atatusoft\\Ppphp\\Analysis\\PhpStan\\PhpStanProjectAnalyzer())->buildPlan($project, true, "php")->command);',
+      ROOT, workspace], ROOT);
+    assert.equal(result.exitCode, 0, result.stderr);
+    // Only relocate the real compiler/analysis roots to their browser mounts.
+    const command = JSON.parse(result.stdout).map(arg => arg.replace(ROOT, '/opt/ppphp').replace(workspace, '/workspace/.cache/analysis'));
+    const validate = async command => {
+      const invocation = { kind: 'phpstan', command, workingDirectory: '/workspace',
+        progressPaths: ['/workspace/.cache/analysis/selected/main.php'], binding: 'sha256:' + 'b'.repeat(64) };
+      invocation.identity = await hash(canonical(invocation));
+      return validateInvocation(invocation);
+    };
+    await validate(command);
+    const autoload = '--autoload-file=/opt/ppphp/resources/phpstan/extensions.php';
+    for (const path of ['/workspace/src/evil.php', '/opt/ppphp/vendor/autoload.php', '/opt/ppphp/resources/phpstan/../evil.php']) {
+      await assert.rejects(validate(command.map(arg => arg === autoload ? '--autoload-file=' + path : arg)));
+    }
+    for (const changed of [command.filter(arg => arg !== autoload), [...command, autoload],
+      command.filter(arg => arg !== '--debug'), command.map(arg => arg === '--memory-limit=256M' ? '--memory-limit=-1' : arg),
+      command.map(arg => arg.startsWith('--configuration=') ? '--configuration=/workspace/src/phpstan.neon' : arg)]) {
+      await assert.rejects(validate(changed));
+    }
+  } finally { rmSync(workspace, { recursive: true, force: true }); }
 });
 test('workspace transfer rejects duplicate paths traversal invalid bytes and excess records', () => {
   const record = { path: 'src/main.php', mode: 420, kind: 'file', bytes: new Uint8Array([0, 255, 13, 10]) };
@@ -72,6 +101,28 @@ test('sequential acceptance requires rejected genuine completions from both A an
   assert.equal(assessStaleCompletions({ evidence }), true);
   evidence.stale[1].response.currentOutput = {};
   assert.equal(assessStaleCompletions({ evidence }), false);
+});
+
+test('workflow follows fresh analysis rounds beyond four turns and rejects replay or reversed phases', async () => {
+  const source = readFileSync(join(SPIKE, 'src/workflow.js'), 'utf8');
+  const operation = source.slice(source.indexOf('const operate ='), source.indexOf('window.runWorkflowCase ='));
+  const pending = (id, kind = 'phpstan') => ({ status: kind === 'phpstan' ? 'pending-analysis' : 'pending-validation',
+    continuation: 'continuation-' + id, invocations: [{ identity: 'invocation-' + id, kind }] });
+  const exercise = async (responses, duration = 0) => {
+    let calls = 0, clock = 0;
+    const context = { sequence: 0, assets: { runtime: {} }, performance: { now: () => (clock++ ? duration : 0) },
+      WORKFLOW_LIMITS: { operationMs: 1000 }, setTimeout, clearTimeout, window: {}, outputs: () => null, processRecord,
+      request: async () => { assert.ok(calls < responses.length, 'Unexpected extra compiler request'); return { response: responses[calls++], observation: {} }; },
+      phase: async () => ({ process: { kind: 'completed', exitCode: 0, stdout: '', stderr: '' } }) };
+    runInNewContext(operation + '; globalThis.run = operate;', context);
+    return context.run({ id: 'rounds' }, 'build');
+  };
+  const rounds = [1, 2, 3, 4, 5].map(id => pending(id));
+  assert.equal((await exercise([...rounds, pending(6, 'php-lint'), { status: 'complete' }])).response.status, 'complete');
+  await assert.rejects(exercise([pending(1), pending(2), pending(1)]), /Replayed compiler continuation/);
+  await assert.rejects(exercise([pending(1), { ...pending(2), invocations: pending(1).invocations }]), /Replayed compiler invocation/);
+  await assert.rejects(exercise([pending(1, 'php-lint'), pending(2)]), /Invalid compiler phase progression/);
+  await assert.rejects(exercise([pending(1)], 1001), /Operation watchdog expired/);
 });
 
 test('a queued message from a terminated worker cannot overwrite the next workspace', async () => {

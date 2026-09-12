@@ -132,6 +132,20 @@ lock; it does not accept the deliberately broken historical Fiber baseline as
 a repaired-runtime comparison. Without this option the earlier negative-control
 contract remains unchanged. BP-4 and Website qualification use the new pair.
 
+The fresh BP-4 run exposed two stale harness assumptions: its analyzer allowlist
+omitted the compiler-owned extension autoloader, and its loop permitted only four
+protocol turns. The harness now checks the exact current command and allows fresh
+analysis rounds under the unchanged operation deadline, rejecting replay and
+analysis after lint. Tests exercise the actual compiler-generated command and
+multi-round progression. No production compiler or Website capability was relaxed.
+
+Ordinary CI exhausted its existing 30-minute job budget while the expanded Pest
+suite was still passing. CI now runs four isolated shards per PHP host, retaining
+that deadline. All 2,169 listed tests occur exactly once across the four shards.
+The existing required PHP checks depend on every shard succeeding and then run
+`composer check:contracts`; `composer check` still includes those gates and the
+entire test suite. No test or aggregate check was removed.
+
 ## Current acceptance status
 
 - Source acquisition and archive/tree verification: executed locally.
@@ -146,6 +160,23 @@ contract remains unchanged. BP-4 and Website qualification use the new pair.
 - Initial candidate controls: 15 runtime/PHPStan, eight Fiber lifecycle and
   16 native-library/security regression cases passed in that run. Local runtime
   controls also passed. This is not the full independent qualification.
+- The linker command and map were inspected against the native receipts: every
+  supplied third-party archive is source-built; 16 contribute object code and the
+  auxiliary libcharset archive is unused. The other contributing archives are
+  from the pinned Emscripten sysroot. The actual installed OpenSSL headers identify
+  3.5.8, its produced archives match the link receipt, and the runtime version and
+  local cryptographic operations pass.
+- Initial WASM audit: no internal `memory.grow` instructions. Compared with the
+  repaired runtime, imports add two indirect-call signatures and WASI `random_get`,
+  and remove two unused indirect-call signatures. The generated `random_get`
+  implementation uses `crypto.getRandomValues`; it adds no networking capability.
+  A seventeenth local native regression exercises OpenSSL with that browser entropy
+  source unavailable. It observes the propagated failure, while the separate PHP
+  random-bytes regression observes `RandomException`. Neither may report success
+  without an actual entropy request. Both pass; production entropy is unchanged.
+- Initial independent compiler parity: all 48 cases PASS, including 18 Website
+  teaching cases, malformed analyzer output and recovery. The broader workflow,
+  client, real-page and installed-delivery suites remain separate gates.
 - New runtime compatibility, containment, full client/page/HTTPS qualification:
   pending the new executable pair; historical results are not substituted.
 - Two-build byte comparison execution, matching distribution/source, durable owner retention

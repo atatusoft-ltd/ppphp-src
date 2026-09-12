@@ -70,17 +70,27 @@ const outputs = (response) => {
 const operate = async (fixture, operation) => {
   const started = performance.now();
   const transcript = [];
+  const continuations = new Set(), invocations = new Set();
+  let validating = false;
   let next = { version: 3, action: 'start', operationId: fixture.id + '/' + operation + '/' + (++sequence), sequence,
     operation, selection: { path: fixture.selection || null }, runtime: assets.runtime };
   const watchdog = setTimeout(() => window.abortWorkflow('Operation watchdog expired'), WORKFLOW_LIMITS.operationMs);
   try {
-  for (let i = 0; i < 4; i++) {
+  while (true) {
     if (performance.now() - started > WORKFLOW_LIMITS.operationMs) throw new Error('Operation watchdog expired');
     const observed = await request(next, fixture.testEmitter); transcript.push({ request: next, ...observed });
     const response = observed.response;
     if (!response.status.startsWith('pending-')) return { response, transcript, outputs: outputs(response), platform: observed.observation.platform };
+    if (!['pending-analysis', 'pending-validation'].includes(response.status)
+      || (validating && response.status === 'pending-analysis')) throw new Error('Invalid compiler phase progression');
+    if (continuations.has(response.continuation)) throw new Error('Replayed compiler continuation');
+    continuations.add(response.continuation);
+    validating = response.status === 'pending-validation';
     const results = [];
     for (const invocation of response.invocations) {
+      if (invocation.kind !== (validating ? 'php-lint' : 'phpstan')) throw new Error('Invalid compiler phase progression');
+      if (invocations.has(invocation.identity)) throw new Error('Replayed compiler invocation');
+      invocations.add(invocation.identity);
       const observation = await phase({ invocation, fault: fixture.fault });
       transcript.push({ invocation, process: observation.process, platform: observation.platform });
       results.push(processRecord(invocation, observation.process));
@@ -88,7 +98,6 @@ const operate = async (fixture, operation) => {
     next = { version: 3, action: response.status === 'pending-analysis' ? 'complete-analysis' : 'complete-lint',
       operationId: response.operationId, sequence: response.sequence, continuation: response.continuation, results };
   }
-  throw new Error('Excessive compiler phase count');
   } finally { clearTimeout(watchdog); }
 };
 window.runWorkflowCase = (fixture) => {

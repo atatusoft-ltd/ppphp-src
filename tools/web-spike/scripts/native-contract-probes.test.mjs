@@ -15,6 +15,7 @@ const accepted = () => ({ suite: 'native-contract', done: true, cases: nativeCon
   id: probe.id, computeStarted: true, semantics: 'PASS', kind: 'completed',
   stdout: 'ok', stderr: '', exitCode: probe.exitCode, sideEffect: false,
   ...(probe.entropyDenied ? { entropyReads: 1, exitCode: 0, stdout: 'entropy-unavailable' } : {}),
+  ...(probe.entropyTrap ? { kind: 'trap', error: 'Error: BP-7R entropy unavailable', stdout: undefined, exitCode: undefined } : {}),
 })) });
 
 test('native qualification rejects missing execution, failed processes and fabricated entropy evidence', () => {
@@ -27,6 +28,9 @@ test('native qualification rejects missing execution, failed processes and fabri
     data => { data.cases.find(item => item.id === 'native-entropy-failure').entropyReads = 0; },
     data => { data.cases.find(item => item.id === 'native-entropy-failure').stdout = 'random data'; },
     data => { data.cases.find(item => item.id === 'native-entropy-failure').kind = 'trap'; },
+    data => { data.cases.find(item => item.id === 'native-openssl-entropy-failure').entropyReads = 0; },
+    data => { data.cases.find(item => item.id === 'native-openssl-entropy-failure').kind = 'completed'; },
+    data => { data.cases.find(item => item.id === 'native-openssl-entropy-failure').error = 'unrelated trap'; },
     data => { data.cases.find(item => item.id === 'native-lint-valid').sideEffect = true; },
   ]) {
     const data = accepted(); change(data); assert.equal(assessNativeContract(data), false);

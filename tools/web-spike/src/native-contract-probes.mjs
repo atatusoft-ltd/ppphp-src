@@ -118,11 +118,17 @@ export const nativeContractProbes = [
   { id: 'native-entropy-failure', entropyDenied: true, code: `<?php
     try { random_bytes(32); } catch (Random\\RandomException $error) { echo 'entropy-unavailable'; }
   ` },
+  // OpenSSL's WASI random_get path propagates the unavailable browser source;
+  // it must not generate bytes from a fallback seed or report success.
+  { id: 'native-openssl-entropy-failure', entropyDenied: true, entropyTrap: true,
+    code: '<?php openssl_random_pseudo_bytes(32); echo "unexpected-entropy-success";' },
   { id: 'native-lint-valid', cliLint: true, code: '<?php file_put_contents(__DIR__ . "/side-effect", "executed");', exitCode: 0 },
   { id: 'native-lint-invalid', cliLint: true, code: '<?php function broken( {', exitCode: 255 },
 ];
 
-export function assessEntropyFailure(result) {
+export function assessEntropyFailure(result, trap = false) {
+  if (trap) return result.kind === 'trap' && result.entropyReads > 0
+    && typeof result.error === 'string' && result.error.includes('BP-7R entropy unavailable');
   return result.kind === 'completed' && result.exitCode === 0 && result.entropyReads > 0
     && result.stdout === 'entropy-unavailable' && result.stderr === '';
 }
@@ -133,7 +139,7 @@ export function assessNativeContract(data) {
   return nativeContractProbes.every(probe => {
     const result = data.cases.find(item => item.id === probe.id);
     if (!result || result.computeStarted !== true || result.semantics !== 'PASS') return false;
-    if (probe.entropyDenied) return assessEntropyFailure(result);
+    if (probe.entropyDenied) return assessEntropyFailure(result, probe.entropyTrap);
     if (probe.cliLint) return result.kind === 'completed' && result.exitCode === probe.exitCode && result.sideEffect === false;
     return result.kind === 'completed' && result.exitCode === 0 && result.stdout === 'ok' && result.stderr === '';
   });

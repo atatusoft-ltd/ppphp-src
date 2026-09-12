@@ -51,7 +51,7 @@ function runCase(probe) {
 for (const probe of selectedProbes) {
   const result = await runCase(probe);
   result.semantics = probe.entropyDenied
-    ? assessEntropyFailure(result) ? 'PASS' : 'FAIL'
+    ? assessEntropyFailure(result, probe.entropyTrap) ? 'PASS' : 'FAIL'
     : probe.compiler
     ? result.kind === 'completed' && result.validPhpStanJson === true && result.exitCode === 0 ? 'PASS' : 'FAIL'
     : assess(probe, result);
