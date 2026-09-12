@@ -202,7 +202,7 @@
       "version": "3.15.0",
       "commit": "de4c1d1edc49723a78954d30a83690aa1937422f",
       "gitTree": "745a4742d27f7f61cd44661dd550b6bb44ca15d8",
-      "url": "https://aomedia.googlesource.com/aom/+archive/refs/tags/v3.15.0.tar.gz",
+      "url": "https://aomedia.googlesource.com/aom/+archive/de4c1d1edc49723a78954d30a83690aa1937422f.tar.gz",
       "maxBytes": 8388608,
       "stripRoot": false,
       "dependencies": [],
