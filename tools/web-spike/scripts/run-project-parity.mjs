@@ -16,10 +16,15 @@ export const SPIKE = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const ROOT = resolve(SPIKE, '../..');
 export const ADAPTER = join(SPIKE, 'src/parity-adapter.php');
 
-export function assessControls(baseline, candidate, fiber, wasmSha256, lockSha256) {
+export function assessControls(baseline, candidate, fiber, wasmSha256, lockSha256, comparisonSha256 = null) {
   const ids = [...probes.map((item) => item.id), 'phpstan-standalone'];
+  const comparison = comparisonSha256 !== null;
+  if (comparison && (!/^[a-f0-9]{64}$/.test(comparisonSha256)
+      || baseline?.artifact?.sha256 !== comparisonSha256
+      || !baseline.loadedArtifacts?.length || !baseline.loadedArtifacts.every(item => item.sha256 === comparisonSha256)
+      || baseline.browser?.data?.cases?.find(item => item.id === 'phpstan-standalone')?.compilerArchive?.compilerLockSha256 !== lockSha256)) return false;
   return baseline?.format === 'ppphp.rebuilt-runtime' && candidate?.format === 'ppphp.rebuilt-runtime'
-    && baseline.profile === 'baseline' && candidate.profile === 'candidate'
+    && baseline.profile === (comparison ? 'candidate' : 'baseline') && candidate.profile === 'candidate'
     && baseline.accepted === true && candidate.accepted === true && fiber?.accepted === true
     && baseline.browser?.kind === 'observed' && candidate.browser?.kind === 'observed' && fiber.browser?.kind === 'observed'
     && !baseline.browser.cleanupError && !candidate.browser.cleanupError && !fiber.browser.cleanupError
@@ -27,7 +32,7 @@ export function assessControls(baseline, candidate, fiber, wasmSha256, lockSha25
     && candidate.loadedArtifacts?.length > 0 && candidate.loadedArtifacts.every((item) => item.sha256 === wasmSha256)
     && fiber.loadedArtifacts?.length > 0 && fiber.loadedArtifacts.every((item) => item.sha256 === wasmSha256)
     && candidate.browser.data?.cases?.find((item) => item.id === 'phpstan-standalone')?.compilerArchive?.compilerLockSha256 === lockSha256
-    && assessProfile(baseline.browser.data?.cases, 'baseline', ids)
+    && assessProfile(baseline.browser.data?.cases, comparison ? 'candidate' : 'baseline', ids)
     && assessProfile(candidate.browser.data?.cases, 'candidate', ids)
     && assessFiberContract(fiber.browser.data);
 }
@@ -129,9 +134,10 @@ export async function main(args = process.argv.slice(2)) {
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
     if (key === '--native-only') options[key] = true;
-    else if (['--runtime', '--wasm-sha256', '--corpus', '--fixtures', '--output', '--case', '--controls'].includes(key) && args[i + 1] && !options[key]) options[key] = args[++i];
+    else if (['--runtime', '--wasm-sha256', '--corpus', '--fixtures', '--output', '--case', '--controls', '--comparison-wasm-sha256'].includes(key) && args[i + 1] && !options[key]) options[key] = args[++i];
     else throw new Error('Unknown or duplicate parity option: ' + key);
   }
+  if (options['--comparison-wasm-sha256'] && (!options['--controls'] || !/^[a-f0-9]{64}$/.test(options['--comparison-wasm-sha256']))) throw new Error('A repaired-runtime comparison requires controls and its explicit WASM SHA-256');
   const output = createOutput(options['--output']);
   const manifestPath = options['--fixtures'] || join(SPIKE, 'fixtures/projects.json');
   const manifest = readBoundedJson(manifestPath);
@@ -163,11 +169,12 @@ export async function main(args = process.argv.slice(2)) {
     report.identity.harnessFiles = Object.fromEntries(['parity.html', 'src/parity-worker.js', 'src/parity.js', 'src/parity-adapter.php', 'src/parity-contract.mjs', 'src/parity-streams.mjs', 'src/phpstan-debug-output.mjs', 'scripts/run-project-parity.mjs', 'scripts/prepare-compiler-bundle.mjs'].map((path) => [path, sha256(readFileSync(join(SPIKE, path)))]));
     report.runtimeControls = { status: 'NOT RUN' };
     if (options['--controls']) {
-      const controls = ['baseline-control', 'candidate-control', 'fiber-control'].map((name) => {
+      const controls = [options['--comparison-wasm-sha256'] ? 'comparison-control' : 'baseline-control', 'candidate-control', 'fiber-control'].map((name) => {
         const path = join(options['--controls'], name, 'report.json');
         return { report: readBoundedJson(path), sha256: sha256(readFileSync(path)) };
       });
-      report.runtimeControls = { status: assessControls(...controls.map((item) => item.report), options['--wasm-sha256'], report.identity.compilerLockSha256) ? 'PASS' : 'FAIL', reportSha256: controls.map((item) => item.sha256) };
+      report.runtimeControls = { status: assessControls(...controls.map((item) => item.report), options['--wasm-sha256'], report.identity.compilerLockSha256, options['--comparison-wasm-sha256'] || null) ? 'PASS' : 'FAIL', reportSha256: controls.map((item) => item.sha256),
+        comparison: options['--comparison-wasm-sha256'] ? { profile: 'retained-repaired-runtime', wasmSha256: options['--comparison-wasm-sha256'] } : { profile: 'historical-negative-baseline' } };
     }
     for (const fixture of cases) {
       const native = nativeCase(fixture);

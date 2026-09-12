@@ -97,6 +97,18 @@ test('synthetic control reports cannot qualify missing cases wrong artifacts or 
   for (const mutate of [(c) => c.browser.data.cases.pop(), (c) => c.browser.cleanupError = 'failed', (c) => c.accepted = false]) {
     const changed = structuredClone(candidate); mutate(changed); assert.equal(assessControls(baseline, changed, fiber, wasm, lock), false);
   }
+  const comparisonWasm = 'e'.repeat(64);
+  const comparison = { ...structuredClone(candidate), artifact: { sha256: comparisonWasm }, loadedArtifacts: [{ sha256: comparisonWasm }] };
+  assert.equal(assessControls(comparison, candidate, fiber, wasm, lock), false);
+  assert.equal(assessControls(comparison, candidate, fiber, wasm, lock, comparisonWasm), true);
+  assert.equal(assessControls(baseline, candidate, fiber, wasm, lock, comparisonWasm), false);
+  for (const mutate of [c => c.loadedArtifacts = [], c => c.loadedArtifacts[0].sha256 = wasm,
+    c => c.browser.data.cases.pop(), c => c.browser.data.cases[0].semantics = 'FAIL',
+    c => c.browser.cleanupError = 'failed', c => c.accepted = false,
+    c => c.browser.data.cases.find(p => p.id === 'phpstan-standalone').compilerArchive.compilerLockSha256 = '0'.repeat(64)]) {
+    const changed = structuredClone(comparison); mutate(changed);
+    assert.equal(assessControls(changed, candidate, fiber, wasm, lock, comparisonWasm), false);
+  }
 });
 test('comparison does not erase identifiers quoted values locations order or missing findings', () => {
   const diagnostic = { code: 'P2016', severity: 'error', title: 'Return Type Does Not Match', message: "Expected int; got 'café'.", location: { file: 'main.php', range: { start: { offset: 12, line: 3, column: 1 } } }, related: [], help: 'Return an int.' };

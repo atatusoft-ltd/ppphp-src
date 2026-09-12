@@ -103,6 +103,16 @@ for reproducibility evidence. Only downloads and the pinned host-tool image may
 be shared between those builds. The historical `rebuild.sh` remains available
 through the workflow's `historical` profile.
 
+For BP-3, run the retained repaired runtime with `verify-built.mjs --expect
+candidate` into `comparison-control/`, and the new runtime into
+`candidate-control/`, followed by its `fiber-control/`. Pass the parent's
+`--controls` directory and the retained runtime's explicit
+`--comparison-wasm-sha256` to `run-project-parity.mjs`. This requires every
+comparison case to pass on the observed comparison bytes and current compiler
+lock; it does not accept the deliberately broken historical Fiber baseline as
+a repaired-runtime comparison. Without this option the earlier negative-control
+contract remains unchanged. BP-4 and Website qualification use the new pair.
+
 ## Current acceptance status
 
 - Source acquisition and archive/tree verification: executed locally.
