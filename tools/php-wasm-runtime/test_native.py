@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -128,6 +129,17 @@ class NativeTests(unittest.TestCase):
         self.assertIn('snapshot.ubuntu.com/ubuntu/20260910T000000Z/', recipe)
         self.assertIn('sha256:5e56ae2', recipe)
         self.assertNotIn('apt-get upgrade', recipe)
+
+    def test_snapshot_rewrite_executes_and_rewrites_both_verified_package_origins(self):
+        recipe = source_build.tools_recipe(native.load_manifest())
+        expression = recipe.split("sed -i -E '", 1)[1].split("'", 1)[0]
+        result = subprocess.run(['sed', '-E', expression], input=(
+            'deb http://archive.ubuntu.com/ubuntu/ jammy main\n'
+            'deb http://security.ubuntu.com/ubuntu/ jammy-security main\n'),
+            text=True, capture_output=True, check=True)
+        self.assertEqual(result.stdout.count('https://snapshot.ubuntu.com/ubuntu/20260910T000000Z/'), 2)
+        self.assertNotIn('archive.ubuntu.com', result.stdout)
+        self.assertNotIn('security.ubuntu.com', result.stdout)
 
 
 if __name__ == '__main__':

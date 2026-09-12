@@ -1,9 +1,10 @@
 import { probes, assess } from './baseline-probes.js';
 import { fiberContractProbes } from './fiber-contract-probes.mjs';
+import { nativeContractProbes } from './native-contract-probes.mjs';
 
 const suite = new URL(location.href).searchParams.get('suite') || 'baseline';
-if (!['baseline', 'fiber-contract'].includes(suite)) throw new Error('Unknown diagnostic suite');
-const selectedProbes = suite === 'fiber-contract' ? fiberContractProbes : [...probes, { id: 'phpstan-standalone', compiler: true }];
+if (!['baseline', 'fiber-contract', 'native-contract'].includes(suite)) throw new Error('Unknown diagnostic suite');
+const selectedProbes = suite === 'fiber-contract' ? fiberContractProbes : suite === 'native-contract' ? nativeContractProbes : [...probes, { id: 'phpstan-standalone', compiler: true }];
 const report = { userAgent: navigator.userAgent, suite, cases: [], done: false };
 window.__bp0 = report;
 const output = document.querySelector('#output');
@@ -49,7 +50,9 @@ function runCase(probe) {
 // Serial, fresh workers: a crashing Fiber probe cannot suppress later controls.
 for (const probe of selectedProbes) {
   const result = await runCase(probe);
-  result.semantics = probe.compiler
+  result.semantics = probe.entropyDenied
+    ? result.kind === 'trap' && result.entropyReads > 0 && /BP-7R entropy unavailable/.test(result.error || '') ? 'PASS' : 'FAIL'
+    : probe.compiler
     ? result.kind === 'completed' && result.validPhpStanJson === true && result.exitCode === 0 ? 'PASS' : 'FAIL'
     : assess(probe, result);
   report.cases.push(result);

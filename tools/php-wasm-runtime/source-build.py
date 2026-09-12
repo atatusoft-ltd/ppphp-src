@@ -68,7 +68,7 @@ SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC LC_ALL=C SOURCE_DATE_EPOCH={profile['sourceDateEpoch']} PYTHONDONTWRITEBYTECODE=1
 RUN source /etc/os-release && test "$VERSION_CODENAME" = "{profile['ubuntuSeries']}" && \\
     test "$(find /etc/apt/sources.list.d -type f | wc -l)" = 0 && \\
-    sed -i -E 's|https?://(archive\\.|security\\.)?ubuntu.com/ubuntu/?|https://snapshot.ubuntu.com/ubuntu/{snapshot}/|g' /etc/apt/sources.list && \\
+    sed -i -E 's@https?://(archive\\.|security\\.)?ubuntu.com/ubuntu/?@https://snapshot.ubuntu.com/ubuntu/{snapshot}/@g' /etc/apt/sources.list && \\
     test "$(grep '^deb ' /etc/apt/sources.list | grep -vc ' https://snapshot.ubuntu.com/ubuntu/{snapshot}/ ')" = 0 && \\
     apt-get update && apt-get install --no-install-recommends -y {' '.join(profile['hostPackages'])}
 RUN emcc --version | head -1 | grep -F ' {profile['emscripten']} '
@@ -165,7 +165,7 @@ def build(store: Path, output: Path, manifest: dict, clean: bool) -> None:
              'EMSCRIPTEN_ENVIRONMENT=web', 'WITH_OPCACHE=yes', 'STACK_SIZE=1MB',
              'OUTPUT_DIR_ON_HOST=/source-build', 'DEBUG_DWARF_COMPILATION_DIR=/source-build']
     native_command = ['docker', 'build', '--platform', profile['platform'], '--network=none', '--progress=plain',
-                      '--build-arg', 'TOOLCHAIN_IMAGE=' + tools_image, '-f', str(context / 'Native.Dockerfile'), '-t', native_tag]
+                      '--build-arg', 'TOOLCHAIN_IMAGE=' + tools_tag, '-f', str(context / 'Native.Dockerfile'), '-t', native_tag]
     if clean:
         native_command.append('--no-cache')
     native_command.append(str(context))
@@ -182,7 +182,7 @@ def build(store: Path, output: Path, manifest: dict, clean: bool) -> None:
         finally:
             run('docker', 'rm', container, timeout=20)
         command = ['docker', 'build', '--platform', profile['platform'], '--network=none', '--progress=plain',
-                   '--build-arg', 'NATIVE_IMAGE=' + native_image, '-f', str(context / 'Candidate.Dockerfile'), '-t', image_tag]
+                   '--build-arg', 'NATIVE_IMAGE=' + native_tag, '-f', str(context / 'Candidate.Dockerfile'), '-t', image_tag]
         if clean:
             command.append('--no-cache')
         for flag in flags:

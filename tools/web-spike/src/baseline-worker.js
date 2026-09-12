@@ -93,6 +93,7 @@ async function analyze(php) {
 self.onmessage = async ({ data: probe }) => {
   caseId = probe.id;
   let php;
+  let entropyReads = 0;
   try {
     php = await createPHP();
     php.mkdir('/workspace');
@@ -105,11 +106,15 @@ self.onmessage = async ({ data: probe }) => {
       result.sideEffect = php.fileExists('/workspace/side-effect');
     } else {
       phase('executing');
+      if (probe.entropyDenied) Object.defineProperty(globalThis.crypto, 'getRandomValues', { value() {
+        entropyReads++;
+        throw new Error('BP-7R entropy unavailable');
+      } });
       result = await read(await php.runStream({ code: probe.code }));
     }
     result.loadedResources = performance.getEntriesByType('resource').map((entry) => entry.name).slice(0, 40);
     self.postMessage({ id: caseId, type: 'result', result });
   } catch (error) {
-    self.postMessage({ id: caseId, type: 'result', result: { kind: 'trap', error: String(error?.stack ?? error).slice(0, 16384), loadedResources: performance.getEntriesByType('resource').map((entry) => entry.name).slice(0, 40) } });
+    self.postMessage({ id: caseId, type: 'result', result: { kind: 'trap', entropyReads, error: String(error?.stack ?? error).slice(0, 16384), loadedResources: performance.getEntriesByType('resource').map((entry) => entry.name).slice(0, 40) } });
   } finally { dispose(php); }
 };

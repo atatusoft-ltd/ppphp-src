@@ -78,6 +78,9 @@ jobs:
           for iteration in $(seq 1 "$CLEAN_BUILDS"); do
             python3 tools/php-wasm-runtime/source-build.py build --clean --store /tmp/ppphp-native-inputs --output "/tmp/ppphp-source-build-$iteration"
             node tools/php-wasm-runtime/verify-built.mjs --runtime "/tmp/ppphp-source-build-$iteration/candidate" --expect candidate --output "/tmp/ppphp-source-build-$iteration/compatibility"
+            wasm_sha256=$(sha256sum "/tmp/ppphp-source-build-$iteration/candidate/asyncify/8_4_23/php_8_4.wasm" | cut -d' ' -f1)
+            node tools/web-spike/scripts/run-fiber-contract.mjs --wasm-sha256 "$wasm_sha256" --output "/tmp/ppphp-source-build-$iteration/fiber-contract"
+            node tools/web-spike/scripts/run-fiber-contract.mjs --suite native-contract --wasm-sha256 "$wasm_sha256" --output "/tmp/ppphp-source-build-$iteration/native-contract"
           done
       - name: Retain source-built outputs and provenance
         if: always()
@@ -91,6 +94,8 @@ jobs:
             /tmp/ppphp-source-build-*/context/*.Dockerfile
             /tmp/ppphp-source-build-*/context/acquisitions.json
             /tmp/ppphp-source-build-*/compatibility/report.json
+            /tmp/ppphp-source-build-*/fiber-contract/report.json
+            /tmp/ppphp-source-build-*/native-contract/report.json
           retention-days: 7
           if-no-files-found: warn
       - name: Retain verified downloads (durable owner handoff still required)

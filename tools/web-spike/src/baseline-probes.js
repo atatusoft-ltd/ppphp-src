@@ -23,7 +23,7 @@ export function assess(probe, result) {
   if (probe.cliLint) {
     const message = `${result.stdout}\n${result.stderr}`;
     if (result.sideEffect !== false) return 'FAIL';
-    return probe.id === 'lint-valid'
+    return probe.exitCode === 0
       ? (message.includes('No syntax errors detected') ? 'PASS' : 'FAIL')
       : (/parse error|Errors parsing/i.test(message) ? 'PASS' : 'FAIL');
   }
