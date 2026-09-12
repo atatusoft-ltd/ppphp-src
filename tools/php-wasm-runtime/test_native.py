@@ -311,7 +311,7 @@ class NativeTests(unittest.TestCase):
     def test_clean_comparison_checks_headers_receipts_and_runtime_not_only_wasm(self):
         with tempfile.TemporaryDirectory() as tmp:
             first, second = Path(tmp) / 'first', Path(tmp) / 'second'
-            manifest = {'sources': {'example': {'libraries': ['lib/example.a']}}}
+            manifest = {'toolchain': {}, 'sources': {'example': {'libraries': ['lib/example.a']}}}
             for root in (first, second):
                 for path in ['candidate/native', 'candidate/asyncify', 'native-checkpoint/prefixes/example/lib',
                              'native-checkpoint/prefixes/example/include', 'native-checkpoint/receipts']:
@@ -321,21 +321,52 @@ class NativeTests(unittest.TestCase):
                 header = f'{"example.o/":<16}{0:<12}{0:<6}{0:<6}{100644:<8}{len(body):<10}`\n'.encode()
                 (root / 'native-checkpoint/prefixes/example/lib/example.a').write_bytes(b'!<arch>\n' + header + body)
                 (root / 'native-checkpoint/prefixes/example/include/example.h').write_text('header')
-                (root / 'native-checkpoint/receipts/example.json').write_text('{}')
+                (root / 'native-checkpoint/prefixes/example/include/alias.h').symlink_to('example.h')
+                (root / 'native-checkpoint/receipts/example.json').write_bytes(native.canonical({
+                    'input': manifest['sources']['example'], 'toolchain': {},
+                    'targetObjects': {'lib/example.a': 1},
+                    'outputs': native.inventory(root / 'native-checkpoint/prefixes/example')}))
                 (root / 'candidate/asyncify/runtime.wasm').write_bytes(body)
                 (root / 'candidate/asyncify/runtime.js').write_text('// test loader')
                 (root / 'candidate/native/runtime-build.json').write_bytes(native.canonical({
                     'manifest': manifest, 'productionReady': False,
+                    'nativeReceipts': native.inventory(root / 'native-checkpoint/receipts'),
                     'runtimeFiles': native.inventory(root / 'candidate/asyncify')}))
             self.assertEqual(source_build.compare_builds(first, second, manifest)['status'], 'PASS')
             for path in ['native-checkpoint/prefixes/example/include/example.h', 'native-checkpoint/receipts/example.json']:
                 file = second / path
                 original = file.read_bytes()
                 file.write_bytes(original + b'changed')
-                result = source_build.compare_builds(first, second, manifest)
-                self.assertEqual(result['status'], 'FAIL')
-                self.assertEqual(result['differences'], [path])
+                with self.assertRaisesRegex(ValueError, 'native checkpoint'):
+                    source_build.compare_builds(first, second, manifest)
                 file.write_bytes(original)
+            # Two equally damaged downloads are not reproducible build evidence.
+            for root in (first, second):
+                alias = root / 'native-checkpoint/prefixes/example/include/alias.h'
+                alias.unlink()
+                alias.write_text('header')
+            with self.assertRaisesRegex(ValueError, 'native checkpoint'):
+                source_build.compare_builds(first, second, manifest)
+            for root in (first, second):
+                alias = root / 'native-checkpoint/prefixes/example/include/alias.h'
+                alias.unlink()
+                alias.symlink_to('example.h')
+            header = second / 'native-checkpoint/prefixes/example/include/example.h'
+            producer_path = second / 'native-checkpoint/receipts/example.json'
+            receipt_path = second / 'candidate/native/runtime-build.json'
+            originals = {path: path.read_bytes() for path in [header, producer_path, receipt_path]}
+            header.write_text('different build output')
+            producer = json.loads(producer_path.read_text())
+            producer['outputs'] = native.inventory(second / 'native-checkpoint/prefixes/example')
+            producer_path.write_bytes(native.canonical(producer))
+            receipt = json.loads(receipt_path.read_text())
+            receipt['nativeReceipts'] = native.inventory(second / 'native-checkpoint/receipts')
+            receipt_path.write_bytes(native.canonical(receipt))
+            result = source_build.compare_builds(first, second, manifest)
+            self.assertEqual(result['status'], 'FAIL')
+            self.assertIn('native-checkpoint/prefixes/example/include/example.h', result['differences'])
+            for path, original in originals.items():
+                path.write_bytes(original)
             (second / 'candidate/asyncify/runtime.js').write_text('changed')
             with self.assertRaisesRegex(ValueError, 'changed runtime'):
                 source_build.compare_builds(first, second, manifest)
@@ -344,6 +375,28 @@ class NativeTests(unittest.TestCase):
             (second / 'execution.json').write_text('{"cleanCompiledLayers":false}')
             with self.assertRaisesRegex(ValueError, 'bypass'):
                 source_build.compare_builds(first, second, manifest)
+
+    def test_checkpoint_transport_preserves_internal_links(self):
+        workflow = (native.HERE.parent.parent / '.github/workflows/php-wasm-rebuild.yml').read_text()
+        command = 'COPYFILE_DISABLE=1 tar -cf "$directory/native-checkpoint.tar" -C "$directory" native-checkpoint'
+        self.assertIn(command, workflow)
+        self.assertIn('/tmp/ppphp-source-build-*/native-checkpoint.tar', workflow)
+        self.assertNotIn('/tmp/ppphp-source-build-*/native-checkpoint/\n', workflow)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint = root / 'native-checkpoint'
+            checkpoint.mkdir()
+            (checkpoint / 'header.h').write_text('header')
+            (checkpoint / 'header.h').chmod(0o755)
+            (checkpoint / 'alias.h').symlink_to('header.h')
+            subprocess.run(['sh', '-c', 'directory="$1"; ' + command, 'checkpoint', tmp], check=True)
+            restored = root / 'restored'
+            restored.mkdir()
+            with tarfile.open(root / 'native-checkpoint.tar') as archive:
+                native.archive_members(archive, strip_root=False)
+                archive.extractall(restored, filter='data')
+            self.assertEqual(native.inventory(checkpoint), native.inventory(restored / 'native-checkpoint'))
+            self.assertEqual((restored / 'native-checkpoint/header.h').stat().st_mode & 0o777, 0o755)
 
     def test_toolchain_snapshot_does_not_float(self):
         recipe = source_build.tools_recipe(native.load_manifest())

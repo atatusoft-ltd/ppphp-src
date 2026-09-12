@@ -79,8 +79,19 @@ def compare_builds(first: Path, second: Path, manifest: dict) -> dict:
         for name, source in manifest['sources'].items():
             if 'libraries' not in source:
                 continue
+            prefix = root / 'native-checkpoint/prefixes' / name
+            producer_bytes = (root / 'native-checkpoint/receipts' / (name + '.json')).read_bytes()
+            producer_identity = {'path': name + '.json', 'bytes': len(producer_bytes),
+                                 'sha256': hashlib.sha256(producer_bytes).hexdigest()}
+            if producer_identity not in receipt['nativeReceipts']:
+                raise ValueError(f'Changed native checkpoint receipt: {name}')
+            producer = json.loads(producer_bytes)
+            if (producer['input'] != source or producer['toolchain'] != manifest['toolchain']
+                    or producer['outputs'] != native.inventory(prefix)):
+                raise ValueError(f'Changed or incomplete native checkpoint: {name}')
             for library in source['libraries']:
-                native.verify_wasm_archive(root / 'native-checkpoint/prefixes' / name / library)
+                if native.verify_wasm_archive(prefix / library) != producer['targetObjects'][library]:
+                    raise ValueError(f'Changed native target object inventory: {name}')
         # Compare all installed files (including headers/configuration), every
         # native receipt, and the complete candidate. Only the separate execution
         # observations contain wall time and per-run Docker image identities.

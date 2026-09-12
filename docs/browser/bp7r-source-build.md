@@ -98,6 +98,11 @@ compilation. Library build steps have finite 30-minute command budgets and use
 two jobs. The native phase has a 90-minute budget; PHP's phase has three hours.
 The manual workflow has a four-hour total limit, so its total is also bounded.
 Completed native prefixes and receipts are copied out before PHP compilation.
+CI retains that checkpoint inside a tar archive, because ZIP artifact transport
+dereferences installed symlinks. Validate archive paths and internal links before
+extracting `native-checkpoint.tar` into its build directory for comparison.
+Comparison checks every installed inventory against its producing receipt before
+comparing the two builds; identical transport damage cannot count as reproducibility.
 Ordinary CI runs fast recipe tests, not the expensive historical two-profile build.
 The workflow caches only fully verified source downloads, immediately after
 acquisition so a later compile failure does not discard them. Cache identity
@@ -124,14 +129,16 @@ contract remains unchanged. BP-4 and Website qualification use the new pair.
 
 - Source acquisition and archive/tree verification: executed locally.
 - Recipe, archive-safety, object-format and prefix-collision tests: executed locally.
-- Source-built native compilation: in progress. [Run 34698906367](https://github.com/atatusoft-ltd/ppphp-src/actions/runs/34698906367)
-  compiled and verified 13 of 14 producers, through AVIF. OpenSSL produced 1,082
-  WASM objects in 109.747 seconds; curl took 177.065 seconds, mostly configuration.
-  GD stopped before compilation because a patch scan decoded unrelated source
-  comments as UTF-8. ASCII patch matching now preserves all unrelated bytes,
-  covered by a non-UTF-8/CRLF regression. This is not a completed candidate or
-  current-profile reproducibility result.
-- PHP relink: not yet executed.
+- Source-built native compilation and PHP relink: PASS in
+  [run 34702000916](https://github.com/atatusoft-ltd/ppphp-src/actions/runs/34702000916).
+  All 14 producers compiled and their archives contain WASM objects. The complete
+  build took 1,519.294 seconds; OpenSSL took 119.437 seconds and curl 187.257 seconds,
+  mostly configuration. The native prefixes survived PHP compilation, but GitHub's
+  ZIP transport flattened three libpng symlinks. That downloaded checkpoint is not
+  accepted as intact reproducibility evidence; subsequent runs retain it in tar.
+- Initial candidate controls: 15 runtime/PHPStan, eight Fiber lifecycle and
+  16 native-library/security regression cases passed in that run. Local runtime
+  controls also passed. This is not the full independent qualification.
 - New runtime compatibility, containment, full client/page/HTTPS qualification:
   pending the new executable pair; historical results are not substituted.
 - Two-build byte comparison execution, matching distribution/source, durable owner retention

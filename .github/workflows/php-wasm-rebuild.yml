@@ -97,6 +97,15 @@ jobs:
           if [ "$CLEAN_BUILDS" = 2 ]; then
             python3 tools/php-wasm-runtime/source-build.py compare --first /tmp/ppphp-source-build-1 --second /tmp/ppphp-source-build-2 --output /tmp/ppphp-reproducibility.json
           fi
+      - name: Preserve native checkpoint links and permissions
+        if: always()
+        run: |
+          for iteration in $(seq 1 "$CLEAN_BUILDS"); do
+            directory="/tmp/ppphp-source-build-$iteration"
+            if [ -d "$directory/native-checkpoint" ]; then
+              COPYFILE_DISABLE=1 tar -cf "$directory/native-checkpoint.tar" -C "$directory" native-checkpoint
+            fi
+          done
       - name: Retain source-built outputs and provenance
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -104,7 +113,7 @@ jobs:
           name: php-wasm-source-built-${{ github.sha }}-${{ github.run_attempt }}
           path: |
             /tmp/ppphp-source-build-*/candidate/
-            /tmp/ppphp-source-build-*/native-checkpoint/
+            /tmp/ppphp-source-build-*/native-checkpoint.tar
             /tmp/ppphp-source-build-*/execution.json
             /tmp/ppphp-source-build-*/context/*.Dockerfile
             /tmp/ppphp-source-build-*/context/acquisitions.json
