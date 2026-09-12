@@ -1,3 +1,4 @@
+import ast
 import hashlib
 import importlib.util
 import io
@@ -41,6 +42,16 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(manifest['toolchain']['platform'], 'linux/amd64')
         self.assertNotIn('__x86_64__', manifest['toolchain']['cflags'])
         self.assertFalse(manifest['productionReady'])
+
+    def test_every_cmake_recipe_passes_definitions_using_cmake_option_syntax(self):
+        tree = ast.parse((native.HERE / 'native-recipes.py').read_text())
+        recipes = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                   and isinstance(node.func, ast.Name) and node.func.id == 'cmake']
+        self.assertEqual(len(recipes), 9)
+        for recipe in recipes:
+            for argument in recipe.args:
+                prefix = argument.values[0].value if isinstance(argument, ast.JoinedStr) else argument.value
+                self.assertTrue(prefix.startswith('-D') and '=' in prefix, prefix)
 
     def test_gif_security_patch_preserves_all_three_upstream_corrections(self):
         source = ('sd->table[0][i] = sd->table[1][0] = 0;\nLZW_STATIC_DATA sd;\n'

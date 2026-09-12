@@ -126,7 +126,7 @@ def build(name: str) -> None:
     elif name == 'libxml2':
         cmake('-DLIBXML2_WITH_PROGRAMS=OFF', '-DLIBXML2_WITH_PYTHON=OFF',
               '-DLIBXML2_WITH_TESTS=OFF', '-DLIBXML2_WITH_THREADS=OFF', '-DLIBXML2_WITH_ICONV=ON',
-              f'-Iconv_INCLUDE_DIR={view}/include', f'-Iconv_LIBRARY={view}/lib/libiconv.a')
+              f'-DIconv_INCLUDE_DIR={view}/include', f'-DIconv_LIBRARY={view}/lib/libiconv.a')
     elif name == 'curl':
         cmake('-DBUILD_CURL_EXE=OFF', '-DBUILD_TESTING=OFF', '-DBUILD_EXAMPLES=OFF',
               '-DCURL_USE_OPENSSL=ON', '-DOPENSSL_USE_STATIC_LIBS=TRUE', f'-DOPENSSL_ROOT_DIR={view}',
