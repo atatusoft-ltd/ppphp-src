@@ -66,6 +66,7 @@
       "stripRoot": true,
       "dependencies": [],
       "libraries": ["lib/libz.a"],
+      "headers": ["include/zlib.h", "include/zconf.h"],
       "notices": ["LICENSE"],
       "selection": "Current maintenance release includes security audit fixes; one producer for every consumer."
     },
@@ -77,6 +78,7 @@
       "stripRoot": true,
       "dependencies": [],
       "libraries": ["lib/libssl.a", "lib/libcrypto.a"],
+      "headers": ["include/openssl/ssl.h", "include/openssl/crypto.h", "include/openssl/opensslv.h", "include/openssl/configuration.h"],
       "notices": ["LICENSE.txt"],
       "selection": "Current patch of the owner-selected Apache-2.0 OpenSSL 3.5 LTS line. Static default/base providers; no legacy provider."
     },
@@ -88,6 +90,7 @@
       "stripRoot": true,
       "dependencies": [],
       "libraries": ["lib/libiconv.a", "lib/libcharset.a"],
+      "headers": ["include/iconv.h", "include/localcharset.h"],
       "notices": ["COPYING", "COPYING.LIB"],
       "selection": "Traceable GNU maintenance release; retain static-link relinking materials for LGPL-covered library files."
     },
@@ -99,6 +102,7 @@
       "stripRoot": true,
       "dependencies": [],
       "libraries": ["lib/libonig.a"],
+      "headers": ["include/oniguruma.h"],
       "notices": ["COPYING"],
       "selection": "Latest published upstream release. Upstream is archived; security review and bounded mbregex tests remain qualification gates."
     },
@@ -110,6 +114,7 @@
       "stripRoot": true,
       "dependencies": ["libiconv"],
       "libraries": ["lib/libxml2.a"],
+      "headers": ["include/libxml2/libxml/parser.h", "include/libxml2/libxml/xmlversion.h"],
       "notices": ["Copyright"],
       "selection": "Maintained security-fix line; PHP API compatibility must pass before admission. No guest HTTP/FTP."
     },
@@ -121,6 +126,7 @@
       "stripRoot": true,
       "dependencies": [],
       "libraries": ["lib/libsqlite3.a"],
+      "headers": ["include/sqlite3.h", "include/sqlite3ext.h"],
       "noticeHeaders": [{"path": "sqlite3.c", "lines": 45}],
       "notices": ["sqlite3.c"],
       "selection": "Official generated amalgamation, including WAL-reset fixes. Its generator provenance is the official release, not an unrecorded host generator."
@@ -133,6 +139,7 @@
       "stripRoot": true,
       "dependencies": ["openssl", "zlib"],
       "libraries": ["lib/libcurl.a"],
+      "headers": ["include/curl/curl.h", "include/curl/curlver.h"],
       "notices": ["COPYING"],
       "selection": "Maintained release rebuilt against the selected OpenSSL and zlib. Host network denial remains mandatory."
     },
@@ -144,6 +151,7 @@
       "stripRoot": true,
       "dependencies": ["zlib", "openssl"],
       "libraries": ["lib/libzip.a"],
+      "headers": ["include/zip.h", "include/zipconf.h"],
       "notices": ["LICENSE"],
       "selection": "Current maintenance release with explicit OpenSSL and zlib inputs."
     },
@@ -155,6 +163,7 @@
       "stripRoot": true,
       "dependencies": [],
       "libraries": ["lib/libjpeg.a"],
+      "headers": ["include/jpeglib.h", "include/jmorecfg.h", "include/jerror.h", "include/jconfig.h"],
       "notices": ["LICENSE.md", "README.ijg"],
       "selection": "Verified published maintenance source, portable C codec; no native SIMD assembly."
     },
@@ -166,6 +175,7 @@
       "stripRoot": true,
       "dependencies": ["zlib"],
       "libraries": ["lib/libpng16.a"],
+      "headers": ["include/png.h", "include/pngconf.h", "include/pnglibconf.h"],
       "notices": ["LICENSE"],
       "selection": "Includes current security fixes and the 1.6.56 regression correction."
     },
@@ -177,6 +187,7 @@
       "stripRoot": true,
       "dependencies": [],
       "libraries": ["lib/libwebp.a", "lib/libsharpyuv.a"],
+      "headers": ["include/webp/decode.h", "include/webp/encode.h", "include/sharpyuv/sharpyuv.h"],
       "notices": ["COPYING", "PATENTS"],
       "selection": "Official stable source; SharpYUV is built from this same tree."
     },
@@ -189,6 +200,7 @@
       "stripRoot": false,
       "dependencies": [],
       "libraries": ["lib/libaom.a"],
+      "headers": ["include/aom/aom_decoder.h", "include/aom/aom_encoder.h", "include/aom/aom_codec.h"],
       "notices": ["LICENSE", "PATENTS"],
       "selection": "ABI-compatible maintenance update includes the 2026 security fixes, including CVE-2026-56209 and CVE-2026-13906. Acquire the official release archive but accept only the independently pinned commit tree including modes and symlinks. Gitiles stamps archive entries at request time, so receipt the acquired archive hash separately."
     },
@@ -200,6 +212,7 @@
       "stripRoot": true,
       "dependencies": ["libaom"],
       "libraries": ["lib/libavif.a"],
+      "headers": ["include/avif/avif.h"],
       "notices": ["LICENSE"],
       "selection": "Retain the integration version with explicitly supplied AOM, no local FetchContent or hidden codec download."
     },
@@ -211,6 +224,7 @@
       "stripRoot": true,
       "dependencies": ["zlib", "libpng", "libjpeg-turbo", "libwebp", "libavif", "libiconv"],
       "libraries": ["lib/libgd.a"],
+      "headers": ["include/gd.h", "include/gd_io.h", "include/gd_errors.h"],
       "notices": ["COPYING"],
       "patches": [{"path": "src/gd_gif_in.c", "origin": "https://github.com/php/php-src/commit/fcd691b377d02285740744bee17c0f298be227d5", "reason": "CVE-2026-9672: initialize GIF decoder tables and terminate decoding at the end code; applied before cross-compilation adaptations."}],
       "selection": "Retain the PHP integration's GD release and formats, with the upstream GIF security correction. Compile against real iconv, avoiding the old globally exported fake iconv implementations."

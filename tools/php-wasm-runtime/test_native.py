@@ -53,6 +53,28 @@ class NativeTests(unittest.TestCase):
                 prefix = argument.values[0].value if isinstance(argument, ast.JoinedStr) else argument.value
                 self.assertTrue(prefix.startswith('-D') and '=' in prefix, prefix)
 
+    def test_native_checkpoint_requires_installed_public_headers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'prefix'
+            (root / 'include').mkdir(parents=True)
+            source = {'headers': ['include/zlib.h', 'include/zconf.h']}
+            (root / 'include/zlib.h').write_text('public API')
+            with self.assertRaisesRegex(ValueError, 'zconf.h'):
+                native_recipes.verify_headers(root, source)
+            (root / 'include/zconf.h').write_text('target configuration')
+            native_recipes.verify_headers(root, source)
+            (root / 'include/zconf.h').write_text('')
+            with self.assertRaisesRegex(ValueError, 'zconf.h'):
+                native_recipes.verify_headers(root, source)
+            (root / 'include/zconf.h').unlink()
+            (root / 'include/zconf.h').symlink_to('zlib.h')
+            native_recipes.verify_headers(root, source)
+            (root / 'include/zconf.h').unlink()
+            (Path(tmp) / 'outside.h').write_text('outside')
+            (root / 'include/zconf.h').symlink_to('../../outside.h')
+            with self.assertRaisesRegex(ValueError, 'zconf.h'):
+                native_recipes.verify_headers(root, source)
+
     def test_gif_security_patch_preserves_all_three_upstream_corrections(self):
         source = ('sd->table[0][i] = sd->table[1][0] = 0;\nLZW_STATIC_DATA sd;\n'
                   '\t\t\tif(count != 0) {\n\t\t\t\treturn -2;\n\t\t\t}\n\t\t}\n\n\t\tincode = code;')

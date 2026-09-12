@@ -43,6 +43,13 @@ def load_manifest() -> dict:
             raise ValueError(f'{name}: require one archive or Git-tree identity')
         if not set(source.get('dependencies', [])).issubset(seen):
             raise ValueError(f'{name}: missing dependency or dependency cycle')
+        if 'libraries' in source:
+            if not source.get('headers'):
+                raise ValueError(f'{name}: installed public headers are required')
+            for path in [*source['libraries'], *source['headers']]:
+                parts = PurePosixPath(path).parts
+                if not parts or parts[0] not in ('lib', 'include') or '..' in parts or '\\' in path:
+                    raise ValueError(f'{name}: unsafe installed output path')
         seen.add(name)
     return data
 

@@ -19,6 +19,13 @@ JOBS = str(PROFILE['jobs'])
 PREFIX_ROOT = Path('/opt/native')
 
 
+def verify_headers(prefix: Path, source: dict) -> None:
+    for name in source['headers']:
+        path = prefix / name
+        if not path.is_file() or not path.resolve().is_relative_to(prefix.resolve()) or path.stat().st_size == 0:
+            raise ValueError(f'Missing or unsafe installed native header: {path}')
+
+
 def patch_gif_decoder(content: str) -> str:
     # PHP upstream fcd691b377d02285740744bee17c0f298be227d5,
     # adapted only to the external GD release's whitespace (CVE-2026-9672).
@@ -86,7 +93,7 @@ def build(name: str) -> None:
     if name == 'zlib':
         run('emconfigure', './configure', '--static', f'--prefix={prefix}')
         run('emmake', 'make', '-j' + JOBS, 'libz.a')
-        run('emmake', 'make', 'install-libs')
+        run('emmake', 'make', 'install')
     elif name == 'openssl':
         # generic32 describes pointers/size_t, not PHP's zend_long. The SDK supplies getentropy.
         run('perl', './Configure', 'linux-generic32', 'no-shared', 'no-module', 'no-dso',
@@ -133,7 +140,7 @@ def build(name: str) -> None:
               '-DCURL_ZLIB=ON', f'-DZLIB_LIBRARY={view}/lib/libz.a', f'-DZLIB_INCLUDE_DIR={view}/include',
               '-DCURL_USE_LIBPSL=OFF', '-DCURL_BROTLI=OFF', '-DCURL_ZSTD=OFF',
               '-DUSE_LIBIDN2=OFF', '-DCURL_USE_LIBSSH2=OFF', '-DENABLE_THREADED_RESOLVER=OFF',
-              '-DENABLE_ARES=OFF', '-DCURL_USE_LIBLDAP=OFF', '-DCURL_DISABLE_LDAP=ON',
+              '-DENABLE_ARES=OFF', '-DCURL_DISABLE_LDAP=ON',
               '-DCURL_DISABLE_LDAPS=ON', '-DCURL_DISABLE_TELNET=ON')
     elif name == 'libzip':
         cmake('-DBUILD_TOOLS=OFF', '-DBUILD_REGRESS=OFF', '-DBUILD_EXAMPLES=OFF', '-DBUILD_DOC=OFF',
@@ -195,6 +202,7 @@ def build(name: str) -> None:
         copy('_build/src/gdlib.pc', 'lib/pkgconfig/gdlib.pc')
     else:
         raise ValueError(f'No reviewed recipe for {name}')
+    verify_headers(prefix, source)
     objects = {file: native.verify_wasm_archive(prefix / file) for file in source['libraries']}
     configs = []
     for file in sorted(root.rglob('*')):
@@ -219,6 +227,7 @@ def build(name: str) -> None:
 def verify(name: str) -> None:
     receipt = json.loads((Path('/receipts') / (name + '.json')).read_text())
     source = MANIFEST['sources'][name]
+    verify_headers(PREFIX_ROOT / name, source)
     if (receipt['input'] != source or receipt['toolchain'] != PROFILE
             or receipt['recipeSha256'] != native.digest(Path(__file__))
             or receipt['orchestratorSha256'] != native.digest(native.HERE / 'native.py')
