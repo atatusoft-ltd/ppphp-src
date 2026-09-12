@@ -44,6 +44,15 @@ The recipe records before/after hashes; strict patch-context checks reject drift
 This is a specific source correction, not a claim that smoke tests exhaustively
 prove memory safety. Fresh candidate execution remains required.
 
+The same review checks PHP-bundled libraries rather than trusting the version
+label alone. The pinned PHP source already bounds PHAR link traversal by the
+manifest size; the native suite tests short, long and tail-into-cycle archives.
+BCMath lacks the [upstream fractional-endpoint correction](https://github.com/php/php-src/commit/4f83876af75d43b24cf3ed567394451f42e6bca1)
+for CVE-2026-17544. The source-built path applies that one-line correction with
+strict context and before/after hashes. The historical rebuild and Fiber repair
+are unchanged. The new regression covers small and larger allocations and both
+signs; source correspondence and runtime execution remain separate evidence.
+
 AOM's Gitiles archive contains request-time entry timestamps. Its immutable
 commit and reconstructed Git tree (file content, executable modes and symlinks)
 are verified instead of trusting a changing transport checksum. The acquired

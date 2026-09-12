@@ -65,6 +65,35 @@ export const nativeContractProbes = [
     $archive->compress(Phar::GZ);
     check((new PharData('/workspace/source.tar.gz'))['source.txt']->getContent() === $data);
   `),
+  // Upstream GHSA-x692-q9x7-8c3f regression (reported by Recep Asan),
+  // plus both signs and a small arena allocation around the same truncation.
+  probe('native-bcmath-truncated-fraction', `
+    foreach ([1, 32, 300] as $zeros) {
+      $number = '1.9' . str_repeat('0', $zeros) . '1';
+      check(bccomp($number, '0', $zeros) === 1);
+      check(bccomp('-' . $number, '0', $zeros) === -1);
+      check(bccomp($number, '1.9', $zeros) === 0);
+    }
+  `),
+  probe('native-phar-link-cycles', `
+    function linkHeader(string $name, string $target): string {
+      $header = str_pad($name, 100, "\\0") . "0000777\\0" . str_repeat("0000000\\0", 2)
+        . str_repeat("00000000000\\0", 2) . '        ' . '2' . str_pad($target, 100, "\\0")
+        . "ustar\\0" . '00' . str_repeat("\\0", 247);
+      check(strlen($header) === 512);
+      return substr_replace($header, sprintf("%06o\\0 ", array_sum(unpack('C*', $header))), 148, 8);
+    }
+    foreach ([[2, 0], [20, 10], [400, 0]] as [$count, $back]) {
+      $tar = '';
+      for ($index = 0; $index < $count; $index++) {
+        $tar .= linkHeader('link_' . $index, 'link_' . ($index + 1 === $count ? $back : $index + 1));
+      }
+      $path = '/workspace/cycle-' . $count . '.tar';
+      file_put_contents($path, $tar . str_repeat("\\0", 1024));
+      $phar = new PharData($path);
+      check($phar['link_0']->getContent() === '');
+    }
+  `),
   probe('native-xml-sqlite-iconv', `
     $doc = new DOMDocument(); check($doc->loadXML('<root><item>世界</item></root>'));
     check($doc->getElementsByTagName('item')->item(0)->textContent === '世界');

@@ -36,6 +36,7 @@
       "bytes": 21771825,
       "stripRoot": true,
       "role": "PHP and bundled extensions/libraries",
+      "patches": [{"path": "ext/bcmath/libbcmath/src/str2num.c", "origin": "https://github.com/php/php-src/commit/4f83876af75d43b24cf3ed567394451f42e6bca1", "reason": "CVE-2026-17544: keep the fractional copy endpoint consistent with the truncated allocation length."}],
       "notices": ["LICENSE", "Zend/LICENSE", "TSRM/LICENSE"]
     },
     "emscripten": {

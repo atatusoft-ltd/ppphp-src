@@ -65,6 +65,30 @@ class NativeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             native_recipes.patch_gif_decoder(source.replace('LZW_STATIC_DATA sd;', 'changed'))
 
+    def test_bcmath_security_patch_updates_the_copy_endpoint_once(self):
+        source = ('\t\t\t\tstr_scale -= fractional_end - fractional_new_end; /* fractional_end >= fractional_new_end */\n'
+                  '\t\t\t}')
+        patched = source_build.patch_bcmath_bounds(source)
+        self.assertIn('\t\t\t\tfractional_end = fractional_new_end;\n\t\t\t}', patched)
+        for invalid in [patched, source + source, 'unreviewed source']:
+            with self.assertRaises(ValueError):
+                source_build.patch_bcmath_bounds(invalid)
+
+    def test_poisoned_or_removed_upstream_dist_does_not_enter_the_source_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = f'wordpress-playground-{source_build.prepare.UPSTREAM}/packages/php-wasm/compile/'
+            selected = [(prefix + 'php/source.c', b'integration source', tarfile.REGTYPE)]
+            poison = [(prefix + 'libopenssl/asyncify/dist/root/lib/libcrypto.a', b'poison', tarfile.REGTYPE),
+                      (prefix + 'oniguruma/asyncify/dist/root/lib/libonig.a', b'poison', tarfile.REGTYPE)]
+            for name, entries in [('poisoned', selected + poison), ('removed', selected)]:
+                path = root / (name + '.tar.gz')
+                self.archive(path, entries)
+                with tarfile.open(path) as archive:
+                    source_build.copy_integration(archive, root / name)
+            self.assertEqual(native.inventory(root / 'poisoned'), native.inventory(root / 'removed'))
+            self.assertEqual([row['path'] for row in native.inventory(root / 'poisoned')], ['php/source.c'])
+
     def test_checksum_rejects_changed_download(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'a.tar.gz'

@@ -146,7 +146,7 @@ def build(name: str) -> None:
               '-DWITH_TURBOJPEG=OFF', target='jpeg-static', install=False)
         copy('_build/libjpeg.a', 'lib/libjpeg.a')
         for file in ['jpeglib.h', 'jmorecfg.h', 'jerror.h']:
-            copy(file, 'include/' + file)
+            copy('src/' + file, 'include/' + file)
         copy('_build/jconfig.h', 'include/jconfig.h')
         copy('_build/pkgscripts/libjpeg.pc', 'lib/pkgconfig/libjpeg.pc')
     elif name == 'libpng':

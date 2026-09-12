@@ -33,6 +33,33 @@ def record_link(arguments: list[str], destination: Path) -> None:
             'argv': ['/root/emsdk/upstream/emscripten/emcc2', *arguments]}))
 
 
+def patch_bcmath_bounds(source: str) -> str:
+    # PHP upstream 4f83876af75d43b24cf3ed567394451f42e6bca1 (CVE-2026-17544).
+    # Keep the copy endpoint consistent with the truncated allocation length.
+    old = ('\t\t\t\tstr_scale -= fractional_end - fractional_new_end; /* fractional_end >= fractional_new_end */\n'
+           '\t\t\t}')
+    return prepare.replace_exact(source, old, old[:-1] + '\tfractional_end = fractional_new_end;\n\t\t\t}')
+
+
+def copy_integration(archive: tarfile.TarFile, destination: Path) -> None:
+    native.archive_members(archive, strip_root=True)
+    selected = ('php/', 'base-image/', 'php-wasm-memory-storage/', 'php-wasm-dns-polyfill/',
+                'php-post-message-to-js/', 'opcache/')
+    prefix = f'wordpress-playground-{prepare.UPSTREAM}/packages/php-wasm/compile/'
+    for member in archive.getmembers():
+        if not member.name.startswith(prefix):
+            continue
+        name = member.name[len(prefix):]
+        if not name.startswith(selected) or member.isdir():
+            continue
+        if not member.isfile() or '/dist/' in name or name.endswith(('.a', '.wasm', '.so')):
+            raise ValueError('Unexpected non-source integration input')
+        target = destination / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(archive.extractfile(member).read())
+        target.chmod(0o755 if member.mode & 0o111 else 0o644)
+
+
 def compare_builds(first: Path, second: Path, manifest: dict) -> dict:
     if first.resolve() == second.resolve():
         raise ValueError('Reproducibility requires two independent build directories')
@@ -155,22 +182,8 @@ def prepare_context(store: Path, destination: Path, manifest: dict) -> None:
         shutil.copyfile(HERE / name, builder / name)
     # Select source-bearing integration directories. No upstream dist, extension
     # binaries, bundled archives or generic directory merge enters the context.
-    selected = ('php/', 'base-image/', 'php-wasm-memory-storage/', 'php-wasm-dns-polyfill/',
-                'php-post-message-to-js/', 'opcache/')
     with tarfile.open(store / 'wordpress-playground.tar.gz') as archive:
-        prefix = f'wordpress-playground-{prepare.UPSTREAM}/packages/php-wasm/compile/'
-        for member in archive.getmembers():
-            if not member.name.startswith(prefix):
-                continue
-            name = member.name[len(prefix):]
-            if not name.startswith(selected) or member.isdir():
-                continue
-            if not member.isfile() or '/dist/' in name or name.endswith(('.a', '.wasm', '.so')):
-                raise ValueError('Unexpected non-source integration input')
-            target = destination / 'compile' / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(archive.extractfile(member).read())
-            target.chmod(0o755 if member.mode & 0o111 else 0o644)
+        copy_integration(archive, destination / 'compile')
     shutil.copyfile(HERE / 'prepare.py', destination / 'compile/ppphp-prepare.py')
     bridge = destination / 'compile/php/phpwasm-emscripten-library.js'
     bridge.write_text(prepare.patch_bridge_errno(bridge.read_text()))
@@ -280,6 +293,13 @@ def inside(command: str, manifest: dict) -> None:
     if command == 'extract-php':
         native.extract_source(Path('/inputs/php-src.tar.gz'), Path('/root/php-src'),
                               manifest['sources']['php-src'], manifest['toolchain']['sourceDateEpoch'])
+        path = Path('/root/php-src/ext/bcmath/libbcmath/src/str2num.c')
+        before = native.digest(path)
+        path.write_text(patch_bcmath_bounds(path.read_text()))
+        Path('/receipts/php-source.json').write_bytes(native.canonical({
+            'input': manifest['sources']['php-src'], 'patches': [{
+                'path': path.relative_to('/root/php-src').as_posix(),
+                'beforeSha256': before, 'afterSha256': native.digest(path)}]}))
     elif command == 'exports':
         js = sorted(set(Path('/root/.JS_ABI_EXPORTS').read_text().split()))
         wasm = sorted(set(Path('/root/.WASM_ABI_EXPORTS').read_text().split()))
