@@ -17,6 +17,7 @@ final class PhpStanResultParser
 
         try {
             $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+            $shape = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException $exception) {
             throw new PhpStanExecutionException('Static analysis returned malformed JSON.', previous: $exception, diagnosticCode: DiagnosticCode::StaticAnalysisResultInvalid);
         }
@@ -64,6 +65,18 @@ final class PhpStanResultParser
             $globalErrors[] = $error;
         }
 
-        return new PhpStanParsedResult($findings, $globalErrors);
+        $omissions = $decoded['localAnnotationOmissions'] ?? null;
+        if (!$shape instanceof \stdClass || !is_array($shape->localAnnotationOmissions ?? null)
+            || !is_array($omissions) || !array_is_list($omissions)) {
+            throw new PhpStanExecutionException('Static analysis returned invalid annotation advice.', diagnosticCode: DiagnosticCode::StaticAnalysisResultInvalid);
+        }
+        foreach ($omissions as $omission) {
+            if (!is_array($omission) || count($omission) !== 3 || !isset($omission['path'], $omission['offset'], $omission['name'])
+                || !is_string($omission['path']) || !is_int($omission['offset']) || $omission['offset'] < 0
+                || !is_string($omission['name']) || preg_match('/^\$[a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*$/D', $omission['name']) !== 1) {
+                throw new PhpStanExecutionException('Static analysis returned invalid annotation advice.', diagnosticCode: DiagnosticCode::StaticAnalysisResultInvalid);
+            }
+        }
+        return new PhpStanParsedResult($findings, $globalErrors, $omissions);
     }
 }

@@ -61,7 +61,15 @@ PPP;
     ));
     expect($analysis->isSuccessful)->toBeTrue();
     $generated = (new PhpLowerer())->lower($parsed->parsedFile, $analysis->findModel($source->path));
-    expect($generated->contents)->toBe($php);
+    // Annotation validation can omit generated PHPDoc after raw lowering.
+    // Compare every executable token before relying on its cleanup metadata;
+    // annotation retention is covered independently by LocalAnnotationEmissionTest.
+    $codeTokens = static fn (string $contents): array => array_values(array_map(
+        static fn (array|string $token): string => is_array($token) ? $token[1] : $token,
+        array_filter(token_get_all($contents), static fn (array|string $token): bool =>
+            !is_array($token) || !in_array($token[0], [T_DOC_COMMENT, T_WHITESPACE], true)),
+    ));
+    expect($codeTokens($generated->contents))->toBe($codeTokens($php));
     expect((new AnalysisSourceProjector())->project($generated))->not->toContain('catch (\\Throwable');
     $runtime = new Process([PHP_BINARY, $path], timeout: 5);
     $runtime->mustRun();

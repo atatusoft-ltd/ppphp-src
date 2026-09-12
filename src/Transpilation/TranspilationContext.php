@@ -13,10 +13,17 @@ final class TranspilationContext
     /** @var list<SourceEdit> */
     private array $recordedEdits = [];
 
+    /** @param array<int, list<string>> $localAnnotationOmissions */
     public function __construct(
         public readonly ParsedFile $parsedFile,
         public readonly SemanticModel $semanticModel,
+        private readonly array $localAnnotationOmissions = [],
     ) {}
+
+    public function shouldEmitLocalAnnotation(Span $owner, string $name): bool
+    {
+        return !in_array($name, $this->localAnnotationOmissions[$owner->start->offset] ?? [], true);
+    }
 
     /** @var list<SourceEdit> */
     public array $sourceEdits {

@@ -9,9 +9,11 @@ final readonly class PhpStanParsedResult
     /**
      * @param list<PhpStanFinding> $findings
      * @param list<string> $globalErrors
+     * @param list<array{path: string, offset: int, name: string}> $localAnnotationOmissions
      */
     public function __construct(
         public array $findings,
         public array $globalErrors,
+        public array $localAnnotationOmissions = [],
     ) {}
 }

@@ -66,7 +66,7 @@ test('homepage when build uses the approved shipping shape', function (): void {
     $build = buildWhenTailProject($root);
     expect($build->getStatusCode())->toBe(0, $build->getDisplay());
     $php = file_get_contents($root . '/build/ppphp/main.php');
-    expect($php)->toBe(file_get_contents($fixtures . '/Shipping.php'));
+    GoldenFile::assertMatches($fixtures . '/Shipping.php', $php);
     $run = new Process([PHP_BINARY, $root . '/build/ppphp/main.php']);
     $run->mustRun();
     expect($run->getOutput())->toBe('1450|700')->and($run->getErrorOutput())->toBe('');

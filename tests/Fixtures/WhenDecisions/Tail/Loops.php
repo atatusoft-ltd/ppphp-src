@@ -27,9 +27,6 @@ function localLoop(bool $enabled, int $needle, int $fallback): int
     if ($enabled) {
         /** @var int $found */
         $found = $fallback;
-        /**
-         * @var int $index
-         */
         for ($index = 0; $index < 3; $index++) {
             if ($index > $needle) {
                 $found = $index;

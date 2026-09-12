@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Analysis\Browser;
 
 use Atatusoft\Ppphp\Analysis\AnalysisResult;
+use Atatusoft\Ppphp\Analysis\AnalysisProject;
 use Atatusoft\Ppphp\Analysis\PhpStan\PhpStanProcessResult;
 use Atatusoft\Ppphp\Analysis\PhpStan\PhpStanProjectAnalyzer;
 use Atatusoft\Ppphp\Cache\CompilerBuildIdentity;
@@ -26,7 +27,7 @@ use Atatusoft\Ppphp\Project\ProjectChecker;
 use Atatusoft\Ppphp\Project\ProjectLoader;
 use Atatusoft\Ppphp\Project\ProjectSelection;
 use Atatusoft\Ppphp\Project\ProjectSelector;
-use Atatusoft\Ppphp\Project\SupplementalAnalysisPreparation;
+use Atatusoft\Ppphp\Project\SupplementalAnalysisRun;
 use Atatusoft\Ppphp\Support\Path;
 use Atatusoft\Ppphp\Transpilation\SourceMapWriter;
 
@@ -126,20 +127,42 @@ final readonly class WorkflowProtocol
             if ($preparation->analysisProject->selectedFiles === []) {
                 $check = $this->checker->complete($preparation, new AnalysisResult(new DiagnosticBag(), ['backend' => 'phpstan', 'skipped' => true]));
             } else {
-                $invocation = $this->prepareAnalyzerInvocation($session, $preparation);
-                if ($request->action === 'start') {
-                    $session->invocations = [$invocation['identity']];
-                    $this->validateFreshness($session, $project);
-                    $this->saveSession($control, $session);
-                    return $this->respond($session, 'pending-analysis', null, ['invocations' => [$invocation]]);
+                $run = new SupplementalAnalysisRun($preparation);
+                $observations = $session->analysis === null ? [] : [$session->analysis, ...$session->annotationResults];
+                $incoming = $request->action === 'complete-analysis' ? ($request->results[0] ?? null) : null;
+                $round = 0;
+                while ($run->result === null) {
+                    $invocation = $this->prepareAnalyzerInvocation($session, $run->pendingProject, $root, array_slice($observations, 0, $round));
+                    $observed = $observations[$round] ?? $incoming;
+                    if ($observed === null) {
+                        if ($request->action === 'complete-lint') {
+                            throw new \InvalidArgumentException('Annotation validation was not completed before lint.');
+                        }
+                        $session->invocations = [$invocation['identity']];
+                        $this->validateFreshness($session, $project);
+                        $this->saveSession($control, $session);
+                        return $this->respond($session, 'pending-analysis', null, ['invocations' => [$invocation]]);
+                    }
+                    if ($observed->invocation !== $invocation['identity']) {
+                        throw new \InvalidArgumentException('Analyzer invocation identity changed before completion.');
+                    }
+                    if (!isset($observations[$round])) {
+                        $observations[] = $observed;
+                        $incoming = null;
+                        if ($round === 0) {
+                            $session->analysis = $observed;
+                        } else {
+                            $session->annotationResults[] = $observed;
+                        }
+                    }
+                    $process = $this->frameAnalysis($observed, $invocation['command'], $invocation['progressPaths']);
+                    $run->advance($analyzer->complete($run->pendingProject, $process));
+                    $round++;
                 }
-                $observed = $request->action === 'complete-analysis' ? ($request->results[0] ?? null) : $session->analysis;
-                if ($observed === null || $observed->invocation !== $invocation['identity']) {
-                    throw new \InvalidArgumentException('Analyzer invocation identity changed before completion.');
+                if ($round !== count($observations) || $incoming !== null) {
+                    throw new \InvalidArgumentException('Unexpected analysis evidence after completion.');
                 }
-                $process = $this->frameAnalysis($observed, $invocation['command'], $invocation['progressPaths']);
-                $check = $this->checker->complete($preparation, $analyzer->complete($preparation->analysisProject, $process));
-                $session->analysis = $observed;
+                $check = $this->checker->complete($preparation, $run->result);
             }
             if (!$check->isSuccessful || $session->start->operation === 'check') {
                 $this->validateFreshness($session, $project);
@@ -237,15 +260,18 @@ final readonly class WorkflowProtocol
                 'artifacts' => $descriptors, 'manifest' => json_decode($manifest, true, flags: JSON_THROW_ON_ERROR)], 'staleRemovalCount' => $commit->staleRemovalCount]);
     }
 
-    /** @return array{identity: string, kind: string, command: list<string>, workingDirectory: string, progressPaths: list<string>, binding: string} */
-    private function prepareAnalyzerInvocation(WorkflowSession $session, SupplementalAnalysisPreparation $preparation): array
+    /** @param list<WorkflowProcessResult> $observations
+     * @return array{identity: string, kind: string, command: list<string>, workingDirectory: string, progressPaths: list<string>, binding: string}
+     */
+    private function prepareAnalyzerInvocation(WorkflowSession $session, AnalysisProject $analysis, string $root, array $observations): array
     {
-        $analysis = $preparation->analysisProject ?? throw new \LogicException('Missing analysis workspace.');
         $plan = (new PhpStanProjectAnalyzer())->buildPlan($analysis, true, 'php');
         $paths = array_map(static fn ($file): string => $file->analysisPath, $analysis->selectedFiles);
         $files = $this->snapshots->identifyTree($analysis->workspaceRoot, [Path::join($analysis->workspaceRoot, 'result.json'), Path::join($analysis->workspaceRoot, 'tmp')]);
-        $data = ['kind' => 'phpstan', 'command' => $plan->command, 'workingDirectory' => $preparation->compilerAnalysis->project->configuration->projectRoot,
-            'progressPaths' => $paths, 'binding' => $this->bind($session, 'analysis', $files)];
+        $evidence = ProtocolJson::encodeCanonical(['files' => $files,
+            'observations' => array_map(static fn (WorkflowProcessResult $result): array => $result->toArray(), $observations)]);
+        $data = ['kind' => 'phpstan', 'command' => $plan->command, 'workingDirectory' => $root,
+            'progressPaths' => $paths, 'binding' => $this->bind($session, 'analysis', ProtocolJson::hash($evidence))];
         return ['identity' => ProtocolJson::hash(ProtocolJson::encodeCanonical($data)), ...$data];
     }
 
@@ -295,7 +321,7 @@ final readonly class WorkflowProtocol
                     unset($remaining[$line]);
                     $stdout = substr($stdout, $end + 1);
                 }
-                $parsed = WorkflowValues::readObject(WorkflowJson::decode($stdout, 512), ['totals', 'files', 'errors']);
+                $parsed = WorkflowValues::readObject(WorkflowJson::decode($stdout, 512), ['totals', 'files', 'errors', 'localAnnotationOmissions']);
                 if (!is_array($parsed['files']) || !is_array($parsed['errors']) || !array_is_list($parsed['errors'])) {
                     throw new \InvalidArgumentException('Malformed analyzer file results.');
                 }
@@ -389,7 +415,7 @@ final readonly class WorkflowProtocol
         if (!$this->filesystem->checkExists($path)) {
             return null;
         }
-        $bytes = $this->filesystem->readFileBounded($path, 3_145_728);
+        $bytes = $this->filesystem->readFileBounded($path, WorkflowSession::MAXIMUM_BYTES);
         $data = WorkflowValues::readObject(WorkflowJson::decode($bytes), ['state', 'hash']);
         $session = WorkflowSession::decode($data['state']);
         if ($session->continuation !== $data['hash']) {
@@ -400,8 +426,12 @@ final readonly class WorkflowProtocol
 
     private function saveSession(string $control, WorkflowSession $session): void
     {
+        $bytes = ProtocolJson::encodeCanonical(['state' => $session->toArray(), 'hash' => $session->continuation]);
+        if (strlen($bytes) > WorkflowSession::MAXIMUM_BYTES) {
+            throw new \InvalidArgumentException('Analysis evidence exceeds the workflow budget.');
+        }
         $this->filesystem->writeFileAtomically(Path::join($control, 'session.json'),
-            ProtocolJson::encodeCanonical(['state' => $session->toArray(), 'hash' => $session->continuation]), 0600);
+            $bytes, 0600);
     }
 
     private function discardPending(string $control): void

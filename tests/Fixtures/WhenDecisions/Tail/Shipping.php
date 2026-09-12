@@ -16,7 +16,6 @@ function shipping(bool $express, array $weights): int
         }
         $shipping = 1200 + $weight * 50;
     } else {
-        /** @var int $parcels */
         $parcels = count($weights);
         $shipping = 500 + $parcels * 100;
     }

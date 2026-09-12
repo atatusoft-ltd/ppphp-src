@@ -944,7 +944,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 }
                 $initializer = new Stmt\Expression($assignment);
                 $binding = $this->findResultDeclaration($destination);
-                if ($binding !== null) {
+                if ($binding !== null && $this->context->shouldEmitLocalAnnotation($binding->declarationSpan, $binding->name)) {
                     $type = $binding->type->semanticType;
                     $members = $type instanceof UnionType ? $type->members : [$type];
                     $nonNull = array_values(array_filter($members, static fn ($member): bool => $member->canonical !== 'null'));
@@ -1805,7 +1805,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                 continue;
             }
             $binding = $this->context->semanticModel->bindings->find($declaration->id);
-            if ($binding !== null) {
+            if ($binding !== null && $this->context->shouldEmitLocalAnnotation($declaration->span, $binding->name)) {
                 $previous = $statement->getDocComment();
                 $tag = sprintf('@var %s %s', (new LocalBindingTypeRenderer())->render($binding, $this->context), $binding->name);
                 if ($previous === null) {
@@ -1865,7 +1865,7 @@ final class LowerWhenExpressionsPass implements TranspilationPass
                     continue;
                 }
                 $binding = $this->context->semanticModel->bindings->find($declaration->id);
-                if ($binding !== null) {
+                if ($binding !== null && $this->context->shouldEmitLocalAnnotation($declaration->loopKeywordSpan, $binding->name)) {
                     $tags[] = sprintf('@var %s %s', (new LocalBindingTypeRenderer())->render($binding, $this->context), $binding->name);
                     $origin = $declaration->loopKeywordSpan;
                 }

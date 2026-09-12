@@ -21,15 +21,23 @@ final class PhpStanConfigBuilder
     public function build(AnalysisProject $project): string
     {
         $configurationPath = Path::join($project->workspaceRoot, 'phpstan.neon');
-        $lines = [
+        $lines = $project->annotationsOnly ? [] : [
             'includes:',
             '    - ' . $this->quote(Path::join($this->compilerRoot, 'resources/phpstan/ppphp.neon')),
+        ];
+        $lines = [...$lines,
             'parameters:',
             '    phpVersion: ' . $this->resolvePhpVersion($project->targetPhpVersion),
             '    tmpDir: ' . $this->quote(Path::join($project->workspaceRoot, 'tmp')),
             '    parallel:',
             '        maximumNumberOfProcesses: 1',
         ];
+        if ($project->annotationsOnly) {
+            // A separate validation purpose, not a relaxed source check. The
+            // authoritative full check has already run on its unchanged view.
+            $lines[] = '    level: null';
+            $lines[] = '    customRulesetUsed: true';
+        }
         $this->appendList($lines, 'paths', array_map(static fn ($file): string => $file->analysisPath, $project->selectedFiles));
         $this->appendList($lines, 'scanFiles', [
             ...array_map(static fn ($file): string => $file->analysisPath, $project->contextFiles),
@@ -38,8 +46,11 @@ final class PhpStanConfigBuilder
         ]);
         $this->appendList($lines, 'scanDirectories', $project->composerScanDirectories);
         $this->appendList($lines, 'stubFiles', $project->stubFiles);
-        $contracts = $completedResults = [];
+        $contracts = $completedResults = $annotationOrigins = [];
         foreach ($project->selectedFiles as $file) {
+            if ($file->generatedAnnotationOrigins !== []) {
+                $annotationOrigins[$file->analysisPath] = $file->generatedAnnotationOrigins;
+            }
             if ($file->localContracts !== []) {
                 $contracts[$file->analysisPath] = $file->localContracts;
             }
@@ -48,16 +59,31 @@ final class PhpStanConfigBuilder
             }
         }
         $lines[] = 'services:';
+        if (!$project->annotationsOnly) {
+            $lines[] = '    -';
+            $lines[] = '        class: ' . GeneratedLocalContractRule::class;
+            $lines[] = '        arguments:';
+            $lines[] = '            contracts: ' . json_encode($contracts, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            $lines[] = '        tags: [phpstan.rules.rule]';
+            $lines[] = '    -';
+            $lines[] = '        class: ' . CompletedWhenResultExtension::class;
+            $lines[] = '        arguments:';
+            $lines[] = '            results: ' . json_encode($completedResults, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            $lines[] = '        tags: [phpstan.rules.rule, phpstan.broker.expressionTypeResolverExtension]';
+        } else {
+            $lines[] = '    annotationRule:';
+            $lines[] = '        class: PHPStan\Rules\PhpDoc\WrongVariableNameInVarTagRule';
+            $lines[] = '        tags: [phpstan.rules.rule]';
+        }
         $lines[] = '    -';
-        $lines[] = '        class: ' . GeneratedLocalContractRule::class;
+        $lines[] = '        class: ' . GeneratedAnnotationCollector::class;
         $lines[] = '        arguments:';
-        $lines[] = '            contracts: ' . json_encode($contracts, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-        $lines[] = '        tags: [phpstan.rules.rule]';
-        $lines[] = '    -';
-        $lines[] = '        class: ' . CompletedWhenResultExtension::class;
-        $lines[] = '        arguments:';
-        $lines[] = '            results: ' . json_encode($completedResults, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-        $lines[] = '        tags: [phpstan.rules.rule, phpstan.broker.expressionTypeResolverExtension]';
+        $lines[] = '            rule: ' . ($project->annotationsOnly ? '@annotationRule' : '@PHPStan\Rules\PhpDoc\WrongVariableNameInVarTagRule');
+        $lines[] = '            origins: ' . json_encode($annotationOrigins, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $lines[] = '        tags: [phpstan.collector]';
+        $lines[] = '    errorFormatter.json:';
+        $lines[] = '        class: ' . AnalysisJsonFormatter::class;
+        $lines[] = '        arguments!: []';
         $contents = implode("\n", $lines) . "\n";
 
         if (@file_put_contents($configurationPath, $contents) === false) {

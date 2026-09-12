@@ -162,6 +162,26 @@ becomes:
 
 The initializer, variable, comments, newline style, Unicode, and unaffected bytes remain intact. Edits use typed declaration spans, are validated for overlap, and are applied in reverse source order. Ordinary `.php` copies remain byte-identical; `.ppphp` output always gains strict types when it does not already declare them.
 
+Production local annotations use per-tag advice after authoritative supplemental
+source analysis. `GeneratedAnnotationCollector` delegates to the pinned backend's
+variable-tag rule; it does not approximate native ranges or duplicate inference.
+The internal result requires an explicit advice list, validated against exact
+generated comment offsets, names, and verified source owners. Only production
+lowering consumes this advice, omitting rejected generated tags across locals,
+loop bindings, and regenerated `when` bodies. `SupplementalAnalysisRun` validates
+the actual production-lowered candidate in a separate analyzer process without
+source-storage or completed-result extensions. Rejected tags are omitted and
+the candidate is checked again until no further tags are rejected; removing an
+upstream tag can expose a more precise type downstream. Decisions grow within
+the finite original set of owned tags. Full source diagnostics and storage
+checks remain authoritative, and authored assertions remain unchanged.
+Native rounds share one time budget. Browser continuations reconstruct and
+bind every observation and candidate under the host's total operation budget;
+bounded evidence, malformed results, and replay failures cannot authorize
+publication. Both paths carry the same typed result; source-owned decisions
+remain stable when generated offsets change. Cached artifacts include the compiler
+build identity, while fresh production emission requires a full check.
+
 EraseGenericTypesPass removes declarations and applications from executable PHP and supplies canonical @template, @param, @return, @var, @extends, @implements, and @use metadata. EraseThrowsClausesPass removes native throws clauses. PhpDocEmitter coordinates one owning-docblock edit so existing descriptions, attributes, unrelated tags, newline style, and @throws metadata remain intact.
 
 `LowerWhenExpressionsPass` consumes each outer containing statement and incorporates nested extension syntax without overlapping edits. It emits prerequisite evaluation statements, deterministic collision-free result variables, ordinary `if`/`elseif`/`else` inside compiler-owned `do` boundaries, literal break depths, and cleanup where control continues. Earlier call arguments and array members are hoisted only when required to preserve their textual evaluation point. No synthetic callable, runtime helper, or compiler-control exception is introduced. Source-edit submappings associate generated conditions, branch results, and temporary uses with their original `.ppphp` spans.

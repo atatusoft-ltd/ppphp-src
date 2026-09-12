@@ -18,6 +18,8 @@ use Atatusoft\Ppphp\Support\Path;
 use Atatusoft\Ppphp\Transpilation\GeneratedPhp;
 use Atatusoft\Ppphp\Transpilation\GeneratedSourceMap;
 use Atatusoft\Ppphp\Transpilation\PhpLowerer;
+use Atatusoft\Ppphp\Transpilation\Pass\RelocateComposerAutoloadPass;
+use Atatusoft\Ppphp\Compiler\Output\OutputPathResolver;
 
 final readonly class AnalysisWorkspacePreparer
 {
@@ -27,7 +29,8 @@ final readonly class AnalysisWorkspacePreparer
         private DeclarationContextEmitter $declarationEmitter = new DeclarationContextEmitter(),
     ) {}
 
-    public function prepare(CompilerProjectAnalysis $analysis): AnalysisPreparationResult
+    /** @param array<string, array<int, list<string>>> $localAnnotationOmissions */
+    public function prepare(CompilerProjectAnalysis $analysis, bool $annotationsOnly = false, array $localAnnotationOmissions = []): AnalysisPreparationResult
     {
         $project = $analysis->project;
         $selectedSources = $analysis->selectedSources;
@@ -83,7 +86,9 @@ final readonly class AnalysisWorkspacePreparer
 
                     $generated = !$selected && !$semanticResult->isSuccessful
                         ? $this->declarationEmitter->emitContext($model)
-                        : $this->lowerer->lower($parsedFile, $model);
+                        : $this->lowerer->lower($parsedFile, $model,
+                            $annotationsOnly ? [new RelocateComposerAutoloadPass($project->composer, (new OutputPathResolver())->resolve($project->configuration, $source))] : [],
+                            $localAnnotationOmissions[$source->path] ?? []);
                 } else {
                     $generated = new GeneratedPhp(
                         $sourceFile->contents,
@@ -93,7 +98,7 @@ final readonly class AnalysisWorkspacePreparer
                 }
 
                 $analysisPath = $this->resolveAnalysisPath($workspace, $source, $selected);
-                $analysisContents = (new AnalysisSourceProjector())->project($generated);
+                $analysisContents = $annotationsOnly ? $generated->contents : (new AnalysisSourceProjector())->project($generated);
                 $this->writeFile($analysisPath, $analysisContents);
                 $analysisFile = new AnalysisFile(
                     $sourceFile,
@@ -109,6 +114,9 @@ final readonly class AnalysisWorkspacePreparer
                         ? (new GeneratedLocalContractIndex())->collect($generated, $model)
                         : [],
                     $selected ? $generated->completedResults : [],
+                    $source->kind === FileKind::Ppphp && $selected
+                        ? (new GeneratedTypeDeclarationIndex())->collectDocuments($generated, $parsedFile, $semanticResult)
+                        : [],
                 );
 
                 if ($selected) {
@@ -129,6 +137,7 @@ final readonly class AnalysisWorkspacePreparer
                 $composerScanFiles,
                 $composerScanDirectories,
                 $project->configuration->targetPhpVersion,
+                $annotationsOnly,
             );
             $this->writeMaps($analysisProject);
         } catch (AnalysisWorkspaceException $exception) {
