@@ -14,6 +14,9 @@ import native
 spec = importlib.util.spec_from_file_location('source_build', native.HERE / 'source-build.py')
 source_build = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(source_build)
+recipe_spec = importlib.util.spec_from_file_location('native_recipes', native.HERE / 'native-recipes.py')
+native_recipes = importlib.util.module_from_spec(recipe_spec)
+recipe_spec.loader.exec_module(native_recipes)
 
 
 class NativeTests(unittest.TestCase):
@@ -38,6 +41,18 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(manifest['toolchain']['platform'], 'linux/amd64')
         self.assertNotIn('__x86_64__', manifest['toolchain']['cflags'])
         self.assertFalse(manifest['productionReady'])
+
+    def test_gif_security_patch_preserves_all_three_upstream_corrections(self):
+        source = ('sd->table[0][i] = sd->table[1][0] = 0;\nLZW_STATIC_DATA sd;\n'
+                  '\t\t\tif(count != 0) {\n\t\t\t\treturn -2;\n\t\t\t}\n\t\t}\n\n\t\tincode = code;')
+        patched = native_recipes.patch_gif_decoder(source)
+        self.assertIn('sd->table[1][i] = 0;', patched)
+        self.assertIn('LZW_STATIC_DATA sd = {0};', patched)
+        self.assertIn('\t\t\t}\n\t\t\treturn -2;\n\t\t}', patched)
+        with self.assertRaises(ValueError):
+            native_recipes.patch_gif_decoder(patched)
+        with self.assertRaises(ValueError):
+            native_recipes.patch_gif_decoder(source.replace('LZW_STATIC_DATA sd;', 'changed'))
 
     def test_checksum_rejects_changed_download(self):
         with tempfile.TemporaryDirectory() as tmp:

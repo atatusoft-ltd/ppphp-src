@@ -35,6 +35,15 @@ until compilation, link provenance and runtime checks pass. Oniguruma 6.9.10 has
 traceable source but an archived upstream. Version selection alone is not a
 security or licensing qualification.
 
+The dependency review replaces AOM 3.13.1 with 3.15.0 rather than carrying
+forward known encoder memory-safety defects. The [upstream release](https://aomedia.googlesource.com/aom/+/refs/tags/v3.15.0)
+records its ABI compatibility and security corrections. GD retains its release
+API and image formats with the [PHP upstream GIF correction](https://github.com/php/php-src/commit/fcd691b377d02285740744bee17c0f298be227d5)
+for CVE-2026-9672: initialize the decoder state/table and stop on the end code.
+The recipe records before/after hashes; strict patch-context checks reject drift.
+This is a specific source correction, not a claim that smoke tests exhaustively
+prove memory safety. Fresh candidate execution remains required.
+
 AOM's Gitiles archive contains request-time entry timestamps. Its immutable
 commit and reconstructed Git tree (file content, executable modes and symlinks)
 are verified instead of trusting a changing transport checksum. The acquired
@@ -52,6 +61,9 @@ python3 tools/php-wasm-runtime/source-build.py build --clean \
 node tools/php-wasm-runtime/verify-built.mjs \
   --runtime /tmp/ppphp-native-build-1/candidate --expect candidate \
   --output /tmp/ppphp-native-build-1/compatibility
+python3 tools/php-wasm-runtime/source-build.py compare \
+  --first /tmp/ppphp-native-build-1 --second /tmp/ppphp-native-build-2 \
+  --output /tmp/ppphp-native-reproducibility.json
 ```
 
 Source acquisition and toolchain installation precede network-disabled target
@@ -71,10 +83,16 @@ through the workflow's `historical` profile.
 
 - Source acquisition and archive/tree verification: executed locally.
 - Recipe, archive-safety, object-format and prefix-collision tests: executed locally.
-- Source-built native compilation and PHP relink: pending execution.
+- Source-built native compilation: in progress. The first run to reach target
+  compilation built zlib (15 WASM objects, 5.395 seconds) and OpenSSL (1,082
+  WASM objects, 116.363 seconds). Libiconv compiled but its header installation
+  step failed; the recipe now uses the actual upstream installation source.
+  These observations are from [run 34696125363](https://github.com/atatusoft-ltd/ppphp-src/actions/runs/34696125363),
+  not a completed candidate or current-profile reproducibility result.
+- PHP relink: not yet executed.
 - New runtime compatibility, containment, full client/page/HTTPS qualification:
   pending the new executable pair; historical results are not substituted.
-- Two-build byte comparison, matching distribution/source, durable owner retention
+- Two-build byte comparison execution, matching distribution/source, durable owner retention
   and BP-8 handoff: pending.
 
 The local machine has no running Docker daemon and insufficient spare disk for

@@ -19,6 +19,16 @@ JOBS = str(PROFILE['jobs'])
 PREFIX_ROOT = Path('/opt/native')
 
 
+def patch_gif_decoder(content: str) -> str:
+    # PHP upstream fcd691b377d02285740744bee17c0f298be227d5,
+    # adapted only to the external GD release's whitespace (CVE-2026-9672).
+    content = replace_exact(content, 'sd->table[0][i] = sd->table[1][0] = 0;',
+                            'sd->table[0][i] = sd->table[1][i] = 0;')
+    content = replace_exact(content, 'LZW_STATIC_DATA sd;', 'LZW_STATIC_DATA sd = {0};')
+    return replace_exact(content, '\t\t\tif(count != 0) {\n\t\t\t\treturn -2;\n\t\t\t}\n\t\t}\n\n\t\tincode = code;',
+                          '\t\t\tif(count != 0) {\n\t\t\t\treturn -2;\n\t\t\t}\n\t\t\treturn -2;\n\t\t}\n\n\t\tincode = code;')
+
+
 def build(name: str) -> None:
     source = MANIFEST['sources'][name]
     prefix = PREFIX_ROOT / name
@@ -93,7 +103,9 @@ def build(name: str) -> None:
             run('emmake', 'make', '-C', 'lib', '-j' + JOBS)
             run('emmake', 'make', '-C', 'libcharset', '-j' + JOBS)
             run('emmake', 'make', '-C', 'lib', 'install')
-            run('emmake', 'make', '-C', 'include', 'install')
+            # The top-level install rule copies this generated public header;
+            # include/ has no install target. Do not build the unused iconv CLI.
+            copy('include/iconv.h.inst', 'include/iconv.h')
             run('emmake', 'make', '-C', 'libcharset', 'install')
         else:
             run('emmake', 'make', '-j' + JOBS)
@@ -146,7 +158,7 @@ def build(name: str) -> None:
               '-DWEBP_BUILD_WEBPINFO=OFF', '-DWEBP_BUILD_WEBPMUX=OFF', '-DWEBP_BUILD_EXTRAS=OFF',
               '-DWEBP_USE_THREAD=OFF', '-DWEBP_ENABLE_SIMD=OFF')
     elif name == 'libaom':
-        cmake('-DAOM_TARGET_CPU=generic', '-DENABLE_DOCS=OFF', '-DENABLE_EXAMPLES=OFF',
+        cmake('-DAOM_TARGET_CPU=generic', '-DENABLE_DOCS=OFF', '-DENABLE_EXAMPLES=OFF', '-DENABLE_APPS=OFF',
               '-DENABLE_TESTS=OFF', '-DENABLE_TESTDATA=OFF', '-DENABLE_TOOLS=OFF',
               '-DCONFIG_MULTITHREAD=0', '-DCONFIG_RUNTIME_CPU_DETECT=0', '-DCONFIG_WEBM_IO=0',
               '-DCONFIG_ACCOUNTING=1', '-DCONFIG_INSPECTION=0')
@@ -155,6 +167,8 @@ def build(name: str) -> None:
               '-DAVIF_CODEC_RAV1E=OFF', '-DAVIF_CODEC_SVT=OFF', '-DAVIF_LIBYUV=OFF',
               '-DAVIF_BUILD_APPS=OFF', '-DAVIF_BUILD_TESTS=OFF', '-DAVIF_ENABLE_GTEST=OFF')
     elif name == 'libgd':
+        original = (root / 'src/gd_gif_in.c').read_text()
+        patch('src/gd_gif_in.c', original, patch_gif_decoder(original))
         # Rename only GD's private helper; keep each implementation's overflow checks intact.
         for file in root.joinpath('src').glob('*'):
             if file.suffix in ('.c', '.h') and 'overflow2' in file.read_text():
