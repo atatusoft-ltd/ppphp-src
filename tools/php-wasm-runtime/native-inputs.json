@@ -22,9 +22,16 @@
     "wordpress-playground": {
       "version": "a6ed3872674399baa47c2f55fe1e660633fc8051",
       "url": "https://codeload.github.com/WordPress/wordpress-playground/tar.gz/a6ed3872674399baa47c2f55fe1e660633fc8051",
-      "sha256": "21616f016ec7debc8409762037bb17e6c9a4e225743f04dd1607f1ed820a079b",
-      "bytes": 166342802,
+      "upstreamArchive": {"sha256": "21616f016ec7debc8409762037bb17e6c9a4e225743f04dd1607f1ed820a079b", "bytes": 166342802, "stripRoot": true},
+      "gitTree": "e63233f6f107ac4461fbcb1f8338d75f25e74c12",
+      "maxBytes": 8388608,
       "stripRoot": true,
+      "sourceProjection": [
+        "LICENSE", "README.md", "package.json", "package-lock.json", "tsconfig.base.json", "nx.json", "lerna.json", ".npmrc", ".nvmrc", "jest.config.ts", "jest.preset.js",
+        "packages/php-wasm/compile/php", "packages/php-wasm/compile/base-image", "packages/php-wasm/compile/php-wasm-memory-storage", "packages/php-wasm/compile/php-wasm-dns-polyfill", "packages/php-wasm/compile/php-post-message-to-js", "packages/php-wasm/compile/opcache",
+        "packages/php-wasm/logger", "packages/php-wasm/progress", "packages/php-wasm/stream-compression", "packages/php-wasm/universal", "packages/php-wasm/util",
+        "packages/vite-extensions", "packages/nx-extensions", "tools"
+      ],
       "role": "PHP integration source and reviewed patches; never native dist inputs",
       "notices": ["LICENSE"]
     },

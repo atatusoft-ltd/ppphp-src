@@ -26,6 +26,14 @@ def verify_headers(prefix: Path, source: dict) -> None:
             raise ValueError(f'Missing or unsafe installed native header: {path}')
 
 
+def patch_source(path: Path, old: str, new: str, count: int = 1) -> dict:
+    before = native.digest(path)
+    # C source comments need not be UTF-8. Match ASCII patch context and retain
+    # every unrelated byte, including the original source encoding.
+    path.write_bytes(replace_exact(path.read_bytes(), old.encode('ascii'), new.encode('ascii'), count))
+    return {'beforeSha256': before, 'afterSha256': native.digest(path)}
+
+
 def patch_gif_decoder(content: str) -> str:
     # PHP upstream fcd691b377d02285740744bee17c0f298be227d5,
     # adapted only to the external GD release's whitespace (CVE-2026-9672).
@@ -69,10 +77,7 @@ def build(name: str) -> None:
         commands.append({'argv': list(args), 'cwd': str(cwd)})
         subprocess.run(args, cwd=cwd, env=env, check=True, timeout=1800)
     def patch(file: str, old: str, new: str, count: int = 1) -> None:
-        path = root / file
-        before = native.digest(path)
-        path.write_text(replace_exact(path.read_text(), old, new, count))
-        patches.append({'path': file, 'beforeSha256': before, 'afterSha256': native.digest(path)})
+        patches.append({'path': file, **patch_source(root / file, old, new, count)})
     def cmake(*options: str, target: str | None = None, install: bool = True) -> None:
         run('emcmake', 'cmake', '-S', '.', '-B', '_build', '-G', 'Unix Makefiles',
             '-DCMAKE_BUILD_TYPE=Release', f'-DCMAKE_INSTALL_PREFIX={prefix}',
@@ -178,9 +183,9 @@ def build(name: str) -> None:
         patch('src/gd_gif_in.c', original, patch_gif_decoder(original))
         # Rename only GD's private helper; keep each implementation's overflow checks intact.
         for file in root.joinpath('src').glob('*'):
-            if file.suffix in ('.c', '.h') and 'overflow2' in file.read_text():
-                content = file.read_text()
-                patch('src/' + file.name, 'overflow2', 'gd_checked_multiply_overflow', content.count('overflow2'))
+            if file.suffix in ('.c', '.h') and b'overflow2' in file.read_bytes():
+                content = file.read_bytes()
+                patch('src/' + file.name, 'overflow2', 'gd_checked_multiply_overflow', content.count(b'overflow2'))
         patch('src/gdft.c', '#ifndef HAVE_LIBFREETYPE\nBGD_DECLARE(char *)',
               '#ifndef HAVE_LIBFREETYPE\n/* No font cache exists in this configuration. */\n'
               'BGD_DECLARE(void) gdFontCacheShutdown(void) {}\n'

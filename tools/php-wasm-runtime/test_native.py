@@ -87,6 +87,17 @@ class NativeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             native_recipes.patch_gif_decoder(source.replace('LZW_STATIC_DATA sd;', 'changed'))
 
+    def test_native_source_patches_preserve_non_utf8_comments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'source.c'
+            original = b'/* \x82\xa0 */\r\nint overflow2(int a, int b);\r\n'
+            path.write_bytes(original)
+            receipt = native_recipes.patch_source(path, 'overflow2', 'gd_checked_multiply_overflow')
+            self.assertEqual(path.read_bytes(), original.replace(b'overflow2', b'gd_checked_multiply_overflow'))
+            self.assertEqual(receipt['beforeSha256'], hashlib.sha256(original).hexdigest())
+            with self.assertRaises(ValueError):
+                native_recipes.patch_source(path, 'overflow2', 'gd_checked_multiply_overflow')
+
     def test_bcmath_security_patch_updates_the_copy_endpoint_once(self):
         source = ('\t\t\t\tstr_scale -= fractional_end - fractional_new_end; /* fractional_end >= fractional_new_end */\n'
                   '\t\t\t}')
@@ -118,6 +129,44 @@ class NativeTests(unittest.TestCase):
             source['sha256'] = '0' * 64
             with self.assertRaisesRegex(ValueError, 'checksum'):
                 native.verify_source(path, source)
+
+    def test_preferred_source_projection_is_pinned_reproducible_and_excludes_prebuilt_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = root / 'original.tar.gz'
+            upstream = self.archive(original, [('root/LICENSE', b'notice', tarfile.REGTYPE),
+                ('root/src/bridge.c', b'source', tarfile.REGTYPE),
+                ('root/old/dist/lib.a', b'prebuilt', tarfile.REGTYPE)])
+            source = {'upstreamArchive': upstream, 'sourceProjection': ['LICENSE', 'src'],
+                      'stripRoot': True, 'maxBytes': 4096}
+            with tarfile.open(original) as archive:
+                source['gitTree'] = native.git_tree(archive, native.projection_members(archive, source))
+            for name in ['one.tar.gz', 'two.tar.gz']:
+                native.project_source(original, root / name, source, 1234567)
+                with tarfile.open(root / name) as archive:
+                    self.assertEqual(set(native.archive_members(archive, True)), {'LICENSE', 'src/bridge.c'})
+            self.assertEqual((root / 'one.tar.gz').read_bytes(), (root / 'two.tar.gz').read_bytes())
+            with self.assertRaises(FileExistsError):
+                native.project_source(original, root / 'one.tar.gz', source, 1234567)
+            self.assertTrue((root / 'one.tar.gz').exists())
+            for selection in [['missing'], ['LICENSE', 'old']]:
+                with tarfile.open(original) as archive, self.assertRaises(ValueError):
+                    native.projection_members(archive, {**source, 'sourceProjection': selection})
+            with self.assertRaisesRegex(ValueError, 'tree mismatch'):
+                native.project_source(original, root / 'bad.tar.gz', {**source, 'gitTree': '0' * 40}, 1234567)
+            self.assertFalse((root / 'bad.tar.gz').exists())
+
+            source['url'] = 'https://example.invalid/source.tar.gz'
+            manifest = {'sources': {'source': source}, 'toolchain': {'sourceDateEpoch': 1234567}}
+            def download(command, **kwargs):
+                self.assertEqual(command[command.index('--max-filesize') + 1], str(upstream['bytes']))
+                Path(command[-1]).write_bytes(original.read_bytes())
+            with patch.object(native.subprocess, 'run', side_effect=download) as transport:
+                native.acquire(root / 'store', manifest)
+                native.acquire(root / 'store', manifest)
+                self.assertEqual(transport.call_count, 1)
+            self.assertEqual(list((root / 'store').iterdir()), [root / 'store/source.tar.gz'])
+            self.assertEqual((root / 'store/source.tar.gz').read_bytes(), (root / 'one.tar.gz').read_bytes())
 
     def test_acquisition_retries_transport_only_and_never_admits_corrupt_source(self):
         with tempfile.TemporaryDirectory() as tmp:

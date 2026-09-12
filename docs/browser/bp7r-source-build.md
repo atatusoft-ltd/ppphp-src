@@ -59,6 +59,17 @@ are verified instead of trusting a changing transport checksum. The acquired
 archive's actual checksum is retained. Extraction sets deterministic source
 timestamps before compilation; no resulting binary is rewritten to make it match.
 
+WordPress Playground's complete upstream archive contains historical prebuilt
+libraries and runtime payloads. Acquisition verifies that original archive, then
+produces a deterministic source-only archive from the manifest's explicit path
+selection. The selected tree is separately pinned and includes the PHP integration,
+wrapper source, supporting build tools and notices; it excludes the old binaries.
+The selection preserves source bytes and executable modes. Its actual archive hash
+is recorded with every other acquisition and consumed by Website packaging.
+The public corresponding-source package carries this verified selection, not the
+complete historical archive. Original and selected PHP integration inventories
+were compared byte-for-byte and match.
+
 ## Commands
 
 Use new OS-temporary output directories, outside all user workspaces:
@@ -92,12 +103,13 @@ through the workflow's `historical` profile.
 
 - Source acquisition and archive/tree verification: executed locally.
 - Recipe, archive-safety, object-format and prefix-collision tests: executed locally.
-- Source-built native compilation: in progress. The first run to reach target
-  compilation built zlib (15 WASM objects, 5.395 seconds) and OpenSSL (1,082
-  WASM objects, 116.363 seconds). Libiconv compiled but its header installation
-  step failed; the recipe now uses the actual upstream installation source.
-  These observations are from [run 34696125363](https://github.com/atatusoft-ltd/ppphp-src/actions/runs/34696125363),
-  not a completed candidate or current-profile reproducibility result.
+- Source-built native compilation: in progress. [Run 34698906367](https://github.com/atatusoft-ltd/ppphp-src/actions/runs/34698906367)
+  compiled and verified 13 of 14 producers, through AVIF. OpenSSL produced 1,082
+  WASM objects in 109.747 seconds; curl took 177.065 seconds, mostly configuration.
+  GD stopped before compilation because a patch scan decoded unrelated source
+  comments as UTF-8. ASCII patch matching now preserves all unrelated bytes,
+  covered by a non-UTF-8/CRLF regression. This is not a completed candidate or
+  current-profile reproducibility result.
 - PHP relink: not yet executed.
 - New runtime compatibility, containment, full client/page/HTTPS qualification:
   pending the new executable pair; historical results are not substituted.

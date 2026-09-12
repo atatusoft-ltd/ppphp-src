@@ -315,6 +315,9 @@ def inside(command: str, manifest: dict) -> None:
         # This is build provenance, not a compatibility or production approval.
         receipt = {'schemaVersion': 1, 'profile': manifest['profile'], 'productionReady': False,
                    'manifest': manifest, 'recipes': native.inventory(HERE),
+                   'acquisitions': {name: native.verify_source(Path('/inputs') / (name + (
+                       '.tar.xz' if source['url'].endswith('.xz') else '.tar.gz')), source)
+                       for name, source in manifest['sources'].items()},
                    'nativeReceipts': native.inventory(Path('/receipts')),
                    'finalLinkLibraries': [{'path': path, 'sha256': native.digest(Path(path))} for path in libraries],
                    'phpArchive': {'sha256': native.digest(Path('/root/lib/libphp.a'))},

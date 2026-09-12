@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import gzip
 import hashlib
 import json
 import os
@@ -164,6 +165,45 @@ def verify_source(path: Path, source: dict) -> dict:
     return {'sha256': identity, 'bytes': size}
 
 
+def projection_members(archive: tarfile.TarFile, source: dict) -> dict:
+    members = archive_members(archive, source['stripRoot'])
+    selected = {name: item for name, item in members.items()
+                if any(name == path or name.startswith(path.rstrip('/') + '/')
+                       for path in source['sourceProjection'])}
+    for path in source['sourceProjection']:
+        if not any(name == path or name.startswith(path.rstrip('/') + '/') for name in selected):
+            raise ValueError(f'Missing preferred-source selection: {path}')
+    for name, item in selected.items():
+        if '/dist/' in '/' + name or name.endswith(('.a', '.so', '.wasm', '.exe')):
+            raise ValueError(f'Prebuilt binary in preferred-source selection: {name}')
+        if item.islnk() or item.issym():
+            raise ValueError(f'Preferred-source selection needs an explicit link review: {name}')
+    return selected
+
+
+def project_source(original: Path, output: Path, source: dict, epoch: int) -> None:
+    verify_source(original, source['upstreamArchive'])
+    with tarfile.open(original) as archive:
+        selected = projection_members(archive, source)
+        if git_tree(archive, selected) != source['gitTree']:
+            raise ValueError('Preferred-source selection tree mismatch')
+        raw = output.open('xb')  # Establish ownership before cleanup can occur.
+        try:
+            with raw, gzip.GzipFile(fileobj=raw, mode='wb', filename='', mtime=epoch) as compressed:
+                with tarfile.open(fileobj=compressed, mode='w', format=tarfile.GNU_FORMAT) as projected:
+                    for name, original_member in sorted(selected.items()):
+                        member = copy.copy(original_member)
+                        member.pax_headers = {}
+                        member.mtime, member.uid, member.gid = epoch, 0, 0
+                        member.uname = member.gname = ''
+                        member.mode = 0o755 if member.isdir() or member.mode & 0o111 else 0o644
+                        projected.addfile(member, archive.extractfile(original_member) if member.isfile() else None)
+            verify_source(output, source)
+        except BaseException:
+            output.unlink()
+            raise
+
+
 def acquire(destination: Path, manifest: dict) -> None:
     destination = require_temporary(destination)
     destination.mkdir(exist_ok=True)
@@ -174,12 +214,18 @@ def acquire(destination: Path, manifest: dict) -> None:
             # Never reuse a partial download, symlink or unrelated cache entry.
             with partial.open('xb'):
                 pass
+            projected = destination / (path.name + '.projected')
             try:
+                acquisition = source.get('upstreamArchive', source)
                 subprocess.run(['curl', '--fail', '--location', '--proto', '=https', '--proto-redir', '=https',
                                 '--silent', '--show-error', '--connect-timeout', '15', '--max-time', '600',
                                 '--retry', '3', '--retry-max-time', '600',
-                                '--max-filesize', str(source.get('maxBytes', source.get('bytes'))),
+                                '--max-filesize', str(acquisition.get('maxBytes', acquisition.get('bytes'))),
                                 source['url'], '--output', str(partial)], check=True, timeout=620)
+                if 'sourceProjection' in source:
+                    project_source(partial, projected, source, manifest['toolchain']['sourceDateEpoch'])
+                    partial.unlink()
+                    projected.rename(partial)
                 verify_source(partial, source)
                 partial.rename(path)
             finally:
@@ -279,9 +325,16 @@ def main() -> None:
     fetch.add_argument('--store', type=Path, required=True)
     check = sub.add_parser('verify')
     check.add_argument('--store', type=Path, required=True)
+    project = sub.add_parser('project')
+    project.add_argument('--source', required=True)
+    project.add_argument('--input', type=Path, required=True)
+    project.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     manifest = load_manifest()
-    if args.command == 'acquire':
+    if args.command == 'project':
+        project_source(args.input, require_temporary(args.output), manifest['sources'][args.source],
+                       manifest['toolchain']['sourceDateEpoch'])
+    elif args.command == 'acquire':
         acquire(args.store, manifest)
     else:
         for name, source in manifest['sources'].items():
