@@ -20,8 +20,11 @@ MAX_EXPANDED = 2 * 1024 ** 3
 
 
 def digest(path: Path) -> str:
+    identity = hashlib.sha256()
     with path.open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            identity.update(chunk)
+    return identity.hexdigest()
 
 
 def canonical(value: object) -> bytes:

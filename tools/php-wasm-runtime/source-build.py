@@ -66,11 +66,13 @@ def tools_recipe(manifest: dict) -> str:
     return f'''FROM {profile['image']}
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC LC_ALL=C SOURCE_DATE_EPOCH={profile['sourceDateEpoch']} PYTHONDONTWRITEBYTECODE=1
-RUN test "$(find /etc/apt/sources.list.d -type f | wc -l)" = 1 && \\
-    sed -i -E 's|https?://(archive\\.|security\\.)?ubuntu.com/ubuntu/?|https://snapshot.ubuntu.com/ubuntu/{snapshot}/|g' /etc/apt/sources.list.d/ubuntu.sources && \\
-    test "$(grep -c '^URIs: https://snapshot.ubuntu.com/ubuntu/{snapshot}/$' /etc/apt/sources.list.d/ubuntu.sources)" = 2 && \\
+RUN source /etc/os-release && test "$VERSION_CODENAME" = "{profile['ubuntuSeries']}" && \\
+    test "$(find /etc/apt/sources.list.d -type f | wc -l)" = 0 && \\
+    sed -i -E 's|https?://(archive\\.|security\\.)?ubuntu.com/ubuntu/?|https://snapshot.ubuntu.com/ubuntu/{snapshot}/|g' /etc/apt/sources.list && \\
+    test "$(grep '^deb ' /etc/apt/sources.list | grep -vc ' https://snapshot.ubuntu.com/ubuntu/{snapshot}/ ')" = 0 && \\
     apt-get update && apt-get install --no-install-recommends -y {' '.join(profile['hostPackages'])}
 RUN emcc --version | head -1 | grep -F ' {profile['emscripten']} '
+RUN python3 -c 'import tarfile; assert hasattr(tarfile, "data_filter"), "A safe tarfile extraction filter is required"'
 WORKDIR /root
 RUN ln -s /emsdk /root/emsdk
 '''

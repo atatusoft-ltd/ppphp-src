@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: php-wasm-rebuild-${{ github.ref }}
+  group: php-wasm-rebuild-${{ github.event_name }}-${{ inputs.profile || 'recipes' }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
