@@ -138,6 +138,8 @@ protocol turns. The harness now checks the exact current command and allows fres
 analysis rounds under the unchanged operation deadline, rejecting replay and
 analysis after lint. Tests exercise the actual compiler-generated command and
 multi-round progression. No production compiler or Website capability was relaxed.
+The fault-injection sequence uses the same progression code to reach pending lint,
+rather than assuming one analyzer round; its complete sequential regression passes.
 
 Ordinary CI exhausted its existing 30-minute job budget while the expanded Pest
 suite was still passing. CI now runs four isolated shards per PHP host, retaining
@@ -177,6 +179,16 @@ entire test suite. No test or aggregate check was removed.
 - Initial independent compiler parity: all 48 cases PASS, including 18 Website
   teaching cases, malformed analyzer output and recovery. The broader workflow,
   client, real-page and installed-delivery suites remain separate gates.
+- The first two-clean-build comparison in
+  [run 34704147604](https://github.com/atatusoft-ltd/ppphp-src/actions/runs/34704147604)
+  failed on receipt identity, not installed libraries, WASM, loader or link maps.
+  Both candidates passed their runtime, Fiber and native controls. The sole root
+  difference is OpenSSL's generated `Makefile`; curl and ZIP inherit its receipt
+  identity. The pinned template emits `DEPS` from unsorted Perl hash keys. A
+  recorded one-line template patch sorts that complete set before generation.
+  Two local configuration runs reproduce the difference before the patch and
+  identical configuration bytes afterward. Full clean-build proof is still pending;
+  the failed receipts are not rewritten or excluded from comparison.
 - New runtime compatibility, containment, full client/page/HTTPS qualification:
   pending the new executable pair; historical results are not substituted.
 - Two-build byte comparison execution, matching distribution/source, durable owner retention

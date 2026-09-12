@@ -75,6 +75,14 @@ class NativeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'zconf.h'):
                 native_recipes.verify_headers(root, source)
 
+    def test_openssl_make_dependencies_are_sorted_without_omitting_sources(self):
+        template = 'DEPS={- map { platform->dep($_) }\n                        keys %{$unified_info{sources}})); -}\n'
+        patched = native_recipes.patch_openssl_makefile(template)
+        self.assertEqual(patched, template.replace('keys %', 'sort keys %'))
+        for invalid in (patched, template + template, template.replace('sources', 'changed')):
+            with self.assertRaises(ValueError):
+                native_recipes.patch_openssl_makefile(invalid)
+
     def test_gif_security_patch_preserves_all_three_upstream_corrections(self):
         source = ('sd->table[0][i] = sd->table[1][0] = 0;\nLZW_STATIC_DATA sd;\n'
                   '\t\t\tif(count != 0) {\n\t\t\t\treturn -2;\n\t\t\t}\n\t\t}\n\n\t\tincode = code;')

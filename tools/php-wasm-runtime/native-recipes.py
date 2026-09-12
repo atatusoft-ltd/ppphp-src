@@ -52,6 +52,12 @@ def patch_gd_avif_config(content: str) -> str:
     return replace_exact(content, 'SET(AVIF_LIBRARIES avif)', 'SET(AVIF_LIBRARIES PkgConfig::AVIF)')
 
 
+def patch_openssl_makefile(content: str) -> str:
+    # Preserve the complete dependency set, but not Perl's randomized hash order.
+    return replace_exact(content, '                        keys %{$unified_info{sources}})); -}',
+                          '                        sort keys %{$unified_info{sources}})); -}')
+
+
 def build(name: str) -> None:
     source = MANIFEST['sources'][name]
     prefix = PREFIX_ROOT / name
@@ -108,6 +114,8 @@ def build(name: str) -> None:
         run('emmake', 'make', '-j' + JOBS, 'libz.a')
         run('emmake', 'make', 'install')
     elif name == 'openssl':
+        template = (root / 'Configurations/unix-Makefile.tmpl').read_text()
+        patch('Configurations/unix-Makefile.tmpl', template, patch_openssl_makefile(template))
         # generic32 describes pointers/size_t, not PHP's zend_long. The SDK supplies getentropy.
         run('perl', './Configure', 'linux-generic32', 'no-shared', 'no-module', 'no-dso',
             'no-asm', 'no-threads', 'no-tests', 'no-legacy', 'no-afalgeng', 'no-ui-console',
