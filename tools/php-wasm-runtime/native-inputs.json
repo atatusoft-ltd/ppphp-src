@@ -187,7 +187,7 @@
       "stripRoot": true,
       "dependencies": [],
       "libraries": ["lib/libwebp.a", "lib/libsharpyuv.a"],
-      "headers": ["include/webp/decode.h", "include/webp/encode.h", "include/sharpyuv/sharpyuv.h"],
+      "headers": ["include/webp/decode.h", "include/webp/encode.h", "include/webp/sharpyuv/sharpyuv.h"],
       "notices": ["COPYING", "PATENTS"],
       "selection": "Official stable source; SharpYUV is built from this same tree."
     },
