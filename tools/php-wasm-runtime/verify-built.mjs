@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { compilerPackageArguments } from '../web-spike/scripts/prepare-compiler-bundle.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const spike = join(root, 'tools/web-spike');
@@ -29,11 +30,12 @@ export async function main(args = process.argv.slice(2)) {
   const { probes } = await import('../web-spike/src/baseline-probes.js');
   const options = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (!['--runtime', '--expect', '--output'].includes(args[i]) || !args[i + 1]) throw new Error('Expected --runtime, --expect and --output');
+    if (!['--runtime', '--expect', '--output', '--compiler-package', '--compiler-receipt-sha256'].includes(args[i]) || !args[i + 1]) throw new Error('Invalid runtime verification option');
     if (options[args[i]]) throw new Error('Duplicate option');
     options[args[i]] = args[i + 1];
   }
   if (!options['--runtime'] || !['baseline', 'candidate'].includes(options['--expect'])) throw new Error('Runtime directory and profile are required');
+  const compilerArguments = compilerPackageArguments(options);
   const output = createOutput(options['--output']);
   const packageRoot = realpathSync(options['--runtime']);
   const report = { format: 'ppphp.rebuilt-runtime', version: 1, profile: options['--expect'], observedAt: new Date().toISOString(), productionReady: false, accepted: false };
@@ -51,7 +53,7 @@ export async function main(args = process.argv.slice(2)) {
     const metadata = inspectWasm(bytes);
     if (!metadata.functions.size) throw new Error('The rebuilt runtime did not preserve function names');
     report.artifact = { sha256: sha(bytes), bytes: bytes.length, functionNames: metadata.functions.size, customSections: metadata.customSections, producers: metadata.producers };
-    const bundle = spawnSync(process.execPath, [join(spike, 'scripts/prepare-compiler-bundle.mjs')], { cwd: root, stdio: 'inherit', timeout: 120000 });
+    const bundle = spawnSync(process.execPath, [join(spike, 'scripts/prepare-compiler-bundle.mjs'), ...compilerArguments], { cwd: root, stdio: 'inherit', timeout: 120000 });
     if (bundle.status !== 0) throw new Error('Compiler archive preparation failed');
     const vite = await import(pathToFileURL(join(spike, 'node_modules/vite/dist/node/index.js')).href);
     const configFile = join(spike, 'vite.config.js');

@@ -11,10 +11,34 @@ import { resolvePreparedDebugPaths } from '../src/phpstan-debug-output.mjs';
 import { probes } from '../src/baseline-probes.js';
 import { assessProfile } from '../../php-wasm-runtime/verify-built.mjs';
 import { assessFiberContract } from './run-fiber-contract.mjs';
+import { compilerPackageArguments } from './prepare-compiler-bundle.mjs';
+import { assessNativeContract } from '../src/native-contract-probes.mjs';
 
 export const SPIKE = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const ROOT = resolve(SPIKE, '../..');
 export const ADAPTER = join(SPIKE, 'src/parity-adapter.php');
+
+function assessCandidateControls(candidate, fiber, wasmSha256, lockSha256) {
+  return candidate?.format === 'ppphp.rebuilt-runtime' && candidate.profile === 'candidate'
+    && candidate.accepted === true && fiber?.accepted === true
+    && candidate.browser?.kind === 'observed' && fiber.browser?.kind === 'observed'
+    && !candidate.browser.cleanupError && !fiber.browser.cleanupError
+    && candidate.artifact?.sha256 === wasmSha256 && fiber.expectedWasmSha256 === wasmSha256
+    && candidate.loadedArtifacts?.length > 0 && candidate.loadedArtifacts.every(item => item.sha256 === wasmSha256)
+    && fiber.loadedArtifacts?.length > 0 && fiber.loadedArtifacts.every(item => item.sha256 === wasmSha256)
+    && candidate.browser.data?.cases?.find(item => item.id === 'phpstan-standalone')?.compilerArchive?.compilerLockSha256 === lockSha256
+    && assessProfile(candidate.browser.data?.cases, 'candidate', [...probes.map(item => item.id), 'phpstan-standalone'])
+    && assessFiberContract(fiber.browser.data);
+}
+
+export function assessSourceBuiltControls(candidate, fiber, native, wasmSha256, lockSha256) {
+  return assessCandidateControls(candidate, fiber, wasmSha256, lockSha256)
+    && native?.format === 'ppphp.native-contract' && native.accepted === true
+    && native.browser?.kind === 'observed' && !native.browser.cleanupError
+    && native.expectedWasmSha256 === wasmSha256
+    && native.loadedArtifacts?.length > 0 && native.loadedArtifacts.every(item => item.sha256 === wasmSha256)
+    && assessNativeContract(native.browser.data);
+}
 
 export function assessControls(baseline, candidate, fiber, wasmSha256, lockSha256, comparisonSha256 = null) {
   const ids = [...probes.map((item) => item.id), 'phpstan-standalone'];
@@ -23,18 +47,10 @@ export function assessControls(baseline, candidate, fiber, wasmSha256, lockSha25
       || baseline?.artifact?.sha256 !== comparisonSha256
       || !baseline.loadedArtifacts?.length || !baseline.loadedArtifacts.every(item => item.sha256 === comparisonSha256)
       || baseline.browser?.data?.cases?.find(item => item.id === 'phpstan-standalone')?.compilerArchive?.compilerLockSha256 !== lockSha256)) return false;
-  return baseline?.format === 'ppphp.rebuilt-runtime' && candidate?.format === 'ppphp.rebuilt-runtime'
-    && baseline.profile === (comparison ? 'candidate' : 'baseline') && candidate.profile === 'candidate'
-    && baseline.accepted === true && candidate.accepted === true && fiber?.accepted === true
-    && baseline.browser?.kind === 'observed' && candidate.browser?.kind === 'observed' && fiber.browser?.kind === 'observed'
-    && !baseline.browser.cleanupError && !candidate.browser.cleanupError && !fiber.browser.cleanupError
-    && candidate.artifact?.sha256 === wasmSha256 && fiber.expectedWasmSha256 === wasmSha256
-    && candidate.loadedArtifacts?.length > 0 && candidate.loadedArtifacts.every((item) => item.sha256 === wasmSha256)
-    && fiber.loadedArtifacts?.length > 0 && fiber.loadedArtifacts.every((item) => item.sha256 === wasmSha256)
-    && candidate.browser.data?.cases?.find((item) => item.id === 'phpstan-standalone')?.compilerArchive?.compilerLockSha256 === lockSha256
+  return baseline?.format === 'ppphp.rebuilt-runtime' && baseline.profile === (comparison ? 'candidate' : 'baseline')
+    && baseline.accepted === true && baseline.browser?.kind === 'observed' && !baseline.browser.cleanupError
     && assessProfile(baseline.browser.data?.cases, comparison ? 'candidate' : 'baseline', ids)
-    && assessProfile(candidate.browser.data?.cases, 'candidate', ids)
-    && assessFiberContract(fiber.browser.data);
+    && assessCandidateControls(candidate, fiber, wasmSha256, lockSha256);
 }
 
 export function readBoundedJson(path) {
@@ -114,8 +130,8 @@ export function nativeCase(fixture, phpBinary = process.env.PHP_BINARY || 'php')
   return result;
 }
 
-async function buildPage(runtime) {
-  const bundle = runProcess(process.execPath, [join(SPIKE, 'scripts/prepare-compiler-bundle.mjs')], ROOT, 120000);
+async function buildPage(runtime, compilerArguments) {
+  const bundle = runProcess(process.execPath, [join(SPIKE, 'scripts/prepare-compiler-bundle.mjs'), ...compilerArguments], ROOT, 120000);
   if (bundle.exitCode !== 0) throw new Error('Compiler packaging failed: ' + bundle.stderr);
   const vite = await import('vite'); const configFile = join(SPIKE, 'vite.config.js');
   const config = (await import(pathToFileURL(configFile).href)).default;
@@ -133,11 +149,13 @@ export async function main(args = process.argv.slice(2)) {
   const options = {};
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
-    if (key === '--native-only') options[key] = true;
-    else if (['--runtime', '--wasm-sha256', '--corpus', '--fixtures', '--output', '--case', '--controls', '--comparison-wasm-sha256'].includes(key) && args[i + 1] && !options[key]) options[key] = args[++i];
+    if (['--native-only', '--source-built-controls'].includes(key) && !options[key]) options[key] = true;
+    else if (['--runtime', '--wasm-sha256', '--corpus', '--fixtures', '--output', '--case', '--controls', '--comparison-wasm-sha256', '--compiler-package', '--compiler-receipt-sha256'].includes(key) && args[i + 1] && !options[key]) options[key] = args[++i];
     else throw new Error('Unknown or duplicate parity option: ' + key);
   }
   if (options['--comparison-wasm-sha256'] && (!options['--controls'] || !/^[a-f0-9]{64}$/.test(options['--comparison-wasm-sha256']))) throw new Error('A repaired-runtime comparison requires controls and its explicit WASM SHA-256');
+  if (options['--source-built-controls'] && (!options['--controls'] || options['--comparison-wasm-sha256'])) throw new Error('Source-built controls require their directory, without a historical comparison');
+  const compilerArguments = compilerPackageArguments(options);
   const output = createOutput(options['--output']);
   const manifestPath = options['--fixtures'] || join(SPIKE, 'fixtures/projects.json');
   const manifest = readBoundedJson(manifestPath);
@@ -169,12 +187,16 @@ export async function main(args = process.argv.slice(2)) {
     report.identity.harnessFiles = Object.fromEntries(['parity.html', 'src/parity-worker.js', 'src/parity.js', 'src/parity-adapter.php', 'src/parity-contract.mjs', 'src/parity-streams.mjs', 'src/phpstan-debug-output.mjs', 'scripts/run-project-parity.mjs', 'scripts/prepare-compiler-bundle.mjs'].map((path) => [path, sha256(readFileSync(join(SPIKE, path)))]));
     report.runtimeControls = { status: 'NOT RUN' };
     if (options['--controls']) {
-      const controls = [options['--comparison-wasm-sha256'] ? 'comparison-control' : 'baseline-control', 'candidate-control', 'fiber-control'].map((name) => {
+      const names = options['--source-built-controls'] ? ['candidate-control', 'fiber-control', 'native-control']
+        : [options['--comparison-wasm-sha256'] ? 'comparison-control' : 'baseline-control', 'candidate-control', 'fiber-control'];
+      const controls = names.map((name) => {
         const path = join(options['--controls'], name, 'report.json');
         return { report: readBoundedJson(path), sha256: sha256(readFileSync(path)) };
       });
-      report.runtimeControls = { status: assessControls(...controls.map((item) => item.report), options['--wasm-sha256'], report.identity.compilerLockSha256, options['--comparison-wasm-sha256'] || null) ? 'PASS' : 'FAIL', reportSha256: controls.map((item) => item.sha256),
-        comparison: options['--comparison-wasm-sha256'] ? { profile: 'retained-repaired-runtime', wasmSha256: options['--comparison-wasm-sha256'] } : { profile: 'historical-negative-baseline' } };
+      const assess = options['--source-built-controls'] ? assessSourceBuiltControls : assessControls;
+      report.runtimeControls = { status: assess(...controls.map((item) => item.report), options['--wasm-sha256'], report.identity.compilerLockSha256, options['--comparison-wasm-sha256'] || null) ? 'PASS' : 'FAIL', reportSha256: controls.map((item) => item.sha256),
+        comparison: options['--source-built-controls'] ? { profile: 'source-built-runtime', historicalComparison: 'NOT RUN' }
+          : options['--comparison-wasm-sha256'] ? { profile: 'retained-repaired-runtime', wasmSha256: options['--comparison-wasm-sha256'] } : { profile: 'historical-negative-baseline' } };
     }
     for (const fixture of cases) {
       const native = nativeCase(fixture);
@@ -184,7 +206,7 @@ export async function main(args = process.argv.slice(2)) {
     }
     if (!options['--native-only']) {
       report.runtime = verifyRuntime(options['--runtime'], options['--wasm-sha256']);
-      server = await buildPage(report.runtime);
+      server = await buildPage(report.runtime, compilerArguments);
       const browser = await launchChrome();
       report.browser = await collectObservation(browser, async () => {
         const identity = await browser.send('Browser.getVersion');

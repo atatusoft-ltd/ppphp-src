@@ -5,11 +5,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CONFIGURATION, validateCorpus, validateCases, verifySourceHashes, compareDiagnostics, frameProcess, assessCase, terminateWorker, runtimeConsoleFailures } from '../src/parity-contract.mjs';
 import { readPhpStanDebugResult } from '../src/phpstan-debug-output.mjs';
-import { ROOT, ADAPTER, SPIKE, runProcess, readBoundedJson, verifyRuntime, assessControls } from './run-project-parity.mjs';
+import { ROOT, ADAPTER, SPIKE, runProcess, readBoundedJson, verifyRuntime, assessControls, assessSourceBuiltControls } from './run-project-parity.mjs';
 import { sha256 } from './run-baseline.mjs';
 import { readProcessResult } from '../src/parity-streams.mjs';
 import { probes } from '../src/baseline-probes.js';
 import { fiberContractProbes } from '../src/fiber-contract-probes.mjs';
+import { nativeContractProbes } from '../src/native-contract-probes.mjs';
 
 const file = { path: 'main.php', source: '<?php\r\n// café 🧪\r\nfunction value(): int { return "wrong"; }\r\n' };
 file.sha256 = sha256(file.source);
@@ -91,6 +92,23 @@ test('synthetic control reports cannot qualify missing cases wrong artifacts or 
   const baseline = { format: 'ppphp.rebuilt-runtime', profile: 'baseline', accepted: true, browser: { kind: 'observed', data: { cases: cases.map((c) => failures.includes(c.id) ? { ...c, kind: 'trap', semantics: 'FAIL', error: '_getcontext' } : c) } } };
   const candidate = { format: 'ppphp.rebuilt-runtime', profile: 'candidate', accepted: true, artifact: { sha256: wasm }, loadedArtifacts: [{ sha256: wasm }], browser: { kind: 'observed', data: { cases } } };
   const fiber = { accepted: true, expectedWasmSha256: wasm, loadedArtifacts: [{ sha256: wasm }], browser: { kind: 'observed', data: { suite: 'fiber-contract', done: true, cases: fiberContractProbes.map((p) => ({ id: p.id, kind: 'completed', computeStarted: true, exitCode: p.exitCode, stdout: p.stdout, stderr: '', semantics: 'PASS' })) } } };
+  const native = { format: 'ppphp.native-contract', accepted: true, expectedWasmSha256: wasm, loadedArtifacts: [{ sha256: wasm }],
+    browser: { kind: 'observed', data: { suite: 'native-contract', done: true, cases: nativeContractProbes.map(p => ({
+      id: p.id, kind: p.entropyTrap ? 'trap' : 'completed', computeStarted: true, semantics: 'PASS',
+      exitCode: p.exitCode ?? 0, stdout: p.entropyDenied ? 'entropy-unavailable' : 'ok', stderr: '', sideEffect: false,
+      entropyReads: 1, error: p.entropyTrap ? 'BP-7R entropy unavailable' : undefined,
+    })) } } };
+  assert.equal(assessSourceBuiltControls(candidate, fiber, native, wasm, lock), true);
+  assert.equal(assessSourceBuiltControls(baseline, fiber, native, wasm, lock), false);
+  assert.equal(assessSourceBuiltControls(candidate, fiber, native, wasm, '0'.repeat(64)), false);
+  for (const mutate of [n => n.accepted = false, n => n.browser.cleanupError = 'failed', n => n.browser.kind = 'timeout',
+    n => n.expectedWasmSha256 = '0'.repeat(64), n => n.loadedArtifacts = [], n => n.loadedArtifacts[0].sha256 = '0'.repeat(64),
+    n => n.browser.data.cases.pop(), n => n.browser.data.cases[0].semantics = 'FAIL',
+    n => n.browser.data.cases.find(p => p.id === 'native-entropy-failure').entropyReads = 0,
+    n => n.browser.data.cases.find(p => p.id === 'native-lint-valid').sideEffect = true]) {
+    const changed = structuredClone(native); mutate(changed);
+    assert.equal(assessSourceBuiltControls(candidate, fiber, changed, wasm, lock), false);
+  }
   assert.equal(assessControls(baseline, candidate, fiber, wasm, lock), true);
   assert.equal(assessControls(baseline, candidate, fiber, '0'.repeat(64), lock), false);
   assert.equal(assessControls(baseline, candidate, fiber, wasm, '0'.repeat(64)), false);
