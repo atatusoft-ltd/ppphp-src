@@ -1,0 +1,23 @@
+<?php
+function message(bool $ready): string
+{
+    // Explain the whole expression.
+    /* Keep the block comment too. */
+    /** Preserve this documentation. */
+    string $message = when ($ready) {
+        // This comment belongs inside the branch.
+        string $detail = 'ready';
+        return $detail;
+    } else {
+        return 'waiting';
+    };
+    return $message;
+}
+function bare(bool $ready): int
+{
+    // Explain this initializer.
+    /** Keep the authored explanation beside the generated type. */
+    readonly int $value = when ($ready) { return 1; } else { return 2; };
+    return $value;
+}
+echo message(true), '|', message(false), '|', bare(true), bare(false);

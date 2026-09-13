@@ -34,15 +34,69 @@ objects through the verified emitted comment sequence into source maps; authored
 comments are never identified as declarations merely because their text matches.
 The same policy covers inferred `when` result temporaries, including combined
 consumer annotations, only when the result type is known. Unknown or authored
-assertions keep the combined comment ineligible. Result temporaries have no null
-seed: every valid completing branch assigns a result, and terminating branches
-do not reach the consumer.
+assertions keep the combined comment ineligible. Guard and protected-result
+storage may use a null seed, distinct from the type of a successfully completed
+result; nullable results retain separate completion state when required.
+
+`GeneratedLocalContractIndex` separately carries source binding contracts to
+exact generated write positions. Unchanged source uses identity mappings;
+regenerated statements retain the original variable spans, including repeated
+writes, without assigning those spans to generated seeds. The compiler-owned
+binding table also records writes to parameters and other existing symbols;
+these do not require fabricated typed-local declarations. The compiler-owned
+PHPStan rule checks each mapped assignment's actual RHS against that storage
+contract before a generated `@var` can assert its type. This is an additional
+contract check, not an assertion or diagnostic exemption. Unknown initializers
+and later writes remain checked, including inside `when`; authored PHPDoc is
+preserved and cannot remove a source storage contract. Only the compiler-owned
+extension loader and rule files are loaded, never an application bootstrap or configuration.
+
+Completed `when` reads carry separate provenance, not an asserted type.
+`WhenResultSourceMapper` pairs the lowered AST with the reparsed emitted AST to
+identify exact definition and read positions, independent of printer traversal
+order, comments, spelling coincidences and indentation. Surviving source-result
+spans select the definitions; an inlined nested result follows its exact
+compiler placeholder identity. Generated seeds and discarded results are not
+contributions. These positions shift with their owning source edit.
+`CompletedWhenResultExtension` checks the actual backend RHS nullability at
+every contributing definition. Only when all are known non-null does it remove
+the impossible pending null alternative at that exact completed read. It keeps
+the backend's current type, including later container changes; it does not
+replace it with a union of earlier RHS types. Missing, unknown or nullable
+contributions leave normal checking intact. Private primitive results crossing
+a result-producing `finally` are initialized before the protected expression,
+so they remain defined even across the backend's merged exceptional states.
+This seed never writes the source destination; no undefined-variable finding
+is filtered or exempted.
+
+The supplemental input has a narrowly scoped cleanup projection. Runtime PHP
+uses native expression-stack unwinding to release retained values with the
+original exception active; a `finally`-only release is observably different for
+resources and resource-bearing objects. PHPStan treats the generated broad
+catch/rethrow as a new explicit checked exception, even when the original
+expression has no such obligation. `AnalysisSourceProjector` therefore masks
+only lowering-owned exceptional cleanup handlers in the non-executed analysis
+view. The original protected body, consuming expression, authored handlers and
+normal cleanup remain checked. The runtime output is untouched. This is an
+input projection, not a diagnostic filter or a change to checked-error policy;
+user-written broad rethrows still carry the backend's ordinary obligation.
+
+`PrintedNodeMapper` verifies the entire emitted executable structure before
+carrying either completed-result identities or cleanup ownership. Cleanup
+ranges come from compiler-created catch nodes, not temporary-name patterns or
+source text. Only retained edits contribute ranges, shifted to their final
+positions. Masking preserves every byte offset and newline, so existing write
+contracts, completed-result facts and source locations remain valid. Missing
+or ambiguous ownership retains the full handler and its ordinary checks. The
+projected view is never a production artifact and must never be executed.
+
 Fresh-array compatibility follows the effective result paths through `when`,
 including nested results and `finally` overrides; any existing-array result
 retains invariance. The shared freshness query is used by context, call, return,
 property-write, and generated-declaration checks. Finally handling records a
-protected result before dispatching completion, with fixed `bool` and
-`Throwable|null` control declarations using the same provenance policy.
+protected result before completion. Native exception propagation and scoped
+result cleanup preserve pending failures; generated completion-state
+declarations use the same provenance policy.
 
 For ordinary PHP, adopt Model B as the target contract and Model C as the migration vehicle: compiler-owned analysis must be complete for strict ++PHP and for ordinary-PHP declarations/contracts crossing the language boundary; deep ordinary-PHP body analysis remains supplemental until its required subset is deliberately promoted. A `compilerCore` result is never presented as full while required catalog gaps remain.
 

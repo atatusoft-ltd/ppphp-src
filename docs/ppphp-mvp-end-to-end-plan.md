@@ -1552,6 +1552,13 @@ composition, defaults, constants, attributes, match arms, arrow bodies, array
 keys or unpacking, call unpacking, by-reference arguments, or another `when`
 condition. Unsupported sites receive a dedicated `P5005` diagnostic.
 
+The owning statement is part of this position contract: loop headers,
+`switch` conditions/cases, `foreach` inputs, and `echo`/`unset` statements are
+not lowering sites, even through an assignment or call. Executable loop bodies
+and assignments in `if`/`elseif` conditions remain supported. Lowering rejects
+any surviving marked `when` placeholder before emitting a replacement; an
+authored `null` is not a placeholder.
+
 Parse each condition and branch body as source-mapped PHP fragments after
 recursively normalizing nested ++PHP syntax. Store semantic branch structure,
 result expressions, result types, termination, and nesting in a dedicated

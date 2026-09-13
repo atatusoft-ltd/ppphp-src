@@ -37,17 +37,21 @@ final readonly class CallableContractResolver
     public function resolveFunction(Node\Name $name): ResolvedCallable
     {
         $rawName = $name->toString();
-        $resolvedName = $this->context->resolvedNames->resolve($name) ?? $rawName;
+        $offset = $name->getAttribute('ppphpOriginalStart', $name->getStartFilePos());
+        $offset = is_int($offset) ? $offset : $name->getStartFilePos();
+        $resolvedName = $this->context->resolvedNames->resolve($name)
+            ?? $this->sourceNames->resolve($this->context->parsedFile, $name->toCodeString(), $offset, Node\Stmt\Use_::TYPE_FUNCTION);
         $lexicalName = $resolvedName;
         $symbol = null;
 
         if ($name->isUnqualified()) {
             $namespace = $this->sourceNames->resolveNamespaceAt(
                 $this->context->parsedFile,
-                $name->getStartFilePos(),
+                $offset,
             );
             $namespaced = $namespace === '' ? $rawName : $namespace . '\\' . $rawName;
-            $imported = strcasecmp($resolvedName, $rawName) === 0 ? null : $resolvedName;
+            $imported = strcasecmp($resolvedName, $rawName) === 0 || strcasecmp($resolvedName, $namespaced) === 0
+                ? null : $resolvedName;
             $symbol = $imported !== null
                 ? $this->context->symbols->findFunction($imported)
                 : ($this->context->symbols->findFunction($namespaced)

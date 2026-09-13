@@ -30,6 +30,7 @@ final class CompilerBuildIdentity
             'resources/php-signatures/8.4/manifest.json',
             'resources/php-signatures/8.4/overrides.json',
             'resources/phpstan/ppphp.neon',
+            'resources/phpstan/extensions.php',
             'resources/release/manifest.json',
             'resources/schema/ppphp.schema.json',
         ];

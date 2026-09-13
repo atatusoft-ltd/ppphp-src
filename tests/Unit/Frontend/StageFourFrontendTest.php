@@ -6,6 +6,7 @@ use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
 use Atatusoft\Ppphp\Frontend\Ast\NodeId;
 use Atatusoft\Ppphp\Frontend\Normalization\NormalizationEdit;
 use Atatusoft\Ppphp\Frontend\Normalization\NormalizationPlan;
+use Atatusoft\Ppphp\Frontend\Normalization\SourceMask;
 use Atatusoft\Ppphp\Frontend\PpphpParser;
 use Atatusoft\Ppphp\Frontend\PhpParserDiagnosticMapper;
 use Atatusoft\Ppphp\Frontend\Token\Enumerations\TokenKind;
@@ -61,6 +62,37 @@ PPP;
     expect($result->isSuccessful)->toBeTrue()
         ->and($result->parsedFile?->extensionSyntax->isEmpty)->toBeTrue()
         ->and($result->parsedFile?->normalizedSource->contents)->toBe($contents);
+});
+
+test('normalization preserves comments inside erased syntax at their original offsets', function (string $body): void {
+    $source = createStageFourSource("<?php\r\n" . $body);
+    $result = (new PpphpParser())->parse($source);
+    $normalized = $result->parsedFile?->normalizedSource->contents;
+    $comment = '/* Keep 🙂 this explanation. */';
+    expect($result->isSuccessful)->toBeTrue()
+        ->and($normalized)->not->toBeNull()
+        ->and(strlen($normalized))->toBe($source->length)
+        ->and(strpos($normalized, $comment))->toBe(strpos($source->contents, $comment));
+})->with([
+    'typed local' => 'int /* Keep 🙂 this explanation. */ $value = 7;',
+    'readonly local' => 'readonly /* Keep 🙂 this explanation. */ int $value = 7;',
+    'for binding' => 'for (int /* Keep 🙂 this explanation. */ $n = 0; $n < 1; ++$n) {}',
+    'foreach binding' => 'foreach ([1] as int /* Keep 🙂 this explanation. */ $n) {}',
+    'generic declaration' => 'function identity</* Keep 🙂 this explanation. */ T>(T $value): T { return $value; }',
+    'generic application' => 'function show(array</* Keep 🙂 this explanation. */ int> $values): void {}',
+    'throws clause' => 'function fail(): never throws /* Keep 🙂 this explanation. */ Error { throw new Error(); }',
+]);
+
+test('syntax masking distinguishes comments from quoted text and owned placeholders', function (): void {
+    $text = 'array<"/* quoted text */"> /* retained */' . "\r\n" . '// retained line';
+    $masked = SourceMask::erase($text);
+    expect(strlen($masked))->toBe(strlen($text))
+        ->and($masked)->toContain('/* retained */')->toContain('// retained line')->toContain("\r\n")
+        ->not->toContain('quoted text')->not->toContain('array');
+    $placeholder = SourceMask::erase($text, preserveComments: false);
+    expect(strlen($placeholder))->toBe(strlen($text))
+        ->and($placeholder)->not->toContain('retained')->not->toContain('quoted text')
+        ->and(strpos($placeholder, "\r\n"))->toBe(strpos($text, "\r\n"));
 });
 
 test('ordinary PHP-only ppphp source has an identity plan and byte-identical normalization', function (): void {

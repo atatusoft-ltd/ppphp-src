@@ -1,0 +1,16 @@
+<?php
+function shipping(bool $express, array<int> $weights): int
+{
+    int $shipping = when ($express) {
+        int $weight = 0;
+        foreach ($weights as int $parcel) {
+            $weight += $parcel;
+        }
+        return 1200 + $weight * 50;
+    } else {
+        int $parcels = count($weights);
+        return 500 + $parcels * 100;
+    };
+    return $shipping;
+}
+echo shipping(true, [2, 3]), '|', shipping(false, [2, 3]);

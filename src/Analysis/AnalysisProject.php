@@ -24,6 +24,7 @@ final readonly class AnalysisProject
         public array $composerScanFiles,
         public array $composerScanDirectories,
         public string $targetPhpVersion,
+        public bool $annotationsOnly = false,
     ) {}
 
     public function findByAnalysisPath(string $path): ?AnalysisFile

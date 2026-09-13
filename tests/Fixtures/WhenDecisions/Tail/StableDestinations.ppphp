@@ -1,0 +1,21 @@
+<?php
+class Box {
+    public int $total = 0;
+    public static int $shared = 0;
+    public function apply(int $tier): void {
+        $this->total = when ($tier === 1) { return 90; } else when ($tier === 2) { return 100; } else { return 110; };
+        self::$shared = when ($tier === 1) { return 9; } else when ($tier === 2) { return 10; } else { return 11; };
+        echo $this->total, '|', self::$shared, '|';
+    }
+}
+function assignBox(Box $box, int $tier): void {
+    $box->total = when ($tier === 1) { return 90; } else when ($tier === 2) { return 100; } else { return 110; };
+    Box::$shared = when ($tier === 1) { return 9; } else when ($tier === 2) { return 10; } else { return 11; };
+    echo $box->total, '|', Box::$shared, '|';
+}
+(new Box())->apply(1);
+(new Box())->apply(2);
+(new Box())->apply(3);
+assignBox(new Box(), 1);
+assignBox(new Box(), 2);
+assignBox(new Box(), 3);

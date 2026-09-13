@@ -5,11 +5,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CONFIGURATION, validateCorpus, validateCases, verifySourceHashes, compareDiagnostics, frameProcess, assessCase, terminateWorker, runtimeConsoleFailures } from '../src/parity-contract.mjs';
 import { readPhpStanDebugResult } from '../src/phpstan-debug-output.mjs';
-import { ROOT, ADAPTER, SPIKE, runProcess, readBoundedJson, verifyRuntime, assessControls } from './run-project-parity.mjs';
+import { ROOT, ADAPTER, SPIKE, runProcess, readBoundedJson, verifyRuntime, assessControls, assessSourceBuiltControls } from './run-project-parity.mjs';
 import { sha256 } from './run-baseline.mjs';
 import { readProcessResult } from '../src/parity-streams.mjs';
 import { probes } from '../src/baseline-probes.js';
 import { fiberContractProbes } from '../src/fiber-contract-probes.mjs';
+import { nativeContractProbes } from '../src/native-contract-probes.mjs';
 
 const file = { path: 'main.php', source: '<?php\r\n// café 🧪\r\nfunction value(): int { return "wrong"; }\r\n' };
 file.sha256 = sha256(file.source);
@@ -91,11 +92,40 @@ test('synthetic control reports cannot qualify missing cases wrong artifacts or 
   const baseline = { format: 'ppphp.rebuilt-runtime', profile: 'baseline', accepted: true, browser: { kind: 'observed', data: { cases: cases.map((c) => failures.includes(c.id) ? { ...c, kind: 'trap', semantics: 'FAIL', error: '_getcontext' } : c) } } };
   const candidate = { format: 'ppphp.rebuilt-runtime', profile: 'candidate', accepted: true, artifact: { sha256: wasm }, loadedArtifacts: [{ sha256: wasm }], browser: { kind: 'observed', data: { cases } } };
   const fiber = { accepted: true, expectedWasmSha256: wasm, loadedArtifacts: [{ sha256: wasm }], browser: { kind: 'observed', data: { suite: 'fiber-contract', done: true, cases: fiberContractProbes.map((p) => ({ id: p.id, kind: 'completed', computeStarted: true, exitCode: p.exitCode, stdout: p.stdout, stderr: '', semantics: 'PASS' })) } } };
+  const native = { format: 'ppphp.native-contract', accepted: true, expectedWasmSha256: wasm, loadedArtifacts: [{ sha256: wasm }],
+    browser: { kind: 'observed', data: { suite: 'native-contract', done: true, cases: nativeContractProbes.map(p => ({
+      id: p.id, kind: p.entropyTrap ? 'trap' : 'completed', computeStarted: true, semantics: 'PASS',
+      exitCode: p.exitCode ?? 0, stdout: p.entropyDenied ? 'entropy-unavailable' : 'ok', stderr: '', sideEffect: false,
+      entropyReads: 1, error: p.entropyTrap ? 'BP-7R entropy unavailable' : undefined,
+    })) } } };
+  assert.equal(assessSourceBuiltControls(candidate, fiber, native, wasm, lock), true);
+  assert.equal(assessSourceBuiltControls(baseline, fiber, native, wasm, lock), false);
+  assert.equal(assessSourceBuiltControls(candidate, fiber, native, wasm, '0'.repeat(64)), false);
+  for (const mutate of [n => n.accepted = false, n => n.browser.cleanupError = 'failed', n => n.browser.kind = 'timeout',
+    n => n.expectedWasmSha256 = '0'.repeat(64), n => n.loadedArtifacts = [], n => n.loadedArtifacts[0].sha256 = '0'.repeat(64),
+    n => n.browser.data.cases.pop(), n => n.browser.data.cases[0].semantics = 'FAIL',
+    n => n.browser.data.cases.find(p => p.id === 'native-entropy-failure').entropyReads = 0,
+    n => n.browser.data.cases.find(p => p.id === 'native-lint-valid').sideEffect = true]) {
+    const changed = structuredClone(native); mutate(changed);
+    assert.equal(assessSourceBuiltControls(candidate, fiber, changed, wasm, lock), false);
+  }
   assert.equal(assessControls(baseline, candidate, fiber, wasm, lock), true);
   assert.equal(assessControls(baseline, candidate, fiber, '0'.repeat(64), lock), false);
   assert.equal(assessControls(baseline, candidate, fiber, wasm, '0'.repeat(64)), false);
   for (const mutate of [(c) => c.browser.data.cases.pop(), (c) => c.browser.cleanupError = 'failed', (c) => c.accepted = false]) {
     const changed = structuredClone(candidate); mutate(changed); assert.equal(assessControls(baseline, changed, fiber, wasm, lock), false);
+  }
+  const comparisonWasm = 'e'.repeat(64);
+  const comparison = { ...structuredClone(candidate), artifact: { sha256: comparisonWasm }, loadedArtifacts: [{ sha256: comparisonWasm }] };
+  assert.equal(assessControls(comparison, candidate, fiber, wasm, lock), false);
+  assert.equal(assessControls(comparison, candidate, fiber, wasm, lock, comparisonWasm), true);
+  assert.equal(assessControls(baseline, candidate, fiber, wasm, lock, comparisonWasm), false);
+  for (const mutate of [c => c.loadedArtifacts = [], c => c.loadedArtifacts[0].sha256 = wasm,
+    c => c.browser.data.cases.pop(), c => c.browser.data.cases[0].semantics = 'FAIL',
+    c => c.browser.cleanupError = 'failed', c => c.accepted = false,
+    c => c.browser.data.cases.find(p => p.id === 'phpstan-standalone').compilerArchive.compilerLockSha256 = '0'.repeat(64)]) {
+    const changed = structuredClone(comparison); mutate(changed);
+    assert.equal(assessControls(changed, candidate, fiber, wasm, lock, comparisonWasm), false);
   }
 });
 test('comparison does not erase identifiers quoted values locations order or missing findings', () => {
@@ -159,7 +189,7 @@ test('test adapter uses real compiler mapping and rejects stale source/configura
     assert.equal(preparedProcess.exitCode, 0, preparedProcess.stderr);
     const prepared = JSON.parse(preparedProcess.stdout); assert.equal(prepared.status, 'prepared');
     const path = prepared.phpStan.resultPath.replace('/result.json', '/') + prepared.continuation.workspaceManifest.find((item) => item.path.startsWith('selected/')).path;
-    const json = JSON.stringify({ totals: { errors: 0, file_errors: 1 }, files: { [path]: { errors: 1, messages: [{ message: "Function value() should return int but returns string.", line: 3, ignorable: true, identifier: 'return.type' }] } }, errors: [] });
+    const json = JSON.stringify({ totals: { errors: 0, file_errors: 1 }, files: { [path]: { errors: 1, messages: [{ message: "Function value() should return int but returns string.", line: 3, ignorable: true, identifier: 'return.type' }] } }, errors: [], localAnnotationOmissions: [] });
     const base = { command: prepared.phpStan.command, stdout: json, stderr: 'retained stderr', exitCode: 1, timedOut: false, outputLimitExceeded: false, executionFailure: null };
     const complete = (patch = {}) => {
       writeFileSync(join(directory, 'input.json'), JSON.stringify({ prepared, selection: null, process: { ...base, ...patch } }));
@@ -168,7 +198,7 @@ test('test adapter uses real compiler mapping and rejects stale source/configura
     };
     const valid = complete(); assert.equal(valid.exitCode, 0, valid.stderr);
     const mapped = JSON.parse(valid.stdout); assert.equal(mapped.status, 1);
-    assert.equal(mapped.diagnostics.diagnostics[0].code, 'P2016');
+    assert.equal(mapped.diagnostics.diagnostics[0].code, 'P2016', JSON.stringify(mapped.diagnostics));
     assert.equal(mapped.diagnostics.diagnostics[0].location.file, 'src/main.php');
     assert.equal(mapped.diagnostics.diagnostics[0].location.range.start.line, 3);
     assert.equal(mapped.identities[0].identity, 'return.type'); assert.equal(mapped.backendMetadata.stderr, 'retained stderr');
@@ -177,6 +207,7 @@ test('test adapter uses real compiler mapping and rejects stale source/configura
       [{ executionFailure: 'spawn failed' }, 'P6005', 'failed to complete'], [{ exitCode: 7 }, 'P6005', 'exit status 7'],
       [{ stdout: '{' }, 'P6006', 'malformed JSON'], [{ stdout: '{}' }, 'P6006', 'unexpected result format'],
       [{ stdout: '{"files":{"a":{"messages":[{}]}},"errors":[]}' }, 'P6006', 'invalid diagnostic'],
+      [{ stdout: '{"files":{},"errors":[]}' }, 'P6006', 'invalid annotation advice'],
     ]) {
       const response = complete(patch); assert.equal(response.exitCode, 0, response.stderr);
       const error = JSON.parse(response.stdout).diagnostics.diagnostics[0];

@@ -1,0 +1,17 @@
+<?php
+function selectValue(int $x): int
+{
+    int $value = when ($x >= 0) {
+        switch ($x) {
+            case 2:
+                switch (getenv('INNER_CASE')) {
+                    case 'a': break;
+                    default: return 20;
+                }
+            case 1: return 10;
+            default: return 0;
+        }
+    } else { return -1; };
+    return $value;
+}
+echo selectValue(2), '|', selectValue(1), '|', selectValue(0), '|', selectValue(-1);

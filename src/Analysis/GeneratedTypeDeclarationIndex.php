@@ -18,6 +18,41 @@ final class GeneratedTypeDeclarationIndex
     /** @return list<int> */
     public function collect(GeneratedPhp $generated, ParsedFile $parsed, SemanticAnalysisResult $analysis): array
     {
+        $generatedStarts = $this->collectDocuments($generated, $parsed, $analysis);
+        $lines = [];
+        $authoredLines = [];
+        $pending = null;
+        $pendingAuthored = false;
+        $phpDocReader = new PhpDocReader();
+        foreach (\PhpToken::tokenize($generated->contents) as $token) {
+            if ($token->id === T_DOC_COMMENT && $phpDocReader->hasVariableAssertions(new \PhpParser\Comment\Doc($token->text))) {
+                $isGenerated = isset($generatedStarts[$token->pos]);
+                $pending = ($pending ?? false) || $isGenerated;
+                $pendingAuthored = $pendingAuthored || !$isGenerated;
+                continue;
+            }
+            if ($token->isIgnorable()) {
+                continue;
+            }
+            if ($pending !== null) {
+                if ($pending) {
+                    $lines[$token->line] = true;
+                }
+                if ($pendingAuthored) {
+                    $authoredLines[$token->line] = true;
+                }
+                $pending = null;
+                $pendingAuthored = false;
+            }
+        }
+
+        // Findings have only a line, not a column: retain ambiguous findings.
+        return array_keys(array_diff_key($lines, $authoredLines));
+    }
+
+    /** @return array<int, array{owner: int, names: list<string>}> Exact generated tags and their validated source owners. */
+    public function collectDocuments(GeneratedPhp $generated, ParsedFile $parsed, SemanticAnalysisResult $analysis): array
+    {
         $origins = [];
         $unverified = [];
         $model = $analysis->findModel($parsed->sourceFile->path);
@@ -50,38 +85,21 @@ final class GeneratedTypeDeclarationIndex
         $generatedStarts = [];
         foreach ($generated->sourceMap->segments as $segment) {
             if ($segment->owner !== null && isset($origins[$segment->owner->start->offset])) {
-                $generatedStarts[$segment->generatedStart] = true;
+                $generatedStarts[$segment->generatedStart] = $segment->owner->start->offset;
             }
         }
 
-        $lines = [];
-        $authoredLines = [];
-        $pending = null;
-        $pendingAuthored = false;
+        $documents = [];
         $phpDocReader = new PhpDocReader();
         foreach (\PhpToken::tokenize($generated->contents) as $token) {
-            if ($token->id === T_DOC_COMMENT && $phpDocReader->hasVariableAssertions(new \PhpParser\Comment\Doc($token->text))) {
-                $isGenerated = isset($generatedStarts[$token->pos]);
-                $pending = ($pending ?? false) || $isGenerated;
-                $pendingAuthored = $pendingAuthored || !$isGenerated;
-                continue;
-            }
-            if ($token->isIgnorable()) {
-                continue;
-            }
-            if ($pending !== null) {
-                if ($pending) {
-                    $lines[$token->line] = true;
-                }
-                if ($pendingAuthored) {
-                    $authoredLines[$token->line] = true;
-                }
-                $pending = null;
-                $pendingAuthored = false;
+            if ($token->id === T_DOC_COMMENT && isset($generatedStarts[$token->pos])
+                && $phpDocReader->hasVariableAssertions(new \PhpParser\Comment\Doc($token->text))) {
+                $documents[$token->pos] = [
+                    'owner' => $generatedStarts[$token->pos],
+                    'names' => array_keys($phpDocReader->readMetadata(new \PhpParser\Comment\Doc($token->text))->variables),
+                ];
             }
         }
-
-        // Findings have only a line, not a column: retain ambiguous findings.
-        return array_keys(array_diff_key($lines, $authoredLines));
+        return $documents;
     }
 }

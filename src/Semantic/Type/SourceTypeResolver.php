@@ -77,19 +77,22 @@ final readonly class SourceTypeResolver
                 );
             }
 
-            $parameter = $localParameters[strtolower($node->toString())]
+            $parameter = $node->isFullyQualified() || $node->isRelative() ? null : ($localParameters[strtolower($node->toString())]
                 ?? $genericDeclarations->findVisibleParameter(
                     $parsedFile->sourceFile,
                     $offset,
                     $node->toString(),
-                );
+                ));
 
             if ($parameter !== null) {
                 return $parameter;
             }
 
             return $this->resolveAtomicType(
-                new AtomicType($resolvedNames->resolve($node) ?? $node->toString()),
+                new AtomicType(
+                    $resolvedNames->resolve($node) ?? $node->toCodeString(),
+                    $node->isFullyQualified() || $resolvedNames->resolve($node) !== null,
+                ),
                 $parsedFile,
                 $offset,
                 $genericDeclarations,
@@ -211,6 +214,10 @@ final readonly class SourceTypeResolver
         bool $alreadyResolved = false,
     ): Type {
         if ($type->isBuiltin || in_array($type->canonical, ['self', 'static', 'parent'], true)) {
+            return $type;
+        }
+
+        if ($type->isFullyQualified) {
             return $type;
         }
 

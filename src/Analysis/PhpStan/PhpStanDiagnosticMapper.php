@@ -128,6 +128,8 @@ final class PhpStanDiagnosticMapper
             'missingType.return' => [DiagnosticCode::MissingReturnType, 'Add an explicit native return type.'],
             'missingType.property' => [DiagnosticCode::MissingPropertyType, 'Add an explicit native property type.'],
             'argument.type' => [DiagnosticCode::ArgumentTypeDoesNotMatch, 'Pass a value compatible with the declared parameter type.'],
+            'ppphp.initializerType' => [DiagnosticCode::InitializerNotAssignableToDeclaredType, 'Initialize the local with a value compatible with its declared type.'],
+            'ppphp.assignmentType' => [DiagnosticCode::AssignmentNotAssignableToDeclaredType, 'Assign a value compatible with the local declaration.'],
             'return.type' => [DiagnosticCode::ReturnTypeDoesNotMatch, 'Return a value compatible with the callable return type.'],
             'return.missing' => [DiagnosticCode::NotAllPathsReturnValue, 'Return a compatible value on every reachable path.'],
             'method.notFound' => [DiagnosticCode::MethodDoesNotExist, 'Call a method declared by the resolved receiver type.'],

@@ -41,11 +41,12 @@ function workflowContinue(array $response, ?array $results = null): array
         foreach ($response['invocations'] as $invocation) {
             $command = $invocation['command'];
             $command[0] = PHP_BINARY;
-            $process = new Process($command, $invocation['workingDirectory'], timeout: 60);
-            $process->run();
-            $results[] = ['invocation' => $invocation['identity'], 'stdout' => $process->getOutput(), 'stderr' => $process->getErrorOutput(),
-                'exitCode' => $process->getExitCode(), 'complete' => true, 'timedOut' => false,
-                'outputLimitExceeded' => false, 'executionFailure' => null];
+            // Match the production environment boundary; agent-shell variables
+            // can otherwise inject unrelated PHPStan coaching into stderr.
+            $process = (new Atatusoft\Ppphp\Process\BoundedProcessRunner())->run($command, $invocation['workingDirectory'], 60);
+            $results[] = ['invocation' => $invocation['identity'], 'stdout' => $process->stdout, 'stderr' => $process->stderr,
+                'exitCode' => $process->exitCode, 'complete' => true, 'timedOut' => $process->timedOut,
+                'outputLimitExceeded' => $process->outputLimitExceeded, 'executionFailure' => $process->executionFailure];
         }
     }
     return ['version' => 3, 'action' => $response['status'] === 'pending-analysis' ? 'complete-analysis' : 'complete-lint',
@@ -56,7 +57,15 @@ function workflowContinue(array $response, ?array $results = null): array
 function workflowFinish(string $root, array $request): array
 {
     $response = workflowRequest($root, $request);
-    for ($i = 0; $i < 3 && str_starts_with($response['status'], 'pending-'); $i++) {
+    for ($i = 0; $i < 30 && str_starts_with($response['status'], 'pending-'); $i++) {
+        $response = workflowRequest($root, workflowContinue($response));
+    }
+    return $response;
+}
+
+function workflowFinishAnalysis(string $root, array $response): array
+{
+    for ($i = 0; $i < 30 && $response['status'] === 'pending-analysis'; $i++) {
         $response = workflowRequest($root, workflowContinue($response));
     }
     return $response;
@@ -71,6 +80,72 @@ function workflowOutput(string $root): array
     return $files;
 }
 
+test('workflow production preserves per-tag advice across analysis and lint continuations', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/main.ppphp', '<?php
+/** @param list<int> $weights */
+function size(array $weights): int {
+    int $count = count($weights); int $second = $count; int $third = $second; int $fourth = $third;
+    int $literal = 1;
+    return $fourth + $literal;
+}
+echo size([1, 2]);');
+    $response = workflowFinish($root, workflowStart('annotations'));
+    expect($response['status'])->toBe('complete', json_encode($response));
+    $php = workflowOutput($root)['main.php'];
+    expect($php)->toContain('@var int $literal');
+    expect($php)->not->toContain('@var int $count');
+    expect($php)->not->toContain('@var int $second');
+    expect($php)->not->toContain('@var int $third');
+    expect($php)->not->toContain('@var int $fourth');
+    $native = new Process([PHP_BINARY, dirname(__DIR__, 3) . '/bin/ppphp', 'build', '--working-directory', $root, '--format=json']);
+    $native->run();
+    expect($native->getExitCode())->toBe(0, $native->getOutput());
+    expect(file_get_contents($root . '/build/ppphp/main.php'))->toBe($php);
+});
+
+test('later annotation rounds reject replay malformed advice and timeout without publication', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/main.ppphp', '<?php echo 1;');
+    expect(workflowFinish($root, workflowStart('baseline'))['status'])->toBe('complete');
+    $before = workflowOutput($root);
+    $this->writeFile($root . '/src/main.ppphp', '<?php
+/** @param list<int> $weights */
+function size(array $weights): int {
+    int $first = count($weights); int $second = $first; int $third = $second;
+    return $third;
+}');
+    $sequence = 1;
+    foreach (['offset', 'timeout'] as $fault) {
+        $start = workflowRequest($root, workflowStart('later-' . $fault, ++$sequence));
+        $source = workflowContinue($start);
+        $first = workflowRequest($root, $source);
+        expect($first['status'])->toBe('pending-analysis', json_encode($first));
+        $firstCompletion = workflowContinue($first);
+        $later = workflowRequest($root, $firstCompletion);
+        expect($later['status'])->toBe('pending-analysis', json_encode($later));
+        expect($later['invocations'][0]['identity'])->not->toBe($first['invocations'][0]['identity']);
+        expect(workflowRequest($root, $source)['status'])->toBe('rejected');
+        expect(workflowRequest($root, $firstCompletion)['status'])->toBe('rejected');
+        $completion = workflowContinue($later);
+        if ($fault === 'timeout') {
+            $completion['results'][0]['timedOut'] = true;
+        } else {
+            $progress = $later['invocations'][0]['progressPaths'][0] . "\n";
+            $json = json_decode(substr($completion['results'][0]['stdout'], strlen($progress)), true);
+            expect($json['localAnnotationOmissions'])->not->toBe([]);
+            $json['localAnnotationOmissions'][0]['offset'] = PHP_INT_MAX;
+            $completion['results'][0]['stdout'] = $progress . json_encode($json);
+        }
+        $failed = workflowRequest($root, $completion);
+        expect($failed['status'])->toBe('infrastructure-failure', json_encode($failed));
+        expect($failed['currentOutput'])->toBeNull()->and(workflowOutput($root))->toBe($before);
+    }
+    expect(workflowFinish($root, workflowStart('round-recovery', ++$sequence))['status'])->toBe('complete');
+});
+
 test('full workflow publishes A preserves it on B publishes C and rejects replay', function (): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
@@ -79,7 +154,7 @@ test('full workflow publishes A preserves it on B publishes C and rejects replay
     $prepared = workflowRequest($root, workflowStart('A'));
     expect($prepared['status'])->toBe('pending-analysis', json_encode($prepared));
     $analysis = workflowContinue($prepared);
-    $pending = workflowRequest($root, $analysis);
+    $pending = workflowFinishAnalysis($root, workflowRequest($root, $analysis));
     expect($pending['status'])->toBe('pending-validation', json_encode($pending));
     expect(workflowOutput($root))->toBe([]);
     $validation = workflowContinue($pending);
@@ -124,7 +199,7 @@ test('workflow rejects missing duplicated and mutated validation then recovers',
     $this->writeConfiguration($root);
     $this->writeFile($root . '/src/main.ppphp', "<?php\nint \$value = 1;\n");
     $prepared = workflowRequest($root, workflowStart('mutate'));
-    $pending = workflowRequest($root, workflowContinue($prepared));
+    $pending = workflowFinishAnalysis($root, $prepared);
     expect($pending['status'])->toBe('pending-validation', json_encode($pending));
     $validation = workflowContinue($pending);
     expect(workflowRequest($root, [...$validation, 'results' => []])['status'])->toBe('rejected');
@@ -176,6 +251,24 @@ test('workflow continuation results must be JSON arrays rather than numeric-keye
                 ->toThrow(InvalidArgumentException::class);
         }
     }
+});
+
+test('bounded annotation evidence round trips beyond the generic list limit', function (): void {
+    $session = new Atatusoft\Ppphp\Analysis\Browser\WorkflowSession(
+        (new WorkflowRequestDecoder())->decode(json_encode(workflowStart('many-rounds'))),
+        'sha256:' . str_repeat('a', 64), 'sha256:' . str_repeat('b', 64), 'sha256:' . str_repeat('c', 64),
+    );
+    $observation = Atatusoft\Ppphp\Analysis\Browser\WorkflowProcessResult::decode([
+        'invocation' => 'sha256:' . str_repeat('d', 64), 'stdout' => '{}', 'stderr' => '', 'exitCode' => 0,
+        'complete' => true, 'timedOut' => false, 'outputLimitExceeded' => false, 'executionFailure' => null,
+    ]);
+    $session->annotationResults = array_fill(0, 65, $observation);
+    $bytes = json_encode($session->toArray());
+    expect(strlen($bytes))->toBeLessThan(Atatusoft\Ppphp\Analysis\Browser\WorkflowSession::MAXIMUM_BYTES);
+    $decoded = Atatusoft\Ppphp\Analysis\Browser\WorkflowSession::decode(
+        Atatusoft\Ppphp\Analysis\Browser\WorkflowJson::decode($bytes),
+    );
+    expect($decoded->annotationResults)->toHaveCount(65)->and($decoded->continuation)->toBe($session->continuation);
 });
 
 test('workflow duplicate-key detection handles large plain and escaped strings', function (): void {
@@ -232,7 +325,8 @@ test('labelled lint transport failures preserve published output and remain reco
         'launch failure' => ['executionFailure' => 'synthetic launch failure'],
     ] as $label => $fault) {
         $start = workflowRequest($root, workflowStart('fault-' . (++$sequence), $sequence));
-        $pending = workflowRequest($root, workflowContinue($start));
+        $pending = workflowFinishAnalysis($root, $start);
+        expect($pending['status'])->toBe('pending-validation', $label . ': ' . json_encode($pending));
         $validation = workflowContinue($pending);
         $validation['results'][0] = [...$validation['results'][0], ...$fault];
         $result = workflowRequest($root, $validation);

@@ -1,0 +1,19 @@
+<?php
+function choose(int $x, int $y): int
+{
+    readonly int $value = when ($x >= 0) {
+        switch ($x) {
+            case 1:
+                switch ($y) {
+                    case 1: return 11;
+                    default: return 12;
+                }
+            case 2:
+                if ($y > 0) { return 21; } else { throw new Error('negative'); }
+            default: return 99;
+        }
+    } else { return 0; };
+    return $value;
+}
+echo choose(1, 1), '|', choose(1, 2), '|', choose(2, 1), '|', choose(0, 0), '|', choose(-1, 0), '|';
+try { echo choose(2, 0); } catch (Error) { echo 'error'; }

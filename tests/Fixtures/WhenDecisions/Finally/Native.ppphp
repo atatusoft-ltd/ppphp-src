@@ -1,0 +1,72 @@
+<?php
+function plain(bool $enabled): int
+{
+    return when ($enabled) {
+        try { return 5; } finally { echo 'cleanup|'; }
+    } else { return 0; };
+}
+
+/** Choose a value without recovering a pending exception. */
+function choose(bool $enabled, int $mode): string throws RuntimeException
+{
+    string $result = when ($enabled) {
+        try {
+            if ($mode === 0) { return 'first'; }
+            if ($mode === 1) { throw new RuntimeException('pending'); }
+            return 'body';
+        } finally {
+            if ($mode === 2) { return 'final'; }
+            echo 'cleanup|';
+        }
+    } else { return 'else'; };
+    return $result;
+}
+
+function guarded(bool $enabled, bool $outer, bool $inner): ?int
+{
+    return when ($enabled) {
+        try { return 7; }
+        finally {
+            if ($outer) {
+                echo 'head|';
+                if ($inner) { return null; }
+            }
+            echo 'tail|';
+        }
+    } else { return 0; };
+}
+
+function caught(bool $enabled, bool $fail): int
+{
+    int $result = when ($enabled) {
+        try {
+            try {
+                if ($fail) { throw new RuntimeException(); }
+                return 5;
+            } catch (RuntimeException $error) { return -1; }
+            finally { echo 'inner|'; }
+        } finally { echo 'outer|'; }
+    } else { return 0; };
+    return $result;
+}
+
+function delayed(bool $enabled, bool $fail): int
+{
+    int $destination = 99;
+    try {
+        $destination = when ($enabled) {
+            try { echo 'compute|'; return 5; }
+            finally { if ($fail) { throw new Error('cleanup'); } }
+        } else { return 0; };
+    } catch (Error $error) { echo 'caught:' . $error->getMessage() . '|'; }
+    return $destination;
+}
+
+try {
+    echo plain(true), '|', choose(true, 0), '|';
+    try { echo choose(true, 1); } catch (RuntimeException $error) { echo 'caught:' . $error->getMessage() . '|'; }
+    echo choose(true, 2), '|', choose(false, 2), '|';
+    echo guarded(true, false, false), '|', guarded(true, true, false), '|', json_encode(guarded(true, true, true)), '|';
+    echo caught(true, false), '|', caught(true, true), '|';
+    echo delayed(true, false), '|', delayed(true, true), '|', delayed(false, true);
+} catch (RuntimeException $error) { echo 'unexpected:' . $error->getMessage(); }

@@ -30,6 +30,7 @@ test('compiler build identity is path independent content based and memoized', f
             'resources/php-signatures/8.4/manifest.json' => '{}',
             'resources/php-signatures/8.4/overrides.json' => '{}',
             'resources/phpstan/ppphp.neon' => 'parameters: {}',
+            'resources/phpstan/extensions.php' => '<?php',
             'resources/release/manifest.json' => '{}',
             'resources/schema/ppphp.schema.json' => '{}',
             'src/Compiler.php' => $source,
@@ -59,6 +60,7 @@ test('compiler build identity includes executable inputs and excludes non-execut
         'resources/php-signatures/8.4/manifest.json' => '{}',
         'resources/php-signatures/8.4/overrides.json' => '{}',
         'resources/phpstan/ppphp.neon' => 'parameters: {}',
+        'resources/phpstan/extensions.php' => '<?php',
         'resources/release/manifest.json' => '{}',
         'resources/schema/ppphp.schema.json' => '{}',
         'src/Compiler.php' => '<?php final class Compiler {}',
@@ -75,6 +77,10 @@ test('compiler build identity includes executable inputs and excludes non-execut
     $this->writeFile($root . '/tests/CompilerTest.php', "<?php throw new RuntimeException();\n");
 
     expect((new CompilerBuildIdentity($root))->calculate())->toBe($baseline);
+
+    $this->writeFile($root . '/resources/phpstan/extensions.php', "<?php /* changed extension loader */\n");
+    expect((new CompilerBuildIdentity($root))->calculate())->not->toBe($baseline);
+    $this->writeFile($root . '/resources/phpstan/extensions.php', $files['resources/phpstan/extensions.php'] . "\n");
 
     $this->writeFile($root . '/composer.lock', "{\"packages\":[{\"name\":\"changed\"}]}\n");
     $lockChanged = (new CompilerBuildIdentity($root))->calculate();

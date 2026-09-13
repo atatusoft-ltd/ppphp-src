@@ -275,7 +275,11 @@ final class CheckErrorEffectsPass implements SemanticPass
                 $nested = $nested->continueWith($this->analyzeNode($child, $scope));
             }
 
-            return new ErrorFlow($nested->escapingErrors, false);
+            return new ErrorFlow(
+                $nested->escapingErrors,
+                false,
+                $node instanceof Stmt\Return_ && $scope->ownsWhenResults && $nested->mayCompleteNormally,
+            );
         }
 
         $flow = ErrorFlow::createEmpty();
@@ -292,6 +296,7 @@ final class CheckErrorEffectsPass implements SemanticPass
         ErrorAnalysisScope $scope,
     ): ErrorFlow {
         $errors = new ErrorSet();
+        $scope = new ErrorAnalysisScope($scope->kind, $scope->contract, $scope->currentClass, $scope->variableTypes, true);
 
         foreach ($when->branches as $branch) {
             if ($branch->condition !== null) {
@@ -307,7 +312,7 @@ final class CheckErrorEffectsPass implements SemanticPass
 
         // Branch-level returns yield the expression value. They do not terminate
         // the enclosing PHP statement, so the lowered expression completes here.
-        return new ErrorFlow($errors, true);
+        return new ErrorFlow($errors, !$when->resultType->includes('never'));
     }
 
     private function analyzeFunctionCall(Expr\FuncCall $call, ErrorAnalysisScope $scope): ErrorFlow
@@ -412,6 +417,7 @@ final class CheckErrorEffectsPass implements SemanticPass
         $remaining = $tryFlow->escapingErrors;
         $catchErrors = new ErrorSet();
         $catchMayComplete = false;
+        $mayProduceResult = $tryFlow->mayProduceWhenResult;
         $previousCaught = [];
 
         foreach ($try->catches as $catch) {
@@ -455,20 +461,27 @@ final class CheckErrorEffectsPass implements SemanticPass
             $catchFlow = $this->analyzeStatements($catch->stmts, $catchScope);
             $catchErrors = $catchErrors->combine($catchFlow->escapingErrors);
             $catchMayComplete = $catchMayComplete || $catchFlow->mayCompleteNormally;
+            $mayProduceResult = $mayProduceResult || $catchFlow->mayProduceWhenResult;
         }
 
         $beforeFinally = $remaining->combine($catchErrors);
         $beforeFinallyMayComplete = $tryFlow->mayCompleteNormally || $catchMayComplete;
 
         if ($try->finally === null) {
-            return new ErrorFlow($beforeFinally, $beforeFinallyMayComplete);
+            return new ErrorFlow($beforeFinally, $beforeFinallyMayComplete, $mayProduceResult);
         }
 
         $finallyFlow = $this->analyzeStatements($try->finally->stmts, $scope);
 
-        return $finallyFlow->mayCompleteNormally
-            ? new ErrorFlow($beforeFinally->combine($finallyFlow->escapingErrors), $beforeFinallyMayComplete)
-            : $finallyFlow;
+        // A when result ends its branch, but cannot cancel a pending error.
+        // Native callable returns still override pending exits as PHP defines.
+        $preservesErrors = $finallyFlow->mayCompleteNormally || $finallyFlow->mayProduceWhenResult;
+        return new ErrorFlow(
+            $preservesErrors ? $beforeFinally->combine($finallyFlow->escapingErrors) : $finallyFlow->escapingErrors,
+            $finallyFlow->mayCompleteNormally && $beforeFinallyMayComplete,
+            ($finallyFlow->mayCompleteNormally && $mayProduceResult)
+                || ($finallyFlow->mayProduceWhenResult && ($beforeFinallyMayComplete || $mayProduceResult)),
+        );
     }
 
     private function analyzeIf(Stmt\If_ $if, ErrorAnalysisScope $scope): ErrorFlow
@@ -484,7 +497,8 @@ final class CheckErrorEffectsPass implements SemanticPass
         }
 
         if ($if->else === null) {
-            return new ErrorFlow($errors->combine($branches[0]->escapingErrors), true);
+            return new ErrorFlow($errors->combine($branches[0]->escapingErrors), true,
+                array_any($branches, static fn (ErrorFlow $branch): bool => $branch->mayProduceWhenResult));
         }
 
         $else = $this->analyzeStatements($if->else->stmts, $scope);
@@ -495,7 +509,8 @@ final class CheckErrorEffectsPass implements SemanticPass
             $mayComplete = $mayComplete || $branch->mayCompleteNormally;
         }
 
-        return new ErrorFlow($errors, $mayComplete);
+        return new ErrorFlow($errors, $mayComplete, $else->mayProduceWhenResult
+            || array_any($branches, static fn (ErrorFlow $branch): bool => $branch->mayProduceWhenResult));
     }
 
     private function analyzeLoop(
@@ -509,16 +524,22 @@ final class CheckErrorEffectsPass implements SemanticPass
             return new ErrorFlow(
                 $body->escapingErrors->combine($condition->escapingErrors),
                 $body->mayCompleteNormally,
+                $body->mayProduceWhenResult,
             );
         }
 
         $errors = new ErrorSet();
+        $mayProduceResult = false;
 
         foreach ($this->resolveChildren($loop) as $child) {
-            $errors = $errors->combine($this->analyzeNode($child, $scope)->escapingErrors);
+            $flow = $this->analyzeNode($child, $scope);
+            $errors = $errors->combine($flow->escapingErrors);
+            $mayProduceResult = $mayProduceResult || $flow->mayProduceWhenResult;
         }
 
-        return new ErrorFlow($errors, true);
+        return new ErrorFlow($errors,
+            !$scope->ownsWhenResults || !$this->context->model->whenExpressions->resolveLoopTermination($loop),
+            $mayProduceResult);
     }
 
     /** @param array<Node\Arg|Node\VariadicPlaceholder> $arguments */

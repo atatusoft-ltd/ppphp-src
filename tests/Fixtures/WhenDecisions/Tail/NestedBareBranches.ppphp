@@ -1,0 +1,15 @@
+<?php
+function middle(bool $first, bool $second): int
+{
+    return when ($first) {
+        return when ($second) { return 1; } else { return 2; };
+    } else { return 3; };
+}
+function last(bool $first, bool $second): int
+{
+    return when ($first) { return 4; } else {
+        return when ($second) { return 5; } else { return 6; };
+    };
+}
+echo middle(true, true), middle(true, false), middle(false, false), '|';
+echo last(true, true), last(false, true), last(false, false);

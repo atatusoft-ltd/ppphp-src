@@ -20,12 +20,15 @@ final class LowerLocalDeclarationsPass implements TranspilationPass
                 throw new \LogicException('A typed local cannot be lowered without its semantic binding.');
             }
 
-            if ($this->containsWhenExpression($declaration, $context)) {
+            if ($this->containsWhenExpression($declaration, $context)
+                || !$context->shouldEmitLocalAnnotation($declaration->span, $binding->name)) {
                 $prefix = $declaration->span->sourceFile->createSpan(
                     $declaration->span->start->offset,
                     $declaration->variableSpan->start->offset,
                 );
-                $context->replace($prefix, $this->resolveTrivia($declaration, $context));
+                $trivia = $this->resolveTrivia($declaration, $context);
+                $context->replace($prefix, !$context->shouldEmitLocalAnnotation($declaration->span, $binding->name)
+                    ? ltrim($trivia, " \t") : $trivia);
 
                 continue;
             }

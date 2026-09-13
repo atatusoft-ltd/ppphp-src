@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
 import { fiberContractProbes } from '../src/fiber-contract-probes.mjs';
+import { nativeContractProbes, assessNativeContract } from '../src/native-contract-probes.mjs';
 
 // Match the fixed loopback origin accepted by verifyLoadedArtifacts.
 export const FIBER_CONTRACT_ORIGIN = 'http://127.0.0.1:4173';
@@ -23,17 +24,20 @@ export function assessFiberContract(data) {
 export async function main(args = process.argv.slice(2)) {
   const options = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (!['--output', '--wasm-sha256'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Invalid Fiber contract arguments');
+    if (!['--output', '--wasm-sha256', '--suite'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Invalid runtime contract arguments');
     options[args[i]] = args[i + 1];
   }
   if (!options['--output'] || !/^[a-f0-9]{64}$/.test(options['--wasm-sha256'] || '')) throw new Error('An output directory and pinned WASM hash are required');
+  const suite = options['--suite'] || 'fiber-contract';
+  if (!['fiber-contract', 'native-contract'].includes(suite)) throw new Error('Unknown runtime contract suite');
+  const probes = suite === 'native-contract' ? nativeContractProbes : fiberContractProbes;
   const { createOutput, launchChrome, collectObservation } = await import('./run-baseline.mjs');
   const { verifyLoadedArtifacts } = await import('./inspect-runtime-modes.mjs');
   const spike = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const output = createOutput(options['--output']);
-  const report = { format: 'ppphp.fiber-contract', version: 1, observedAt: new Date().toISOString(),
+  const report = { format: 'ppphp.' + suite, version: 1, observedAt: new Date().toISOString(),
     expectedWasmSha256: options['--wasm-sha256'], accepted: false, productionReady: false,
-    fixtures: fiberContractProbes.map((p) => ({ id: p.id, sourceSha256: createHash('sha256').update(p.code).digest('hex') })) };
+    fixtures: probes.map((p) => ({ id: p.id, sourceSha256: createHash('sha256').update(p.code).digest('hex') })) };
   let server;
   try {
     // Reuse the candidate's already-built diagnostic page. Do not rebuild PHP.
@@ -43,7 +47,7 @@ export async function main(args = process.argv.slice(2)) {
       preview: { host: origin.hostname, port: Number(origin.port), strictPort: true } });
     const browser = await launchChrome();
     report.browser = await collectObservation(browser, async () => {
-      const navigation = await browser.send('Page.navigate', { url: new URL('/baseline.html?suite=fiber-contract', origin).href });
+      const navigation = await browser.send('Page.navigate', { url: new URL('/baseline.html?suite=' + suite, origin).href });
       if (navigation.errorText) throw new Error(navigation.errorText);
       const deadline = Date.now() + 180000;
       let data;
@@ -56,9 +60,9 @@ export async function main(args = process.argv.slice(2)) {
     });
     if (report.browser.kind !== 'observed' || report.browser.cleanupError) throw new Error('Fiber contract observation or cleanup failed');
     report.loadedArtifacts = verifyLoadedArtifacts(report.browser.data.cases, join(spike, 'dist'), report.expectedWasmSha256);
-    report.accepted = assessFiberContract(report.browser.data);
-    for (const item of report.browser.data.cases) console.log(`Fiber contract ${item.id}: ${item.semantics}`);
-    if (!report.accepted) throw new Error('The rebuilt candidate failed a Fiber lifecycle contract');
+    report.accepted = suite === 'native-contract' ? assessNativeContract(report.browser.data) : assessFiberContract(report.browser.data);
+    for (const item of report.browser.data.cases) console.log(`${suite} ${item.id}: ${item.semantics}`);
+    if (!report.accepted) throw new Error('The rebuilt candidate failed ' + suite);
   } catch (error) {
     report.error = String(error.stack || error).slice(0, 16384); process.exitCode = 1; console.error(report.error);
   } finally {

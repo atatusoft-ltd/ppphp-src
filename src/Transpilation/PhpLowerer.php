@@ -30,11 +30,14 @@ final readonly class PhpLowerer
         ];
     }
 
-    /** @param list<TranspilationPass> $productionPasses */
+    /** @param list<TranspilationPass> $productionPasses
+     * @param array<int, list<string>> $localAnnotationOmissions
+     */
     public function lower(
         ParsedFile $parsedFile,
         SemanticModel $semanticModel,
         array $productionPasses = [],
+        array $localAnnotationOmissions = [],
     ): GeneratedPhp
     {
         if ($semanticModel->parsedFile !== $parsedFile) {
@@ -45,7 +48,7 @@ final readonly class PhpLowerer
             throw new \LogicException('A file with semantic errors cannot be lowered.');
         }
 
-        $context = new TranspilationContext($parsedFile, $semanticModel);
+        $context = new TranspilationContext($parsedFile, $semanticModel, $localAnnotationOmissions);
 
         foreach ($this->passes as $pass) {
             $pass->execute($context);

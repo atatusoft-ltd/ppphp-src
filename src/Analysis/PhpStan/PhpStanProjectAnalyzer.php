@@ -23,13 +23,13 @@ final readonly class PhpStanProjectAnalyzer implements ProjectAnalyzer
         private PhpStanProcessRunner $runner = new PhpStanProcessRunner(),
         private PhpStanResultParser $parser = new PhpStanResultParser(),
         private PhpStanDiagnosticMapper $mapper = new PhpStanDiagnosticMapper(),
-        private float $timeout = 60.0,
+        public float $timeout = 60.0,
         ?PhpStanAnalysisPlanBuilder $planBuilder = null,
     ) {
         $this->planBuilder = $planBuilder ?? new PhpStanAnalysisPlanBuilder($compilerRoot);
     }
 
-    public function analyze(AnalysisProject $project): AnalysisResult
+    public function analyze(AnalysisProject $project, ?float $remainingTime = null): AnalysisResult
     {
         $diagnostics = new DiagnosticBag();
 
@@ -52,8 +52,11 @@ final readonly class PhpStanProjectAnalyzer implements ProjectAnalyzer
         }
 
         try {
+            if ($remainingTime !== null && $remainingTime <= 0) {
+                throw new PhpStanExecutionException('Static analysis exceeded its time limit.', help: 'Try checking a smaller selection of files. Run with --debug if the timeout persists.');
+            }
             $plan = $this->buildPlan($project);
-            $process = $this->runner->run($plan->command, $plan->workingDirectory, $this->timeout);
+            $process = $this->runner->run($plan->command, $plan->workingDirectory, $remainingTime ?? $this->timeout);
         } catch (PhpStanExecutionException $exception) {
             $this->addInfrastructureDiagnostic(
                 $diagnostics,
@@ -122,12 +125,25 @@ final readonly class PhpStanProjectAnalyzer implements ProjectAnalyzer
                 }
             }
 
+            $omissions = [];
+            foreach ($parsed->localAnnotationOmissions as $omission) {
+                $file = $project->findByAnalysisPath($omission['path']);
+                $origin = $file?->generatedAnnotationOrigins[$omission['offset']] ?? null;
+                if ($file === null || !$file->selected || $origin === null
+                    || !in_array($omission['name'], $origin['names'], true)) {
+                    throw new PhpStanExecutionException('Static analysis returned unowned annotation advice.', diagnosticCode: DiagnosticCode::StaticAnalysisResultInvalid);
+                }
+                $names = $omissions[$file->sourceFile->path][$origin['owner']] ?? [];
+                if (!in_array($omission['name'], $names, true)) {
+                    $omissions[$file->sourceFile->path][$origin['owner']][] = $omission['name'];
+                }
+            }
             return new AnalysisResult($diagnostics, [
                 'backend' => 'phpstan',
                 'exitCode' => $process->exitCode,
                 'stderr' => $process->stderr,
                 'command' => $process->command,
-            ]);
+            ], $omissions);
         } catch (PhpStanExecutionException $exception) {
             $this->addInfrastructureDiagnostic(
                 $diagnostics,

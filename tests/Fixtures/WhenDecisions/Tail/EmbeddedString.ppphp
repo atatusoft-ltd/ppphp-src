@@ -1,0 +1,8 @@
+<?php
+function consume(string $value): void
+{
+    echo $value, '|';
+    if (getenv('FAULT') === 'consumer') { throw new Error('consumer'); }
+}
+consume(when (getenv('BRANCH') !== 'other') { return str_repeat('a', 2); } else { return 'b'; });
+echo 'after';
