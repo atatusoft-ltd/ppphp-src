@@ -80,7 +80,7 @@ jobs:
         run: node tools/web-spike/scripts/run-fiber-contract.mjs --wasm-sha256 3198aa074ad42bd2fad37d9af80a4a382df743bd1df0651ded4d3d3fc1cb80f9 --output "$RETAINED_ROOT/fiber-verification"
       - name: Retain verification evidence outside the checkout
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: php-wasm-candidate-verification-${{ github.sha }}-${{ github.run_attempt }}
           path: |
