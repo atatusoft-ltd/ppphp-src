@@ -108,7 +108,7 @@ jobs:
           done
       - name: Retain source-built outputs and provenance
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: php-wasm-source-built-${{ github.sha }}-${{ github.run_attempt }}
           path: |
@@ -125,7 +125,7 @@ jobs:
           if-no-files-found: warn
       - name: Retain verified downloads (durable owner handoff still required)
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: php-wasm-source-inputs-${{ github.sha }}-${{ github.run_attempt }}
           path: /tmp/ppphp-native-inputs/
@@ -170,7 +170,7 @@ jobs:
         run: bash tools/php-wasm-runtime/rebuild.sh --output "/tmp/ppphp-runtime-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
       - name: Retain evidence and source provenance
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: php-wasm-rebuild-evidence-${{ github.sha }}-${{ github.run_attempt }}
           path: |
@@ -185,7 +185,7 @@ jobs:
           if-no-files-found: warn
       - name: Retain built diagnostic runtimes
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: php-wasm-diagnostic-binaries-${{ github.sha }}-${{ github.run_attempt }}
           path: /tmp/ppphp-runtime-build-${{ github.run_id }}-${{ github.run_attempt }}/artifacts/*/asyncify/
