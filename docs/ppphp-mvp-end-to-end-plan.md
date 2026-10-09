@@ -1934,6 +1934,15 @@ checksum and clean Composer-install verification must be recorded before this
 stage can be marked complete. Do not rewrite published tags or treat a
 prerelease listing as acceptance evidence. Stable promotion remains pending.
 
+The same inventory verified a fresh public RC-2 Composer installation on
+macOS with PHP 8.5.11: exact version reporting, `init`, Composer configuration,
+optimized strict autoloading, `check`, `build`, generated PHP lint and execution
+passed. Its configured immutable schema URL returned HTTP 404. The tagged
+RC-2 source reconstructed all five release assets reproducibly, but its rendered
+notes differ from the published release body. Completing the public assets and
+notes contract requires the owner's publication decision; no tag or published
+content was changed by this verification.
+
 Prepare on `develop` and integrate intended changes into `main`. Only when ready,
 cut `release/<canonical-version>` from `main`, complete verification of the exact
 release-branch commit, then create the matching tag as the final step before
