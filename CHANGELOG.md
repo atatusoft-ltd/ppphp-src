@@ -14,7 +14,7 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 - Reduced memory use when checking and building Composer projects by deferring unused token streams and releasing dependency implementation bodies after discovery. Small mixed projects are regression-tested with a `128M` PHP memory limit, including uncached builds.
 - Dependency discovery follows declaration contracts instead of recursively loading unrelated implementation internals, preventing unnecessary memory and index-limit failures in projects with test-tool dependencies. Index-limit diagnostics identify the exhausted resource and its bound.
 
-## 2026.3.1-rc-2
+## 2026.3.1-rc-2 — 2026-09-08
 
 ### Added
 
@@ -37,7 +37,7 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 - Semantic type names in diagnostics retain their resolved spelling while normalized canonical identities remain internal to type comparison and lookup.
 - Flow-sensitive local assignments honor earlier null guards instead of reporting false nullable-type errors.
 
-## 2026.3.1-rc-1 — Prepared, Not Published
+## 2026.3.1-rc-1 — 2026-09-03
 
 ### Added
 
@@ -48,7 +48,7 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 
 ### Changed
 
-- The prepared compiler identity is `2026.3.1-rc-1` and the canonical compiler namespace is `Atatusoft\Ppphp`.
+- The compiler identity is `2026.3.1-rc-1` and the canonical compiler namespace is `Atatusoft\Ppphp`.
 - Native `check` and `build` retain the pinned PHPStan supplemental phase for the MVP release line.
 
 ### Fixed
@@ -69,4 +69,4 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 - Browser analysis is an internal integration protocol rather than a supported browser build product.
 - No formatter or standalone language server is included in this repository.
 - Immutable Records, postfix list syntax, Native Type Members, and attribute factory expressions are future work and are not part of this release.
-- This is a prepared release candidate and may change before Stable.
+- This is a release candidate; behavior may change before Stable.
