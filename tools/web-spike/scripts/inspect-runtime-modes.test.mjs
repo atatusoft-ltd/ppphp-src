@@ -71,6 +71,15 @@ for (const mode of ['asyncify', 'jspi']) {
     assert.equal(readFileSync(file, 'utf8'), '// untouched');
   });
 }
+test('selected verified loader path is used without accepting files outside the runtime mode', () => {
+  const selected = join(root, 'asyncify/php_8_5.js');
+  writeFileSync(selected, '// synthetic metadata only');
+  const plugin = forcedLoaderPlugin('asyncify', root, selected);
+  assert.ok(plugin.load(plugin.resolveId('@php-wasm/web-8-4')).includes('asyncify/php_8_5.js'));
+  for (const invalid of [join(root, 'php_8_5.js'), join(root, 'asyncify/foreign.js'), join(root, 'jspi/php_8_5.js')]) {
+    assert.throws(() => forcedLoaderPlugin('asyncify', root, invalid), /outside its mode/);
+  }
+});
 test('unknown modes and missing installed loaders fail before the build', () => {
   assert.throws(() => forcedLoaderPlugin('../../unsafe', root), /Unsupported/);
   assert.throws(() => forcedLoaderPlugin('asyncify', join(root, 'absent')), /absent/);

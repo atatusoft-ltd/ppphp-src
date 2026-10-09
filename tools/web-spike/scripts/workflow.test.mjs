@@ -4,7 +4,7 @@ import { readFileSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { runInNewContext } from 'node:vm';
-import { hash, canonical, validateWorkspace, validateInvocation, relativePath, processRecord } from '../src/workflow-contract.mjs';
+import { hash, canonical, validateWorkspace, validateInvocation, relativePath, processRecord, validateRuntimePlatform } from '../src/workflow-contract.mjs';
 import { ROOT, SPIKE, runProcess } from './run-project-parity.mjs';
 import { assessWorkflow, assessStaleCompletions } from './run-workflow.mjs';
 
@@ -152,4 +152,14 @@ test('a queued message from a terminated worker cannot overwrite the next worksp
   workers[1].onmessage({ data: { kind: 'phase-complete', files: [] } });
   await next;
   assert.equal(workers[0].terminated, 1); assert.equal(workers[1].terminated, 1);
+});
+
+test('workflow rejects an observed PHP version or integer width different from its verified runtime', () => {
+  const runtime = { phpVersion: '8.4.26', intSize: 8, sapi: 'cli' };
+  const platform = { phpVersion: '8.4.26', intSize: 8, sapi: 'wasm' };
+  assert.equal(validateRuntimePlatform(platform, runtime), platform);
+  for (const changed of [{ ...platform, phpVersion: '8.4.23' }, { ...platform, intSize: 4 }, null]) {
+    assert.throws(() => validateRuntimePlatform(changed, runtime), /verified build identity/);
+  }
+  assert.throws(() => validateRuntimePlatform(platform, { ...runtime, phpVersion: undefined }));
 });

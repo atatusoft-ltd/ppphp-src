@@ -36,14 +36,6 @@ def record_link(arguments: list[str], destination: Path) -> None:
             'argv': ['/root/emsdk/upstream/emscripten/emcc2', *arguments]}))
 
 
-def patch_bcmath_bounds(source: str) -> str:
-    # PHP upstream 4f83876af75d43b24cf3ed567394451f42e6bca1 (CVE-2026-17544).
-    # Keep the copy endpoint consistent with the truncated allocation length.
-    old = ('\t\t\t\tstr_scale -= fractional_end - fractional_new_end; /* fractional_end >= fractional_new_end */\n'
-           '\t\t\t}')
-    return prepare.replace_exact(source, old, old[:-1] + '\tfractional_end = fractional_new_end;\n\t\t\t}')
-
-
 def copy_integration(archive: tarfile.TarFile, destination: Path) -> None:
     native.archive_members(archive, strip_root=True)
     selected = ('php/', 'base-image/', 'php-wasm-memory-storage/', 'php-wasm-dns-polyfill/',
@@ -126,7 +118,7 @@ def replace_block(source: str, start: str, end: str, replacement: str) -> str:
 
 def php_recipe(original: str, manifest: dict) -> str:
     profile = manifest['toolchain']
-    source = prepare.prepare_dockerfile(original, candidate=True, jobs=profile['jobs'])
+    source = prepare.prepare_dockerfile(original, candidate=True, jobs=profile['jobs'], php_commit=manifest['sources']['php-src']['commit'])
     source = prepare.replace_exact(source, 'FROM playground-php-wasm:base', 'FROM native-libraries')
     source = replace_block(source, 'RUN PHP_REF="${PHP_REF:-php-$PHP_VERSION}"',
                            '# Work around memory leak due to PHP using Emscripten',
@@ -246,7 +238,8 @@ def build(store: Path, output: Path, manifest: dict, clean: bool) -> None:
     run('docker', 'build', '--platform', profile['platform'], '--progress=plain',
         '-f', str(context / 'Toolchain.Dockerfile'), '-t', tools_tag, str(context), timeout=1200)
     tools_image = subprocess.check_output(['docker', 'image', 'inspect', '--format', '{{.Id}}', tools_tag], text=True).strip()
-    flags = ['PHP_VERSION=' + prepare.PHP_VERSION, 'PHP_REF=php-' + prepare.PHP_VERSION,
+    flags = ['PHP_VERSION=' + manifest['sources']['php-src']['version'],
+             'PHP_REF=php-' + manifest['sources']['php-src']['version'],
              'WITH_JSPI=no', 'WITH_FILEINFO=yes', 'WITH_LIBXML=yes', 'WITH_SOAP=yes',
              'WITH_LIBZIP=yes', 'WITH_EXIF=yes', 'WITH_GD=yes', 'WITH_MBSTRING=yes', 'WITH_MBREGEX=yes',
              'WITH_CLI_SAPI=yes', 'WITH_OPENSSL=yes', 'WITH_NODEFS=no', 'WITH_CURL=yes',
@@ -303,17 +296,19 @@ def build(store: Path, output: Path, manifest: dict, clean: bool) -> None:
     print(json.dumps({'candidate': str(artifact), 'elapsedSeconds': round(time.monotonic() - started, 3)}))
 
 
+def extract_php(archive: Path, destination: Path, receipt: Path, manifest: dict) -> None:
+    if manifest['sources']['php-src'].get('patches') != []:
+        raise ValueError('Unsupported PHP source patches; review and implement them before extraction')
+    native.extract_source(archive, destination, manifest['sources']['php-src'],
+                          manifest['toolchain']['sourceDateEpoch'])
+    # PHP 8.4.26 already contains the BCMath endpoint correction.
+    receipt.write_bytes(native.canonical({'input': manifest['sources']['php-src'], 'patches': []}))
+
+
 def inside(command: str, manifest: dict) -> None:
     if command == 'extract-php':
-        native.extract_source(Path('/inputs/php-src.tar.gz'), Path('/root/php-src'),
-                              manifest['sources']['php-src'], manifest['toolchain']['sourceDateEpoch'])
-        path = Path('/root/php-src/ext/bcmath/libbcmath/src/str2num.c')
-        before = native.digest(path)
-        path.write_text(patch_bcmath_bounds(path.read_text()))
-        Path('/receipts/php-source.json').write_bytes(native.canonical({
-            'input': manifest['sources']['php-src'], 'patches': [{
-                'path': path.relative_to('/root/php-src').as_posix(),
-                'beforeSha256': before, 'afterSha256': native.digest(path)}]}))
+        extract_php(Path('/inputs/php-src.tar.gz'), Path('/root/php-src'),
+                    Path('/receipts/php-source.json'), manifest)
     elif command == 'exports':
         js = sorted(set(Path('/root/.JS_ABI_EXPORTS').read_text().split()))
         wasm = sorted(set(Path('/root/.WASM_ABI_EXPORTS').read_text().split()))

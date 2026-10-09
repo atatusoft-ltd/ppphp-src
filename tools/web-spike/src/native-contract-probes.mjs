@@ -76,6 +76,36 @@ export const nativeContractProbes = [
       check(bccomp($number, '1.9', $zeros) === 0);
     }
   `),
+  // Bounded PHP 8.4.26 security regression; no large allocation or extraction.
+  probe('native-convert-filter-nul', `
+    foreach (['convert.base64-encode', 'convert.quoted-printable-encode'] as $name) {
+        $stream = fopen('php://temp', 'w+');
+        $filter = stream_filter_append($stream, $name, STREAM_FILTER_WRITE, ['line-length'=>4, 'line-break-chars'=>"\\r\\n\\0ABC"]);
+        check($filter !== false); fwrite($stream, 'abcdefghijklmnopqrstuvwxyz'); stream_filter_remove($filter); rewind($stream);
+        $encoded = stream_get_contents($stream); check(str_contains($encoded, "\\r\\n\\0ABC"));
+        check(!str_contains(str_replace("\\r\\n\\0ABC", '', $encoded), "\\0"));
+        check($name === 'convert.base64-encode' ? str_replace("\\r\\n\\0ABC", '', $encoded) === base64_encode('abcdefghijklmnopqrstuvwxyz') : quoted_printable_decode(str_replace("\\r\\n\\0ABC", "\\r\\n", $encoded)) === 'abcdefghijklmnopqrstuvwxyz'); fclose($stream);
+    }
+  `),
+  // Bounded PHP 8.4.26 security regression; no large allocation or extraction.
+  probe('native-phar-size-overflow', `
+    function tarHeader(string $name, string $size): string {
+        $value=str_pad($name,100,"\\0")."0000777\\0".str_repeat("0000000\\0",2).$size."\\0"."00000000000\\0".'        '.'0'.str_repeat("\\0",355);
+        check(strlen($value)===512);
+        return substr_replace($value,sprintf("%06o\\0 ",array_sum(unpack('C*',$value))),148,8);
+    }
+    $path='/workspace/bounded-wrap.tar';
+    $validPath='/workspace/bounded-valid.tar';
+    try {
+        file_put_contents($validPath,tarHeader('outer.txt','00000000001').str_pad('x',512,"\\0").str_repeat("\\0",1024));
+        check((new PharData($validPath))['outer.txt']->getContent() === 'x');
+        file_put_contents($path,tarHeader('outer.txt','40000000000').tarHeader('injected.txt','00000000001').str_pad('x',512,"\\0").str_repeat("\\0",1024));
+        $rejected=false;
+        try { $phar=new PharData($path); $phar['injected.txt']->getContent(); }
+        catch (UnexpectedValueException|BadMethodCallException|RuntimeException $error) { $rejected=true; }
+        check($rejected);
+    } finally { @unlink($path); @unlink($validPath); }
+  `),
   probe('native-phar-link-cycles', `
     function linkHeader(string $name, string $target): string {
       $header = str_pad($name, 100, "\\0") . "0000777\\0" . str_repeat("0000000\\0", 2)

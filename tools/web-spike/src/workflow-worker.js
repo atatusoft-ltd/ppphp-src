@@ -1,7 +1,7 @@
 import { PHP, loadPHPRuntime, proxyFileSystem } from '@php-wasm/universal';
 import { getPHPLoaderModule } from '@php-wasm/web-8-4';
 import { readProcessResult } from './parity-streams.mjs';
-import { hash, validateWorkspace, validateInvocation, WORKFLOW_LIMITS } from './workflow-contract.mjs';
+import { hash, validateWorkspace, validateInvocation, validateRuntimePlatform, WORKFLOW_LIMITS } from './workflow-contract.mjs';
 import faultEmitter from './workflow-fault-emitter.php?raw';
 
 // Exactly one CLI phase per worker. Its filesystem host is discarded with it.
@@ -18,6 +18,7 @@ self.onmessage = async ({ data }) => {
     const mount = await readProcessResult(await host.runStream({ code: "<?php (new PharData('/tmp/compiler.tar.gz'))->extractTo('/opt/ppphp', null, true); echo json_encode(['phpVersion'=>PHP_VERSION,'sapi'=>PHP_SAPI,'intSize'=>PHP_INT_SIZE,'extensions'=>get_loaded_extensions(),'memoryLimit'=>ini_get('memory_limit')]);" }));
     if (mount.exitCode || mount.stderr) throw new Error('Compiler mount failed: ' + mount.stderr);
     const platform = JSON.parse(mount.stdout);
+    validateRuntimePlatform(platform, data.assets.runtime);
     for (const file of data.files) {
       const path = '/workspace/' + file.path;
       if (file.kind === 'directory') host.mkdir(path);

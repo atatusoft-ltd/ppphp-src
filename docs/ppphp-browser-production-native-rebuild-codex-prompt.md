@@ -551,3 +551,23 @@ Return a maintainer summary containing:
 [2]: https://www.openssl-library.org/policies/releasestrat/?utm_source=chatgpt.com "Release Strategy | OpenSSL Library"
 [3]: https://openssl-library.org/source/license/ "License | OpenSSL Library"
 [4]: https://www.php.net/license/index.php?utm_source=chatgpt.com "PHP: License Information"
+
+## Owner-approved successor baseline direction — 9 October 2026
+
+Execute this security repair on PHP 8.4.26/OpenSSL 3.5.9. PHP 8.5 is the next
+browser baseline to qualify through the existing shared FI-1 platform foundation;
+this approval does not silently switch the runtime or establish support.
+[PHP's support calendar](https://www.php.net/supported-versions.php) ends 8.4 active
+support on 31 December 2026 and 8.5 active support on 31 December 2027.
+
+Before admitting an 8.5 candidate: review source/patch contexts, Fiber/Asyncify
+and loader ABI; give its build fresh receipts and artifact identities; verify
+compiler-host, dependency parsing, platform signatures, emission target and
+application runtime separately under the approved framework amendment. Repeat
+native controls, independent BP-3/BP-4, full BP-5, real pages, installed delivery
+and structural memory/capability audits on the actual new bytes. The
+[8.5 migration changes](https://www.php.net/manual/en/migration85.incompatible.php),
+including removed `disable_classes` and GC/destruction/shutdown changes, require
+containment and lifetime/recovery checks. A green local PHP 8.5 test run does not
+qualify an 8.5 browser runtime. Do not raise limits, broaden capabilities, change
+the release train, or claim support to bypass a failed gate.

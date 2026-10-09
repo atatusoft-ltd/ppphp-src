@@ -34,6 +34,8 @@ cp "$compile/base-image/Dockerfile" "$output/artifacts/base.Dockerfile"
 timeout -k 20s 900s docker build --progress=plain -f "$compile/base-image/Dockerfile" -t playground-php-wasm:base "$compile/base-image"
 docker image inspect --format '{{.Id}}' playground-php-wasm:base > "$output/artifacts/base-image-id.txt"
 
+php_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["phpVersion"])' "$output/artifacts/baseline-build.json")"
+
 container=''
 cleanup() { if [[ -n "$container" ]]; then docker rm -f "$container" >/dev/null; fi; }
 trap cleanup EXIT
@@ -43,7 +45,7 @@ build_profile() {
   mkdir -p "$destination/asyncify"
   local image="ppphp-php-wasm:$profile"
   local -a flags=(
-    PHP_VERSION=8.4.23 PHP_REF=php-8.4.23 WITH_JSPI=no
+    "PHP_VERSION=$php_version" "PHP_REF=php-$php_version" WITH_JSPI=no
     WITH_FILEINFO=yes WITH_LIBXML=yes WITH_SOAP=yes WITH_LIBZIP=yes
     WITH_EXIF=yes WITH_GD=yes WITH_MBSTRING=yes WITH_MBREGEX=yes
     WITH_CLI_SAPI=yes WITH_OPENSSL=yes OPENSSL_VERSION=1.1.0h

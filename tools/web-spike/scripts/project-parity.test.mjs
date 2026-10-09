@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CONFIGURATION, validateCorpus, validateCases, verifySourceHashes, compareDiagnostics, frameProcess, assessCase, terminateWorker, runtimeConsoleFailures } from '../src/parity-contract.mjs';
 import { readPhpStanDebugResult } from '../src/phpstan-debug-output.mjs';
-import { ROOT, ADAPTER, SPIKE, runProcess, readBoundedJson, verifyRuntime, assessControls, assessSourceBuiltControls } from './run-project-parity.mjs';
+import { ROOT, ADAPTER, SPIKE, runProcess, readBoundedJson, verifyRuntime, assertHarnessRuntime, assessControls, assessSourceBuiltControls } from './run-project-parity.mjs';
 import { sha256 } from './run-baseline.mjs';
 import { readProcessResult } from '../src/parity-streams.mjs';
 import { probes } from '../src/baseline-probes.js';
@@ -164,9 +164,11 @@ test('runtime integrity requires manifest-owned loader and exact WASM; rejects c
     mkdirSync(join(directory, 'asyncify'));
     const wasm = Buffer.from('synthetic artifact; never executed');
     writeFileSync(join(directory, 'asyncify/php_8_4.wasm'), wasm); writeFileSync(join(directory, 'asyncify/php_8_4.js'), '// synthetic');
-    const files = ['asyncify/php_8_4.js', 'asyncify/php_8_4.wasm'].map((path) => ({ path, bytes: readFileSync(join(directory, path)).length, sha256: sha256(readFileSync(join(directory, path))) }));
+    writeFileSync(join(directory, 'build-arguments.txt'), 'PHP_VERSION=8.4.26\nPHP_REF=php-8.4.26\n');
+    const files = ['asyncify/php_8_4.js', 'asyncify/php_8_4.wasm', 'build-arguments.txt'].map((path) => ({ path, bytes: readFileSync(join(directory, path)).length, sha256: sha256(readFileSync(join(directory, path))) }));
     writeFileSync(join(directory, 'artifacts.json'), JSON.stringify({ profile: 'candidate', files }));
     assert.equal(verifyRuntime(directory, sha256(wasm)).wasmSha256, sha256(wasm));
+    assert.equal(verifyRuntime(directory, sha256(wasm)).phpVersion, '8.4.26');
     assert.throws(() => verifyRuntime(directory, '0'.repeat(64)), /identity/);
     writeFileSync(join(directory, 'asyncify/php_8_4.wasm'), 'changed');
     assert.throws(() => verifyRuntime(directory, sha256(wasm)), /integrity/);
@@ -218,5 +220,51 @@ test('test adapter uses real compiler mapping and rejects stale source/configura
     writeFileSync(join(directory, 'src/main.php'), file.source);
     writeFileSync(join(directory, 'ppphp.json'), JSON.stringify({ ...CONFIGURATION, targetPhpVersion: '8.5' }));
     assert.equal(complete().exitCode, 70);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('verified PHP identity rejects missing, duplicate, mixed and malformed build metadata', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ppphp-parity-identity-'));
+  try {
+    mkdirSync(join(directory, 'asyncify'));
+    const wasm = Buffer.from('synthetic; never executed');
+    writeFileSync(join(directory, 'asyncify/php_8_4.wasm'), wasm);
+    writeFileSync(join(directory, 'asyncify/php_8_4.js'), '// synthetic');
+    const writeManifest = (argumentsText, nativeVersion = null) => {
+      const paths = ['asyncify/php_8_4.js', 'asyncify/php_8_4.wasm'];
+      if (argumentsText !== null) { writeFileSync(join(directory, 'build-arguments.txt'), argumentsText); paths.push('build-arguments.txt'); }
+      if (nativeVersion) {
+        mkdirSync(join(directory, 'native'), { recursive: true });
+        writeFileSync(join(directory, 'native/runtime-build.json'), JSON.stringify({ manifest: { sources: { 'php-src': { version: nativeVersion } } }, productionReady: false }));
+        paths.push('native/runtime-build.json');
+      }
+      writeFileSync(join(directory, 'artifacts.json'), JSON.stringify({ profile: 'candidate', files: paths.map(path => ({ path, bytes: readFileSync(join(directory, path)).length, sha256: sha256(readFileSync(join(directory, path))) })) }));
+    };
+    for (const text of [null, '', 'PHP_VERSION=8.4.26\n', 'PHP_VERSION=8.4.26\nPHP_VERSION=8.4.26\nPHP_REF=php-8.4.26\n', 'PHP_VERSION=8.4.26\nPHP_REF=php-8.4.23\n', 'PHP_VERSION=8.bad.0\nPHP_REF=php-8.bad.0\n']) {
+      writeManifest(text); assert.throws(() => verifyRuntime(directory, sha256(wasm)), /PHP build identity/);
+    }
+    writeManifest('PHP_VERSION=8.4.26\nPHP_REF=php-8.4.26\n', '8.4.23');
+    assert.throws(() => verifyRuntime(directory, sha256(wasm)), /Native PHP build identity/);
+    writeManifest('PHP_VERSION=8.4.26\nPHP_REF=php-8.4.26\n', '8.4.26');
+    assert.equal(verifyRuntime(directory, sha256(wasm)).phpVersion, '8.4.26');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('generic runtime identity derives a future minor pair without admitting it to the locked execution profile', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ppphp-parity-future-'));
+  try {
+    mkdirSync(join(directory, 'asyncify/8_5_0'), { recursive: true });
+    const wasm = Buffer.from('synthetic; no future runtime execution');
+    writeFileSync(join(directory, 'asyncify/8_5_0/php_8_5.wasm'), wasm);
+    writeFileSync(join(directory, 'asyncify/php_8_5.js'), '// synthetic');
+    writeFileSync(join(directory, 'build-arguments.txt'), 'PHP_VERSION=8.5.0\nPHP_REF=php-8.5.0\n');
+    const files = ['asyncify/php_8_5.js', 'asyncify/8_5_0/php_8_5.wasm', 'build-arguments.txt'].map(path => ({ path, bytes: readFileSync(join(directory, path)).length, sha256: sha256(readFileSync(join(directory, path))) }));
+    writeFileSync(join(directory, 'artifacts.json'), JSON.stringify({ profile: 'candidate', files }));
+    const runtime = verifyRuntime(directory, sha256(wasm));
+    assert.equal(runtime.phpVersion, '8.5.0');
+    assert.equal(runtime.loaderPath, join(runtime.root, 'asyncify/php_8_5.js'));
+    assert.equal(runtime.wasmPath, join(runtime.root, 'asyncify/8_5_0/php_8_5.wasm'));
+    assert.throws(() => assertHarnessRuntime(runtime), /locked browser harness profile/);
+    assert.doesNotThrow(() => assertHarnessRuntime({ phpVersion: '8.4.26' }));
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

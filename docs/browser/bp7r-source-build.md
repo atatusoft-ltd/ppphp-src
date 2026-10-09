@@ -4,6 +4,52 @@ This is the implementation record for the [BP-7R work order](../ppphp-browser-pr
 It does not approve a runtime for distribution or production. The retained runtime
 remains an unchanged historical comparison, not an approved public rollback target.
 
+## Approved security refresh — 9 October 2026
+
+The current input manifest selects PHP **8.4.26** (commit
+`c31ae58ecbedc7a85dac0eee5a6a88da73543e70`) and OpenSSL **3.5.9**.
+Their verified archive identities are respectively
+`f77ae0e5dff58fefce9fb1ea95a48275bd374f836064f680d9502478fb9da820`
+(21,859,184 bytes) and
+`603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a`
+(53,279,637 bytes). The PHP archive's complete Git contents/modes were compared
+with its independently fetched upstream tree, accounting for Git archive's
+seven `export-subst` expansions. Zend Fiber source has the same reviewed blob;
+the existing Asyncify repair and all resource/capability limits remain unchanged.
+
+[PHP 8.4.26](https://www.php.net/ChangeLog-8.php#8.4.26) fixes enabled local
+APIs, including conversion filters and PHAR; network denial cannot replace those
+fixes. [OpenSSL 3.5.9](https://openssl-library.org/news/secadv/20260929.txt)
+fixes certificate parsing reachable through `openssl_x509_parse` without network
+access. **The redundant downstream BCMath backport is removed:** this PHP source
+already contains its endpoint fix. The BCMath behavior regression remains;
+two additional bounded controls cover embedded-NUL conversion delimiters and a
+PHAR TAR-size overflow using a small malformed archive, without allocating 4 GiB.
+
+Build preparation and source compilation derive PHP pins from `native-inputs.json`.
+BP-4 derives its declared PHP version from manifest-owned, hash-verified build
+arguments, checks native-receipt coherence when present, and rejects an observed
+worker platform mismatch before compiler phases. Generic verification derives
+the loader/WASM major/minor from those verified arguments; it does not grant
+execution approval. BP-3/BP-4 execution remains on the locked
+`tools/web-spike/package.json` `@php-wasm/web-8-4` integration and existing worker
+imports. A new minor requires a separately qualified harness/runtime profile.
+Historical artifact metadata
+is not rewritten or used as fresh acceptance evidence.
+
+Workflow run `37956420711` lost its hosted runner after both native compilations,
+before artifact retention, with exit 143. No artifacts were retained; complete
+comparison and downstream browser admission are **NOT RUN** for that run. The
+workflow now uploads verified sources first, then each build's candidate, receipts,
+checkpoint and available control results before starting another build. Full
+comparison is still required for two-build qualification. An upload containing
+failed/incomplete controls is evidence, not approval. Runner loss before an upload
+can still lose the in-flight build.
+
+Fresh native builds, their full independent comparison, BP-3/BP-4 and packaged
+website qualification remain **NOT RUN** until fresh artifacts are executed and
+verified. The older results below describe their recorded historical inputs only.
+
 ## Inputs and build boundaries
 
 The compiler owns `tools/php-wasm-runtime/native-inputs.json`. It pins the
@@ -28,7 +74,7 @@ Autoconf, Automake, Bison, Flex, libtool, pkgconf and re2c are host tools acquir
 from a dated, signed Ubuntu snapshot. The SDK image is platform/digest pinned.
 Host package versions are recorded; the task does not rebuild LLVM or Ubuntu.
 
-The initial comparison keeps PHP 8.4.23 and Emscripten 4.0.19. These are explicit
+The initial historical comparison kept PHP 8.4.23 and Emscripten 4.0.19. These are explicit
 candidate inputs, not a permanent platform ceiling. OpenSSL 3.5.8 replaces the
 legacy implementation in the executed source-built graph; compilation, link
 provenance and runtime checks establish that replacement. Oniguruma 6.9.10 has
@@ -55,9 +101,9 @@ profile, where no font cache exists. Source patch receipts retain each change.
 The same review checks PHP-bundled libraries rather than trusting the version
 label alone. The pinned PHP source already bounds PHAR link traversal by the
 manifest size; the native suite tests short, long and tail-into-cycle archives.
-BCMath lacks the [upstream fractional-endpoint correction](https://github.com/php/php-src/commit/4f83876af75d43b24cf3ed567394451f42e6bca1)
-for CVE-2026-17544. The source-built path applies that one-line correction with
-strict context and before/after hashes. The historical rebuild and Fiber repair
+The initial PHP 8.4.23 input lacked the [upstream fractional-endpoint correction](https://github.com/php/php-src/commit/4f83876af75d43b24cf3ed567394451f42e6bca1)
+for CVE-2026-17544. That source-built path applied the one-line correction with
+strict context and before/after hashes. The retained historical artifacts and Fiber repair
 are unchanged. The new regression covers small and larger allocations and both
 signs; source correspondence and runtime execution remain separate evidence.
 

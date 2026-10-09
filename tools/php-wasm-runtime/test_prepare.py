@@ -1,6 +1,12 @@
 import unittest
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 import prepare
+import native
 
 
 class PreparationTests(unittest.TestCase):
@@ -19,12 +25,12 @@ class PreparationTests(unittest.TestCase):
 
     def test_unreviewed_build_recipe_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'Unexpected upstream'):
-            prepare.prepare_dockerfile('FROM something-else', candidate=False, jobs=2)
+            prepare.prepare_dockerfile('FROM something-else', candidate=False, jobs=2, php_commit=native.load_manifest()['sources']['php-src']['commit'])
 
     def test_parallelism_is_bounded(self):
         for jobs in [0, -1, 5, 100]:
             with self.assertRaisesRegex(ValueError, 'parallelism'):
-                prepare.prepare_dockerfile('', candidate=False, jobs=jobs)
+                prepare.prepare_dockerfile('', candidate=False, jobs=jobs, php_commit=native.load_manifest()['sources']['php-src']['commit'])
 
     def fixture(self):
         # Unit fixture for the transformation contract, not a real runtime build.
@@ -40,18 +46,42 @@ class PreparationTests(unittest.TestCase):
     def test_baseline_has_symbols_without_fiber_patch(self):
         source = self.fixture()
         with patch.object(prepare, 'DOCKER_BLOB', prepare.blob_sha(source.encode())):
-            result = prepare.prepare_dockerfile(source, candidate=False, jobs=2)
-        self.assertIn(prepare.PHP_COMMIT, result)
+            result = prepare.prepare_dockerfile(source, candidate=False, jobs=2, php_commit=native.load_manifest()['sources']['php-src']['commit'])
+        self.assertIn(native.load_manifest()['sources']['php-src']['commit'], result)
         self.assertIn('-g2 -s ASSERTIONS=1', result)
         self.assertIn('make -j2', result)
         self.assertIn('BINARYEN_CORES=2', result)
         self.assertNotIn('--patch-fibers', result)
         self.assertIn('ASYNCIFY_IGNORE_INDIRECT=1', result)
 
+    def test_dockerfile_uses_the_explicit_source_commit_without_a_duplicate_pin(self):
+        source = self.fixture()
+        commit = 'a' * 40
+        with patch.object(prepare, 'DOCKER_BLOB', prepare.blob_sha(source.encode())):
+            result = prepare.prepare_dockerfile(source, candidate=False, jobs=2, php_commit=commit)
+        self.assertIn(commit, result)
+        self.assertNotIn(native.load_manifest()['sources']['php-src']['commit'], result)
+
+    def test_unsafe_php_commit_is_rejected_before_recipe_transformation(self):
+        for value in ['', 'a' * 39, 'a' * 41, '$(id)', 'a' * 40 + '\n', None]:
+            with self.assertRaisesRegex(ValueError, 'PHP source commit'):
+                prepare.prepare_dockerfile(self.fixture(), candidate=True, jobs=2, php_commit=value)
+
+    def test_copied_fiber_helper_reaches_source_validation_without_repository_imports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shutil.copyfile(prepare.__file__, root / 'prepare.py')
+            (root / 'fibers.c').write_text('unreviewed')
+            result = subprocess.run([sys.executable, str(root / 'prepare.py'), '--patch-fibers', str(root / 'fibers.c')],
+                                    text=True, capture_output=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Unexpected Zend Fiber source', result.stderr)
+            self.assertNotIn('ModuleNotFoundError', result.stderr)
+
     def test_candidate_enables_patch_and_conservative_instrumentation(self):
         source = self.fixture()
         with patch.object(prepare, 'DOCKER_BLOB', prepare.blob_sha(source.encode())):
-            result = prepare.prepare_dockerfile(source, candidate=True, jobs=4)
+            result = prepare.prepare_dockerfile(source, candidate=True, jobs=4, php_commit=native.load_manifest()['sources']['php-src']['commit'])
         self.assertIn('--patch-fibers /root/php-src/Zend/zend_fibers.c', result)
         self.assertIn('ASYNCIFY_IGNORE_INDIRECT=0', result)
         self.assertIn('ASYNCIFY_ONLY=[]', result)
@@ -61,7 +91,7 @@ class PreparationTests(unittest.TestCase):
         source = self.fixture().replace('emmake make -j14', 'emmake make -j100')
         with patch.object(prepare, 'DOCKER_BLOB', prepare.blob_sha(source.encode())):
             with self.assertRaisesRegex(ValueError, 'Patch context changed'):
-                prepare.prepare_dockerfile(source, candidate=False, jobs=2)
+                prepare.prepare_dockerfile(source, candidate=False, jobs=2, php_commit=native.load_manifest()['sources']['php-src']['commit'])
 
     def test_unreviewed_bridge_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'Unexpected PHP-WASM bridge'):
