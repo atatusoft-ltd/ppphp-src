@@ -1942,6 +1942,10 @@ RC-2 source reconstructed all five release assets reproducibly, but its rendered
 notes differ from the published release body. Completing the public assets and
 notes contract requires the owner's publication decision; no tag or published
 content was changed by this verification.
+The original tagged-release verification job passed; its publication job failed
+at the duplicate-publication guard because the GitHub release already existed.
+Keep that guard intact: rerunning ordinary publication is not a repair procedure
+for an existing release with missing assets.
 
 Prepare on `develop` and integrate intended changes into `main`. Only when ready,
 cut `release/<canonical-version>` from `main`, complete verification of the exact
