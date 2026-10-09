@@ -30,6 +30,9 @@ jobs:
         with:
           node-version: '22.16.0'
       - run: node --test tools/web-spike/scripts/compiler-archive.test.mjs
+      - name: Audit browser tooling dependencies
+        working-directory: tools/web-spike
+        run: npm audit --audit-level=low
   quality:
     name: PHP ${{ matrix.php }}
     needs: tests
