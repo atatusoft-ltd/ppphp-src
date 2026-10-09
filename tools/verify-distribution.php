@@ -94,6 +94,7 @@ try {
         'COMPOSER_CACHE_DIR' => $composerCache,
         'COMPOSER_HOME' => $composerHome,
         'COMPOSER_NO_INTERACTION' => '1',
+        'PPPHP_COMPILER_MEMORY_LIMIT_MEGABYTES' => false,
     ];
     $packageFiles = distributionRun(
         ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
@@ -177,10 +178,12 @@ try {
     }
 
     $compiler = Path::join($consumer, 'vendor/bin/ppphp');
+    // Exercise installed CLI startup from a normal constrained host, rather
+    // than supplying the compiler's allowance on behalf of its entrypoint.
     $compilerCommand = static fn (string ...$arguments): array => [
         PHP_BINARY,
         '-d',
-        'memory_limit=512M',
+        'memory_limit=128M',
         $compiler,
         ...$arguments,
     ];

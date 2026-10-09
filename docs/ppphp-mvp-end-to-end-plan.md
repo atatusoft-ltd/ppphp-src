@@ -1937,7 +1937,14 @@ prerelease listing as acceptance evidence. Stable promotion remains pending.
 The same inventory verified a fresh public RC-2 Composer installation on
 macOS with PHP 8.5.11: exact version reporting, `init`, Composer configuration,
 optimized strict autoloading, `check`, `build`, generated PHP lint and execution
-passed. Its configured immutable schema URL returned HTTP 404. The tagged
+passed with a 512 MiB process allowance. Repeating public RC-2 `check` and
+`build` at the unchanged 128 MiB PHP default exhausted memory. The current
+`develop` compiler passes fresh checks and builds of the same consumer at an
+explicit 128 MiB ceiling; those memory fixes are not in the published tag.
+The installed-distribution gate now starts the CLI at 128 MiB without an
+inherited compiler-budget override, leaving the CLI responsible for its own
+memory policy instead of masking startup defects with a pre-raised allowance.
+RC-2's configured immutable schema URL returned HTTP 404. The tagged
 RC-2 source reconstructed all five release assets reproducibly, but its rendered
 notes differ from the published release body. Completing the public assets and
 notes contract requires the owner's publication decision; no tag or published

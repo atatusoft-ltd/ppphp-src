@@ -12,4 +12,8 @@ not describe current availability. Use the published release's installation
 instructions. RC-1 retains its original Composer package identity; RC-2 uses
 `atatusoft/ppphp`. No Stable release has been published.
 
+RC-2 can exhaust PHP's default memory limit during `check` and `build`.
+The memory improvements listed under [Unreleased](../../CHANGELOG.md#unreleased)
+are not included in that published package.
+
 Stable remains Composer's default acquisition channel. Release Candidates and Development releases require explicit selection. See [Versioning](../versioning.md). Maintainers follow the single [release lifecycle](../releasing.md); obsolete release branches are not required to use or verify historical artifacts.
