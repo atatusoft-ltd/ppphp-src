@@ -29,7 +29,8 @@ function backendDiagnosticCodes(iterable $diagnostics): array
     );
 }
 
-function createBackendAnalysisProject(string $root): AnalysisProject
+/** @param array<int, array{owner: int, names: list<string>}> $annotationOrigins */
+function createBackendAnalysisProject(string $root, array $annotationOrigins = [], bool $annotationsOnly = false): AnalysisProject
 {
     $source = new SourceFile($root . '/src/Feature.ppphp', 'src/Feature.ppphp', FileKind::Ppphp, "<?php\nfunction feature(): void {}\n");
     $analysisPath = $root . '/analysis/selected/root/Feature.php';
@@ -37,14 +38,51 @@ function createBackendAnalysisProject(string $root): AnalysisProject
     mkdir($directory, 0777, true);
     file_put_contents($analysisPath, $source->contents);
     $map = new AnalysisSourceMap($analysisPath, $source->contents, GeneratedSourceMap::createIdentity($source));
-    $file = new AnalysisFile($source, $analysisPath, $source->contents, FileKind::Ppphp, true, $map);
+    $file = new AnalysisFile($source, $analysisPath, $source->contents, FileKind::Ppphp, true, $map, generatedAnnotationOrigins: $annotationOrigins);
 
-    return new AnalysisProject($root, $root . '/analysis', [$file], [], [], [], [], '8.4');
+    return new AnalysisProject($root, $root . '/analysis', [$file], [], [], [], [], '8.4', $annotationsOnly);
 }
+
+test('annotation validation does not inherit source exception rules', function (bool $annotationsOnly): void {
+    $project = createBackendAnalysisProject($this->createTemporaryDirectory(), annotationsOnly: $annotationsOnly);
+    $path = (new Atatusoft\Ppphp\Analysis\PhpStan\PhpStanConfigBuilder(dirname(__DIR__, 3)))->build($project);
+    $configuration = file_get_contents($path);
+    expect(str_contains($configuration, 'resources/phpstan/ppphp.neon'))->toBe(!$annotationsOnly)
+        ->and(str_contains($configuration, 'GeneratedLocalContractRule'))->toBe(!$annotationsOnly)
+        ->and(str_contains($configuration, 'CompletedWhenResultExtension'))->toBe(!$annotationsOnly)
+        ->and(str_contains($configuration, 'level: null'))->toBe($annotationsOnly);
+    expect($configuration)->toContain('GeneratedAnnotationCollector', 'WrongVariableNameInVarTagRule');
+})->with([false, true]);
+
+test('source and annotation rounds share one native analyzer deadline', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/main.ppphp', '<?php int $value = 1;');
+    $configuration = (new Atatusoft\Ppphp\Config\ProjectConfigLoader())->load($root)->configuration;
+    $project = (new Atatusoft\Ppphp\Project\ProjectLoader())->load($configuration)->project;
+    $runner = new class extends PhpStanProcessRunner {
+        public array $timeouts = [];
+        public function run(array $command, string $workingDirectory, float $timeout): PhpStanProcessResult
+        {
+            $this->timeouts[] = $timeout;
+            usleep(20_000);
+            return new PhpStanProcessResult($command,
+                '{"totals":{"errors":0,"file_errors":0},"files":{},"errors":[],"localAnnotationOmissions":[]}', '', 0, false);
+        }
+    };
+    $result = (new Atatusoft\Ppphp\Project\ProjectChecker(
+        backend: new PhpStanProjectAnalyzer(runner: $runner, timeout: 10),
+    ))->check($project, $project->sources, allowCachedEvidence: false);
+    expect($result->isSuccessful)->toBeTrue((new Atatusoft\Ppphp\Diagnostics\JsonRenderer())->render($result->diagnostics, true))
+        ->and($runner->timeouts)->toHaveCount(2)
+        ->and($runner->timeouts[0])->toBeLessThanOrEqual(10)
+        ->and($runner->timeouts[1])->toBeLessThan($runner->timeouts[0] - 0.01);
+});
 
 test('the pinned phpstan json shape is parsed into compiler-owned findings', function (): void {
     $json = json_encode([
         'totals' => ['errors' => 0, 'file_errors' => 1],
+        'localAnnotationOmissions' => [],
         'files' => [
             '/analysis/Feature.php' => [
                 'errors' => 1,
@@ -72,6 +110,41 @@ test('empty and malformed backend output are rejected', function (): void {
         ->and(fn () => (new PhpStanResultParser())->parse('{'))
         ->toThrow(PhpStanExecutionException::class);
 });
+
+test('annotation advice requires an explicit well-formed decision list', function (array $advice): void {
+    $json = json_encode(['files' => [], 'errors' => [], ...$advice], JSON_THROW_ON_ERROR);
+    expect(fn () => (new PhpStanResultParser())->parse($json))->toThrow(PhpStanExecutionException::class);
+})->with([
+    'missing' => [[]],
+    'null' => [['localAnnotationOmissions' => null]],
+    'object is not an empty decision list' => [['localAnnotationOmissions' => new stdClass()]],
+    'non-list' => [['localAnnotationOmissions' => ['wrong' => []]]],
+    'invalid name' => [['localAnnotationOmissions' => [['path' => '/analysis/file.php', 'offset' => 1, 'name' => '$x extra']]]],
+    'extra fields' => [['localAnnotationOmissions' => [['path' => '/analysis/file.php', 'offset' => 1, 'name' => '$x', 'extra' => true]]]],
+    'negative offset' => [['localAnnotationOmissions' => [['path' => '/analysis/file.php', 'offset' => -1, 'name' => '$x']]]],
+]);
+
+test('annotation advice is validated against the exact generated comment and variable', function (int $offset, string $name, bool $valid): void {
+    $root = $this->createTemporaryDirectory();
+    $project = createBackendAnalysisProject($root, [
+        10 => ['owner' => 6, 'names' => ['$count']],
+        20 => ['owner' => 16, 'names' => ['$literal']],
+    ]);
+    $advice = ['path' => $project->selectedFiles[0]->analysisPath, 'offset' => $offset, 'name' => $name];
+    $json = json_encode(['files' => [], 'errors' => [], 'localAnnotationOmissions' => [$advice, $advice]], JSON_THROW_ON_ERROR);
+    $result = (new PhpStanProjectAnalyzer(dirname(__DIR__, 3)))->complete($project, new PhpStanProcessResult([], $json, '', 0, false));
+    expect($result->isSuccessful)->toBe($valid);
+    if ($valid) {
+        expect($result->localAnnotationOmissions)->toBe([$project->selectedFiles[0]->sourceFile->path => [6 => ['$count']]]);
+    } else {
+        expect(backendDiagnosticCodes($result->diagnostics))->toBe(['P6006']);
+        expect($result->localAnnotationOmissions)->toBe([]);
+    }
+})->with([
+    'owned tag with repeated observations' => [10, '$count', true],
+    'sibling name belongs to another declaration' => [10, '$literal', false],
+    'unknown comment offset' => [11, '$count', false],
+]);
 
 test('backend timeouts unexpected exits and malformed results retain their specific causes', function (PhpStanProcessResult $processResult, string $code, string $reason): void {
     $root = $this->createTemporaryDirectory();
@@ -160,6 +233,7 @@ test('exit one with valid findings remains a source-analysis result', function (
     $root = $this->createTemporaryDirectory();
     $project = createBackendAnalysisProject($root);
     $json = json_encode([
+        'localAnnotationOmissions' => [],
         'totals' => ['errors' => 0, 'file_errors' => 1],
         'files' => [
             $project->selectedFiles[0]->analysisPath => [

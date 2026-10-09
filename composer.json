@@ -38,10 +38,13 @@
         "verify:release-readiness": "php tools/release/verify-readiness.php",
         "verify:distribution": "php tools/verify-distribution.php",
         "check": [
+            "@check:contracts",
+            "@test"
+        ],
+        "check:contracts": [
             "@verify:version",
             "@verify:documentation",
             "@analyse",
-            "@test",
             "@verify:php-signatures",
             "@verify:dependency-index",
             "@verify:cache",

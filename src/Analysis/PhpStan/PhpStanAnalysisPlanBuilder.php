@@ -60,6 +60,7 @@ final readonly class PhpStanAnalysisPlanBuilder
             '--configuration=' . $configuration,
             '--error-format=json',
             '--no-progress',
+            '--autoload-file=' . Path::join($this->compilerRoot, 'resources/phpstan/extensions.php'),
             '--memory-limit=' . ini_get('memory_limit'),
         ];
 

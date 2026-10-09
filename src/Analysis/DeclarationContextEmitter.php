@@ -6,8 +6,12 @@ namespace Atatusoft\Ppphp\Analysis;
 
 use Atatusoft\Ppphp\Source\SourceFile;
 use Atatusoft\Ppphp\Frontend\ParsedFile;
+use Atatusoft\Ppphp\Semantic\SemanticModel;
 use Atatusoft\Ppphp\Transpilation\GeneratedPhp;
 use Atatusoft\Ppphp\Transpilation\GeneratedSourceMap;
+use Atatusoft\Ppphp\Transpilation\Pass\EraseGenericTypesPass;
+use Atatusoft\Ppphp\Transpilation\SourceEdit;
+use Atatusoft\Ppphp\Transpilation\TranspilationContext;
 use PhpParser\Node;
 use PhpParser\ParserFactory;
 use PhpParser\PrettyPrinter\Standard;
@@ -21,6 +25,28 @@ final readonly class DeclarationContextEmitter
         private ParserFactory $parsers = new ParserFactory(),
         private Standard $printer = new Standard(),
     ) {}
+
+    /** Retains declaration metadata without requiring valid implementation bodies. */
+    public function emitContext(SemanticModel $model): GeneratedPhp
+    {
+        $file = $model->parsedFile;
+        $context = new TranspilationContext($file, $model);
+        (new EraseGenericTypesPass())->execute($context);
+
+        // Header erasure owns its edits and PHPDoc. All other extension syntax
+        // needs only parser normalization: these bodies are discarded, not run.
+        $headerEdits = $context->sourceEdits;
+        foreach ($file->normalizationPlan->edits as $edit) {
+            if (array_any($headerEdits, static fn (SourceEdit $header): bool =>
+                $header->span->start->offset <= $edit->span->start->offset
+                && $header->span->end->offset >= $edit->span->end->offset)) {
+                continue;
+            }
+            $context->replace($edit->span, $edit->replacement);
+        }
+
+        return $this->emit($file->sourceFile, $context->generate()->contents);
+    }
 
     public function emit(SourceFile $sourceFile, string $loweredPhp): GeneratedPhp
     {

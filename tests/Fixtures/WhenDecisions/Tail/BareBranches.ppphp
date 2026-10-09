@@ -1,0 +1,11 @@
+<?php
+function shipping(bool $express): int
+{
+    readonly int $shipping = when ($express) { return 1200; } else { return 500; };
+    return $shipping;
+}
+function choose(int $condition): int
+{
+    return when ($condition) { return 1; } else { return 2; };
+}
+echo shipping(true), '|', shipping(false), '|', choose(0), choose(2), choose(-1);

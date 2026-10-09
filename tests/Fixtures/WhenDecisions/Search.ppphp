@@ -1,0 +1,15 @@
+<?php
+array<int> $xs = [1, 2, 3, 4];
+int $first = when (count($xs) > 0) {
+    int $hit = 0;
+    foreach ($xs as int $x) {
+        if ($x > 2) {
+            $hit = $x;
+            break;
+        }
+    }
+    return $hit;
+} else {
+    return 0;
+};
+echo $first;

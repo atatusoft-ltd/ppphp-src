@@ -19,6 +19,7 @@ use Atatusoft\Ppphp\Semantic\Call\CallableContractResolver;
 use Atatusoft\Ppphp\Semantic\Call\CallableOrigin;
 use Atatusoft\Ppphp\Semantic\Call\CallableResolutionStatus;
 use Atatusoft\Ppphp\Semantic\Call\GenericCallInference;
+use Atatusoft\Ppphp\Semantic\Call\Enumerations\ArgumentPassingMode;
 use Atatusoft\Ppphp\Semantic\Flow\FlowOutcome;
 use Atatusoft\Ppphp\Semantic\Flow\FlowState;
 use Atatusoft\Ppphp\Semantic\NodeSpanResolver;
@@ -695,6 +696,10 @@ final class AnalyzeTypeFlowPass implements SemanticPass
             $this->analyzeClosure($expression, $scope, $state, $class);
         } elseif ($expression instanceof Expr\ArrowFunction) {
             $this->analyzeArrowFunction($expression, $scope, $state, $class);
+        } elseif ($expression instanceof Expr\Array_) {
+            // ArrayItem is a structural node, not an Expr. Visit its key and
+            // value in order so nested calls retain their verified bindings.
+            $this->analyzeNodeExpressions($expression, $scope, $state, $class);
         } elseif ($expression instanceof Expr\BinaryOp\BooleanAnd) {
             $this->analyzeExpression($expression->left, $scope, $state, $class);
             $rightState = $this->narrow($expression->left, $state->copy(), true);
@@ -896,7 +901,7 @@ final class AnalyzeTypeFlowPass implements SemanticPass
     {
         if ($new->class instanceof Stmt\Class_) {
             $this->analyzeUnindexedClassLike($new->class);
-            $this->analyzeCallArguments($new->args, $scope, $state, $class);
+            $this->analyzeCallArguments($new->args, $scope, $state, $class, $new->class->getMethod('__construct')?->params);
             return;
         }
 
@@ -965,6 +970,10 @@ final class AnalyzeTypeFlowPass implements SemanticPass
         $actualTypes = [];
 
         foreach ($binding->arguments as $bound) {
+            $this->context->model->argumentPassing->record(
+                $bound->argument,
+                $bound->parameter->byReference ? ArgumentPassingMode::Reference : ArgumentPassingMode::Value,
+            );
             $actual = $this->analyzeExpression($bound->argument->value, $scope, $state, $class)->type;
             $actualTypes[spl_object_id($bound->argument)] = $actual;
             $parameterType = $bound->parameter->effectiveType();
@@ -1042,11 +1051,20 @@ final class AnalyzeTypeFlowPass implements SemanticPass
         }
     }
 
-    /** @param array<Arg|Node\VariadicPlaceholder> $arguments */
-    private function analyzeCallArguments(array $arguments, Scope $scope, FlowState $state, ?ClassSymbol $class): void
+    /**
+     * @param array<Arg|Node\VariadicPlaceholder> $arguments
+     * @param array<Node\Param>|null $parameters
+     */
+    private function analyzeCallArguments(array $arguments, Scope $scope, FlowState $state, ?ClassSymbol $class, ?array $parameters = null): void
     {
+        if ($parameters !== null) {
+            $this->context->model->argumentPassing->recordParameters($parameters, $arguments);
+        }
         foreach ($arguments as $argument) {
             if ($argument instanceof Arg) {
+                if ($parameters === null) {
+                    $this->context->model->argumentPassing->record($argument, ArgumentPassingMode::Unknown);
+                }
                 $this->analyzeExpression($argument->value, $scope, $state, $class);
             }
         }

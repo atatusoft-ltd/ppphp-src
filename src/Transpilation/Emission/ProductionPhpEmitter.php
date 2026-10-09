@@ -60,7 +60,7 @@ final readonly class ProductionPhpEmitter implements ProductionEmitter
 
                 $generated = $this->lowerer->lower($parsedFile, $semanticModel, [
                     new RelocateComposerAutoloadPass($project->composer, $entry->outputPath),
-                ]);
+                ], $check->backendResult?->localAnnotationOmissions[$sourceFile->path] ?? []);
                 $contents = $generated->contents;
                 $sourceMap = $generated->sourceMap;
             } else {

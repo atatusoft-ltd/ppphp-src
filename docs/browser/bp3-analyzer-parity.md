@@ -181,6 +181,48 @@ runtime controls NOT RUN. Custom fixture manifests can be investigated with
 `--fixtures`, but cannot certify the required manifest. No expired artifact ID is
 introduced into an ordinary required CI gate.
 
+### Qualifying an existing immutable package
+
+The runtime verifier, BP-3 and BP-4 runners accept `--compiler-package` with
+`--compiler-receipt-sha256`. These select the compiler archive from an already
+verified distribution instead of installing dependencies and constructing a
+new archive. Obtain the receipt pin independently from the owner handoff, not
+from the same untrusted input being admitted. Both options are required together.
+
+Reuse checks the receipt, archive hash, bounded archive structure, closure,
+complete compiler-source membership, resources and production dependency bytes
+against the native reference checkout. Only Composer-generated autoload metadata
+is allowed to differ in the development installation. No package PHP is executed
+by admission, no Composer command runs, and neither archive nor runtime is
+rewritten. The ordinary fresh-package path remains available when these options
+are omitted. A mismatched checkout must be reconciled or qualified as a new
+package; it must not be accepted by updating the expected hash alone.
+
+For a source-built runtime, `--source-built-controls --controls <directory>`
+selects the complete positive control profile: `candidate-control/report.json`,
+`fiber-control/report.json` and `native-control/report.json`, containing all
+15 runtime/analyzer, eight Fiber and 17 native-library/security checks. Native
+controls are produced by `run-fiber-contract.mjs --suite native-contract` against
+the same already-built candidate page. Missing cases, mismatched runtime/lock,
+failed containment observations or cleanup prevent acceptance. The historical
+negative-baseline and explicit repaired-comparison profiles remain unchanged;
+the source-built profile records historical comparison as NOT RUN, not as a
+new execution or a public rollback qualification.
+
+After verifying the distribution and setting these values from its handoff:
+
+```sh
+node tools/php-wasm-runtime/verify-built.mjs --runtime "$RUNTIME_ROOT" --expect candidate --compiler-package "$QUALIFIED_PACKAGE" --compiler-receipt-sha256 "$RECEIPT_SHA256" --output "$EVIDENCE_ROOT/candidate-control"
+node tools/web-spike/scripts/run-fiber-contract.mjs --wasm-sha256 "$WASM_SHA256" --output "$EVIDENCE_ROOT/fiber-control"
+node tools/web-spike/scripts/run-fiber-contract.mjs --suite native-contract --wasm-sha256 "$WASM_SHA256" --output "$EVIDENCE_ROOT/native-control"
+node tools/web-spike/scripts/run-project-parity.mjs --runtime "$RUNTIME_ROOT" --wasm-sha256 "$WASM_SHA256" --compiler-package "$QUALIFIED_PACKAGE" --compiler-receipt-sha256 "$RECEIPT_SHA256" --corpus tools/web-spike/fixtures/website-corpus.json --controls "$EVIDENCE_ROOT" --source-built-controls --output "$EVIDENCE_ROOT/bp3"
+```
+
+Run serially with fresh OS-temporary evidence destinations. These are independent
+compiler/runtime controls, not the installed application's browser/device,
+containment, delivery or usability qualification. The source-built package's
+final BP-8 report records those separate results and exact input identities.
+
 ## Validation and evidence
 
 - Runtime controls: PASS, candidate 15/15; additional Fiber contracts 8/8.

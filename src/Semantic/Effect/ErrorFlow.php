@@ -9,6 +9,7 @@ final readonly class ErrorFlow
     public function __construct(
         public ErrorSet $escapingErrors,
         public bool $mayCompleteNormally = true,
+        public bool $mayProduceWhenResult = false,
     ) {}
 
     public static function createEmpty(bool $mayCompleteNormally = true): self
@@ -25,6 +26,7 @@ final readonly class ErrorFlow
         return new self(
             $this->escapingErrors->combine($next->escapingErrors),
             $next->mayCompleteNormally,
+            $this->mayProduceWhenResult || $next->mayProduceWhenResult,
         );
     }
 }

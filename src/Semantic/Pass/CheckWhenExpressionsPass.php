@@ -15,14 +15,19 @@ use Atatusoft\Ppphp\Frontend\Ast\WhenElseBranch;
 use Atatusoft\Ppphp\Frontend\Ast\WhenExpression;
 use Atatusoft\Ppphp\Semantic\Binding\Enumerations\BindingMutability;
 use Atatusoft\Ppphp\Semantic\Binding\LocalBinding;
+use Atatusoft\Ppphp\Semantic\Call\CallArgumentBinder;
+use Atatusoft\Ppphp\Semantic\Call\CallableContractResolver;
+use Atatusoft\Ppphp\Semantic\Call\Enumerations\ArgumentPassingMode;
 use Atatusoft\Ppphp\Semantic\Pass\Interfaces\SemanticPass;
 use Atatusoft\Ppphp\Semantic\Scope\Scope;
 use Atatusoft\Ppphp\Semantic\SemanticContext;
 use Atatusoft\Ppphp\Semantic\Symbol\ParameterSymbol;
 use Atatusoft\Ppphp\Semantic\Symbol\VariableSymbol;
 use Atatusoft\Ppphp\Semantic\Type\ExpressionTypeResolver;
+use Atatusoft\Ppphp\Semantic\Type\ExpressionTypeResolution;
 use Atatusoft\Ppphp\Semantic\Type\AtomicType;
 use Atatusoft\Ppphp\Semantic\Type\GenericType;
+use Atatusoft\Ppphp\Semantic\Type\IterationTypeResolver;
 use Atatusoft\Ppphp\Semantic\Type\LocalType;
 use Atatusoft\Ppphp\Semantic\Type\MemberTypeResolver;
 use Atatusoft\Ppphp\Semantic\Type\NamedType;
@@ -32,12 +37,15 @@ use Atatusoft\Ppphp\Semantic\Type\TypedArrayType;
 use Atatusoft\Ppphp\Semantic\Type\UnionType;
 use Atatusoft\Ppphp\Semantic\Type\Interfaces\Type;
 use Atatusoft\Ppphp\Semantic\When\WhenBranchAnalysis;
+use Atatusoft\Ppphp\Semantic\When\WhenConditionState;
+use Atatusoft\Ppphp\Semantic\When\WhenDeferredTransfer;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionAnalysis;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionLocation;
 use Atatusoft\Ppphp\Semantic\When\WhenExpressionSite;
 use Atatusoft\Ppphp\Semantic\When\WhenFragmentParser;
 use Atatusoft\Ppphp\Semantic\When\WhenParsedBranch;
 use Atatusoft\Ppphp\Semantic\When\WhenParsedExpression;
+use Atatusoft\Ppphp\Semantic\When\WhenValueLifetime;
 use Atatusoft\Ppphp\Source\Span;
 use PhpParser\Node;
 use PhpParser\Node\Arg;
@@ -46,9 +54,12 @@ use PhpParser\Node\Expr;
 use PhpParser\Node\Param;
 use PhpParser\Node\Stmt;
 
+/** @phpstan-type WhenFlow array{canComplete: bool, types: list<LocalType>, spans: list<Span>, transfers?: list<array{target: Stmt, continues: bool, sourceOffset: int}>, conditions?: WhenConditionState, resultConditions?: array<int, WhenConditionState>} */
 final class CheckWhenExpressionsPass implements SemanticPass
 {
     private SemanticContext $context;
+
+    private CallableContractResolver $callables;
 
     /** @var array<string, WhenParsedExpression> */
     private array $parsed = [];
@@ -66,6 +77,9 @@ final class CheckWhenExpressionsPass implements SemanticPass
     private array $typedForeachBindings = [];
 
     private int $nestedCallableDepth = 0;
+
+    /** @var array<int, Stmt> */
+    private array $transferTargets = [];
 
     /** @var array<int, true> */
     private array $freshArrayResults = [];
@@ -92,6 +106,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
     public function execute(SemanticContext $context): void
     {
         $this->context = $context;
+        $this->callables = new CallableContractResolver($context);
         $this->members = new MemberTypeResolver($context->symbols);
         $this->expressionTypes = $this->configuredExpressionTypes ?? new ExpressionTypeResolver($context, $this->sourceTypes);
         $this->parsed = [];
@@ -100,6 +115,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
         $this->typedForInitializers = [];
         $this->typedForeachBindings = [];
         $this->nestedCallableDepth = 0;
+        $this->transferTargets = [];
         $this->freshArrayResults = [];
 
         foreach ($context->parsedFile->extensionSyntax->typedLocals as $local) {
@@ -178,6 +194,10 @@ final class CheckWhenExpressionsPass implements SemanticPass
         bool $fragment,
         bool $condition,
     ): void {
+        if ($fragment && ($node instanceof Stmt\Break_ || $node instanceof Stmt\Continue_)) {
+            $this->indexTransfer($node, $parent === null ? $ancestors : [$parent, ...$ancestors]);
+        }
+
         $whenId = $node->getAttribute('ppphpWhenExpressionId');
 
         if (is_string($whenId) && $node instanceof Expr) {
@@ -211,8 +231,79 @@ final class CheckWhenExpressionsPass implements SemanticPass
     }
 
     /** @param list<Node> $ancestors */
+    private function indexTransfer(Stmt\Break_|Stmt\Continue_ $transfer, array $ancestors): void
+    {
+        // Each parsed branch is indexed separately, so no target can cross a when boundary.
+        // Nested callables retain their ordinary PHP control flow.
+        if (array_any($ancestors, static fn (Node $node): bool => $node instanceof Node\FunctionLike)) {
+            return;
+        }
+
+        $level = $transfer->num === null ? 1
+            : ($transfer->num instanceof Node\Scalar\Int_ ? $transfer->num->value : 0);
+        $originalLevel = $level;
+        $barriers = [];
+        $message = 'The transfer level must be a positive integer targeting a loop or switch inside this `when` branch.';
+        if ($level > 0) {
+            $message = 'This transfer would leave the `when` branch; its target must be a loop or switch inside the branch.';
+            foreach ($ancestors as $ancestor) {
+                if ($ancestor instanceof Stmt\Finally_) {
+                    $message = 'A control transfer cannot leave a `finally` block; its target must be inside that block.';
+                    break;
+                }
+                if ($ancestor instanceof Stmt\TryCatch && $ancestor->finally !== null
+                    && $this->context->model->whenExpressions->containsResult($ancestor->finally)) {
+                    $barriers[] = [$ancestor, $level];
+                }
+                if (
+                    $ancestor instanceof Stmt\For_ || $ancestor instanceof Stmt\Foreach_
+                    || $ancestor instanceof Stmt\While_ || $ancestor instanceof Stmt\Do_
+                    || $ancestor instanceof Stmt\Switch_
+                ) {
+                    if (--$level !== 0) {
+                        continue;
+                    }
+                    if ($transfer instanceof Stmt\Continue_ && $ancestor instanceof Stmt\Switch_) {
+                        $message = '`continue` targets a switch here. Use `break` to leave it, or a higher level to continue an enclosing loop inside the branch.';
+                        break;
+                    }
+                    $this->transferTargets[$this->span($transfer)->start->offset] = $ancestor;
+                    foreach ($barriers as [$barrier, $barrierLevel]) {
+                        $this->context->model->whenExpressions->recordDeferredTransfer(new WhenDeferredTransfer(
+                            $this->span($transfer)->start->offset, $this->span($ancestor)->start->offset,
+                            $this->span($barrier)->start->offset, $originalLevel - $barrierLevel,
+                            $barrierLevel, $transfer instanceof Stmt\Continue_,
+                        ));
+                    }
+
+                    return;
+                }
+            }
+        }
+
+        $this->addDiagnostic(DiagnosticCode::WhenControlTransferNotAllowed, $message, $this->span($transfer));
+    }
+
+    /** @param list<Node> $ancestors */
     private function resolveSite(Expr $placeholder, ?Node $parent, array $ancestors): WhenExpressionSite
     {
+        $path = $parent === null ? $ancestors : [$parent, ...$ancestors];
+        $owner = $this->resolveStatement($placeholder, $path);
+        // A supported immediate operand still needs an executable lowering site.
+        // In particular, loop headers are not statement lists we can hoist into.
+        if (!$owner instanceof Stmt\Expression && !$owner instanceof Stmt\Return_ && !$owner instanceof Stmt\If_) {
+            return WhenExpressionSite::Unsupported;
+        }
+        foreach ($path as $ancestor) {
+            if ($ancestor === $owner) {
+                break;
+            }
+            if ($ancestor instanceof Expr\ArrowFunction || $ancestor instanceof Node\MatchArm
+                || $ancestor instanceof Param || $ancestor instanceof Node\Attribute) {
+                return WhenExpressionSite::Unsupported;
+            }
+        }
+
         if ($parent instanceof Expr\Assign && $parent->expr === $placeholder) {
             foreach ($this->typedLocals as $local) {
                 if ($local->initializerSpan->start->offset === $this->span($placeholder)->start->offset) {
@@ -276,7 +367,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
         if ($location->site === WhenExpressionSite::Unsupported) {
             $this->addDiagnostic(
                 DiagnosticCode::WhenPositionNotSupported,
-                'This `when` expression is not in a supported value position.',
+                'This `when` expression is not in a supported value position. Put its assignment, return, call, or array in an executable statement body.',
                 $when->span,
             );
         }
@@ -334,29 +425,58 @@ final class CheckWhenExpressionsPass implements SemanticPass
 
     /**
      * @param list<Stmt> $statements
-     * @return array{canComplete: bool, types: list<LocalType>, spans: list<Span>}
+     * @return WhenFlow
      */
-    private function analyzeStatements(array $statements, Scope $scope): array
+    private function analyzeStatements(array $statements, Scope $scope, ?WhenConditionState $conditions = null): array
     {
-        $flow = ['canComplete' => true, 'types' => [], 'spans' => []];
+        $conditions ??= new WhenConditionState();
+        $flow = ['canComplete' => $conditions->reachable, 'types' => [], 'spans' => [], 'transfers' => [],
+            'conditions' => $conditions, 'resultConditions' => []];
 
         foreach ($statements as $statement) {
             if (!$flow['canComplete']) {
                 break;
             }
 
-            $next = $this->analyzeStatement($statement, $scope);
+            $next = $this->analyzeStatement($statement, $scope, $flow['conditions']);
             array_push($flow['types'], ...$next['types']);
             array_push($flow['spans'], ...$next['spans']);
+            array_push($flow['transfers'], ...($next['transfers'] ?? []));
             $flow['canComplete'] = $next['canComplete'];
+            $flow['conditions'] = $next['conditions'] ?? $flow['conditions']->forget();
+            $flow['resultConditions'] += $next['resultConditions'] ?? [];
         }
 
         return $flow;
     }
 
-    /** @return array{canComplete: bool, types: list<LocalType>, spans: list<Span>} */
-    private function analyzeStatement(Stmt $statement, Scope $scope): array
+    /** @return WhenFlow */
+    private function analyzeStatement(Stmt $statement, Scope $scope, WhenConditionState $conditions): array
     {
+        $flow = $this->analyzeStatementFlow($statement, $scope, $conditions);
+        $flow['conditions'] ??= $conditions->advance($statement);
+        if ($statement instanceof Stmt\TryCatch || $statement instanceof Stmt\Foreach_) {
+            $this->context->model->whenExpressions->recordProtectedResultFlow(
+                $this->span($statement)->start->offset, $flow['canComplete'],
+                array_any($flow['types'], static fn (LocalType $type): bool => !$type->includes('never')),
+                ($flow['transfers'] ?? []) !== [],
+            );
+        }
+        if ($statement instanceof Stmt\TryCatch && $statement->finally !== null
+            && !$this->context->model->whenExpressions->containsResult($statement->finally, completingOnly: true)) {
+            $this->context->model->whenExpressions->retainDeferredTransfers($this->span($statement)->start->offset, []);
+        }
+        return $flow;
+    }
+
+    /** @return WhenFlow */
+    private function analyzeStatementFlow(Stmt $statement, Scope $scope, WhenConditionState $conditions): array
+    {
+        if ($statement instanceof Stmt\Declare_ && $statement->stmts !== null) {
+            // A declare block is a statement list, not a return owner or a
+            // transfer target. Results and fallthrough belong to this when.
+            return $this->analyzeStatements(array_values($statement->stmts), $scope, $conditions);
+        }
         if ($statement instanceof Stmt\Return_) {
             if ($statement->expr === null) {
                 $this->addDiagnostic(
@@ -371,6 +491,9 @@ final class CheckWhenExpressionsPass implements SemanticPass
             $this->inspectExpression($statement->expr, $scope);
             $type = $this->resolveExpressionType($statement->expr, $scope);
             $span = $this->span($statement->expr);
+            if ($type->includes('never')) {
+                $this->context->model->whenExpressions->recordTerminatingResult($this->span($statement)->start->offset);
+            }
             if ($this->context->model->whenExpressions->resolveArrayFreshness($statement->expr)) {
                 $this->freshArrayResults[$span->start->offset] = true;
             }
@@ -379,25 +502,32 @@ final class CheckWhenExpressionsPass implements SemanticPass
                 'canComplete' => false,
                 'types' => [$type],
                 'spans' => [$span],
+                'resultConditions' => [$span->start->offset => $conditions->advance($statement->expr)],
             ];
         }
 
         if ($statement instanceof Stmt\If_) {
             $this->inspectExpression($statement->cond, $scope);
-            $flows = [$this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-if'))];
+            $conditions = $conditions->advance($statement->cond);
+            $flows = [$this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-if'),
+                $conditions->assume($statement->cond, true, $scope))];
+            $remaining = $conditions->assume($statement->cond, false, $scope);
             foreach ($statement->elseifs as $elseif) {
                 $this->inspectExpression($elseif->cond, $scope);
-                $flows[] = $this->analyzeStatements(array_values($elseif->stmts), $this->copyScope($scope, 'when-elseif'));
+                $remaining = $remaining->advance($elseif->cond);
+                $flows[] = $this->analyzeStatements(array_values($elseif->stmts), $this->copyScope($scope, 'when-elseif'),
+                    $remaining->assume($elseif->cond, true, $scope));
+                $remaining = $remaining->assume($elseif->cond, false, $scope);
             }
             $flows[] = $statement->else === null
-                ? ['canComplete' => true, 'types' => [], 'spans' => []]
-                : $this->analyzeStatements(array_values($statement->else->stmts), $this->copyScope($scope, 'when-else'));
+                ? ['canComplete' => $remaining->reachable, 'types' => [], 'spans' => [], 'conditions' => $remaining]
+                : $this->analyzeStatements(array_values($statement->else->stmts), $this->copyScope($scope, 'when-else'), $remaining);
 
             return $this->mergeFlows($flows);
         }
 
         if ($statement instanceof Stmt\TryCatch) {
-            $flows = [$this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-try'))];
+            $flows = [$this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-try'), $conditions)];
             foreach ($statement->catches as $catch) {
                 $catchScope = $this->copyScope($scope, 'when-catch');
                 if ($catch->var instanceof Expr\Variable && is_string($catch->var->name)) {
@@ -408,30 +538,69 @@ final class CheckWhenExpressionsPass implements SemanticPass
                         $this->span($catch->var),
                     ));
                 }
-                $flows[] = $this->analyzeStatements(array_values($catch->stmts), $catchScope);
+                $flows[] = $this->analyzeStatements(array_values($catch->stmts), $catchScope, $conditions->forget());
             }
             $combined = $this->mergeFlows($flows);
+            $this->context->model->whenExpressions->retainDeferredTransfers(
+                $this->span($statement)->start->offset, array_column($combined['transfers'] ?? [], 'sourceOffset'),
+            );
+            if (!$combined['canComplete']) {
+                $this->context->model->whenExpressions->recordTerminatingTryBody($this->span($statement)->start->offset);
+            }
             if ($statement->finally === null) {
                 return $combined;
             }
             $finally = $this->analyzeStatements(array_values($statement->finally->stmts), $this->copyScope($scope, 'when-finally'));
+            $successfulStates = $combined['canComplete'] ? [$combined['conditions'] ?? new WhenConditionState()] : [];
+            foreach ($combined['spans'] as $index => $span) {
+                if (!$combined['types'][$index]->includes('never')) {
+                    $successfulStates[] = $combined['resultConditions'][$span->start->offset] ?? new WhenConditionState();
+                }
+            }
+            if (($combined['transfers'] ?? []) !== []) {
+                $successfulStates[] = new WhenConditionState();
+            }
+            $success = WhenConditionState::join($successfulStates);
+            $replacementMayExecute = array_any($combined['types'], static fn (LocalType $type): bool =>
+                !(new WhenValueLifetime())->resolveReleaseSafety($type->semanticType));
+            // Finally is checked independently, then entered only from a
+            // successful protected path: its value cannot recover an error.
+            // Rebase its requirements, since a nested try may have changed a
+            // condition after entry to the enclosing protected region.
+            $finally = $this->continueResultConditions($finally, static function (WhenConditionState $result) use ($success, $replacementMayExecute): WhenConditionState {
+                $state = $success->continueWith($result);
+                // A2 stores the replacement before releasing the old value.
+                // Its destructor can change a condition observed by an outer
+                // finally even when the new operand is an effect-free literal.
+                return $replacementMayExecute ? $state->forget() : $state;
+            });
             if (!$finally['canComplete']) {
                 return $finally;
             }
+            $finallyConditions = $finally['conditions'] ?? new WhenConditionState();
+            $combined = $this->continueResultConditions($combined, static fn (WhenConditionState $result): WhenConditionState =>
+                $result->continueWith($finallyConditions));
+            $normal = ($combined['conditions'] ?? new WhenConditionState())->continueWith($finallyConditions);
+            $combined['canComplete'] = $combined['canComplete'] && $normal->reachable;
             array_push($combined['types'], ...$finally['types']);
             array_push($combined['spans'], ...$finally['spans']);
+            $combined['transfers'] = [...($combined['transfers'] ?? []), ...($finally['transfers'] ?? [])];
+            $combined['resultConditions'] = ($combined['resultConditions'] ?? []) + ($finally['resultConditions'] ?? []);
+            $combined['conditions'] = $normal;
 
             return $combined;
         }
 
         if ($statement instanceof Stmt\Foreach_) {
-            $this->inspectExpression($statement->expr, $scope);
-            $this->declareForeachTarget($statement->keyVar, $scope);
-            $this->declareForeachTarget($statement->valueVar, $scope);
-            $body = $this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-loop'));
-            $body['canComplete'] = true;
+            $this->inspectForeachHeader($statement, $scope);
+            $body = $this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-loop'), $conditions->forget());
+            // An explicit item guarantees entry even alongside unpacking. An
+            // unpacked iterable alone can be empty, regardless of item type.
+            $enters = $statement->expr instanceof Expr\Array_
+                && array_any($statement->expr->items, static fn (ArrayItem $item): bool => !$item->unpack);
+            $body['canComplete'] = !$enters || $body['canComplete'];
 
-            return $body;
+            return $this->completeLoopFlow($body, $statement);
         }
 
         if (
@@ -440,10 +609,15 @@ final class CheckWhenExpressionsPass implements SemanticPass
             || $statement instanceof Stmt\Do_
         ) {
             $this->inspectNode($statement, $scope, true);
-            $body = $this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-loop'));
-            $body['canComplete'] = true;
+            $body = $this->analyzeStatements(array_values($statement->stmts), $this->copyScope($scope, 'when-loop'), $conditions->forget());
+            $condition = $statement instanceof Stmt\For_
+                ? ($statement->cond === [] ? null : $statement->cond[array_key_last($statement->cond)])
+                : $statement->cond;
+            $repeats = $condition === null || $this->resolveLiteralTruth($condition) === true;
+            $canSkip = !$statement instanceof Stmt\Do_ && !$repeats;
+            $body['canComplete'] = $canSkip || ($body['canComplete'] && !$repeats);
 
-            return $body;
+            return $this->completeLoopFlow($body, $statement, $repeats);
         }
 
         if ($statement instanceof Stmt\Switch_) {
@@ -455,23 +629,30 @@ final class CheckWhenExpressionsPass implements SemanticPass
                 if ($case->cond !== null) {
                     $this->inspectExpression($case->cond, $scope);
                 }
-                $flows[] = $this->analyzeStatements(array_values($case->stmts), $this->copyScope($scope, 'when-case'));
+                $flows[] = $this->analyzeStatements(array_values($case->stmts), $this->copyScope($scope, 'when-case'), $conditions->forget());
+            }
+            // A case that falls through continues into the next case, not past the switch.
+            $canFallThrough = true;
+            foreach (array_reverse($flows, true) as $index => $flow) {
+                $canFallThrough = $flow['canComplete'] && $canFallThrough;
+                $flow['canComplete'] = $canFallThrough;
+                $flows[$index] = $flow;
             }
             if (!$hasDefault) {
                 $flows[] = ['canComplete' => true, 'types' => [], 'spans' => []];
             }
 
-            return $this->mergeFlows($flows);
+            return $this->consumeTransfers($this->mergeFlows($flows), $statement);
         }
 
-        if (($statement instanceof Stmt\Break_ || $statement instanceof Stmt\Continue_) && $this->nestedCallableDepth === 0) {
-            $this->addDiagnostic(
-                DiagnosticCode::WhenControlTransferNotAllowed,
-                '`break` and `continue` cannot originate in a `when` branch.',
-                $this->span($statement),
-            );
+        if ($statement instanceof Stmt\Break_ || $statement instanceof Stmt\Continue_) {
+            $target = $this->transferTargets[$this->span($statement)->start->offset] ?? null;
 
-            return ['canComplete' => false, 'types' => [], 'spans' => []];
+            return [
+                'canComplete' => false, 'types' => [], 'spans' => [],
+                'transfers' => $target === null ? [] : [['target' => $target, 'continues' => $statement instanceof Stmt\Continue_,
+                    'sourceOffset' => $this->span($statement)->start->offset]],
+            ];
         }
 
         if (($statement instanceof Stmt\Goto_ || $statement instanceof Stmt\Label) && $this->nestedCallableDepth === 0) {
@@ -511,13 +692,19 @@ final class CheckWhenExpressionsPass implements SemanticPass
             return;
         }
 
-        if (($node instanceof Stmt\Break_ || $node instanceof Stmt\Continue_) && $this->nestedCallableDepth === 0) {
-            $this->addDiagnostic(
-                DiagnosticCode::WhenControlTransferNotAllowed,
-                '`break` and `continue` cannot originate in a `when` branch.',
-                $this->span($node),
-            );
+        if ($node instanceof Stmt\Foreach_) {
+            $this->inspectForeachHeader($node, $scope);
+            if (!$skipLoopBody) {
+                foreach ($node->stmts as $statement) {
+                    $this->inspectNode($statement, $scope, false);
+                }
+            }
 
+            return;
+        }
+
+        if (($node instanceof Stmt\Break_ || $node instanceof Stmt\Continue_) && $this->nestedCallableDepth === 0) {
+            // Transfers are validated during indexing, including unreachable statements.
             return;
         }
 
@@ -614,9 +801,14 @@ final class CheckWhenExpressionsPass implements SemanticPass
                 );
             } else {
                 $symbol->binding?->recordRead($this->span($expression));
+                $this->resolveExpressionType($expression, $scope);
             }
 
             return;
+        }
+
+        if ($expression instanceof Expr\CallLike) {
+            $this->recordArgumentPassing($expression, $scope);
         }
 
         foreach ($expression->getSubNodeNames() as $name) {
@@ -634,6 +826,41 @@ final class CheckWhenExpressionsPass implements SemanticPass
                     }
                 }
             }
+        }
+    }
+
+    private function recordArgumentPassing(Expr\CallLike $call, Scope $scope): void
+    {
+        if ($call instanceof Expr\New_ && $call->class instanceof Stmt\Class_) {
+            $constructor = $call->class->getMethod('__construct');
+            if ($constructor !== null) {
+                $this->context->model->argumentPassing->recordParameters($constructor->params, $call->args);
+            }
+            return;
+        }
+        $resolved = null;
+        if ($call instanceof Expr\FuncCall && $call->name instanceof Node\Name) {
+            $resolved = $this->callables->resolveFunction($call->name);
+        } elseif (($call instanceof Expr\MethodCall || $call instanceof Expr\NullsafeMethodCall)
+            && $call->name instanceof Node\Identifier) {
+            $resolved = $this->callables->resolveMethod(
+                $this->resolveExpressionType($call->var, $scope)->semanticType, $call->name->toString(),
+            );
+        } elseif (($call instanceof Expr\New_ || $call instanceof Expr\StaticCall) && $call->class instanceof Node\Name) {
+            $receiver = $this->sourceTypes->resolveNode(
+                $call->class, $this->context->parsedFile, $this->context->resolvedNames, $this->context->genericDeclarations,
+            );
+            $resolved = $call instanceof Expr\New_
+                ? $this->callables->resolveConstructor($receiver)
+                : ($call->name instanceof Node\Identifier ? $this->callables->resolveMethod($receiver, $call->name->toString()) : null);
+        }
+        if ($resolved?->contract === null) {
+            return;
+        }
+        foreach ((new CallArgumentBinder())->bind($resolved->contract, $call->getRawArgs())->arguments as $bound) {
+            $this->context->model->argumentPassing->record(
+                $bound->argument, $bound->parameter->byReference ? ArgumentPassingMode::Reference : ArgumentPassingMode::Value,
+            );
         }
     }
 
@@ -721,20 +948,46 @@ final class CheckWhenExpressionsPass implements SemanticPass
             );
         }
         $symbol->binding?->recordWrite($this->span($assignment->var));
+        $this->context->model->bindings->recordWriteContract($symbol, $this->span($assignment->var));
+    }
+
+    private function resolveLiteralTruth(Expr $expression): ?bool
+    {
+        if ($expression instanceof Node\Scalar\Int_ || $expression instanceof Node\Scalar\Float_
+            || $expression instanceof Node\Scalar\String_) {
+            return (bool) $expression->value;
+        }
+        if ($expression instanceof Expr\ConstFetch) {
+            return match (strtolower($expression->name->toString())) {
+                'true' => true,
+                'false', 'null' => false,
+                default => null,
+            };
+        }
+        if ($expression instanceof Expr\BooleanNot) {
+            $truth = $this->resolveLiteralTruth($expression->expr);
+            return $truth === null ? null : !$truth;
+        }
+        if (($expression instanceof Expr\UnaryPlus || $expression instanceof Expr\UnaryMinus)
+            && ($expression->expr instanceof Node\Scalar\Int_ || $expression->expr instanceof Node\Scalar\Float_)) {
+            return (bool) $expression->expr->value;
+        }
+        return null;
     }
 
     private function resolveExpressionType(Expr $expression, Scope $scope): LocalType
     {
         $when = $this->context->model->whenExpressions->findPlaceholder($expression);
-        if ($when !== null) {
-            return $when->resultType;
-        }
-
-        if ($expression instanceof Expr\Array_) {
-            return $this->resolveArrayLiteralType($expression, $scope);
-        }
-
-        return $this->expressionTypes->resolve($expression, $scope);
+        $type = $when->resultType ?? ($expression instanceof Expr\Array_
+            ? $this->resolveArrayLiteralType($expression, $scope)
+            : $this->expressionTypes->resolve($expression, $scope));
+        // Fragment expressions are not visited by ordinary PHP flow analysis.
+        // Retain their contextual types for lowering and other model consumers.
+        $this->context->model->expressionTypes->record(
+            $this->context->parsedFile->sourceFile, $expression,
+            $type->unknown ? ExpressionTypeResolution::unknown() : ExpressionTypeResolution::known($type->semanticType),
+        );
+        return $type;
     }
 
     private function checkContextType(WhenExpressionAnalysis $analysis, Scope $scope): void
@@ -1026,7 +1279,22 @@ final class CheckWhenExpressionsPass implements SemanticPass
         return $copy;
     }
 
-    private function declareForeachTarget(?Expr $target, Scope $scope): void
+    private function inspectForeachHeader(Stmt\Foreach_ $foreach, Scope $scope): void
+    {
+        $this->inspectExpression($foreach->expr, $scope);
+        [$key, $value] = (new IterationTypeResolver())->resolve($this->resolveExpressionType($foreach->expr, $scope));
+        if ($foreach->byRef) {
+            $this->addDiagnostic(
+                DiagnosticCode::UnsupportedLocalBindingPosition,
+                'By-reference foreach targets are not supported in ++PHP.',
+                $this->span($foreach->valueVar),
+            );
+        }
+        $this->declareForeachTarget($foreach->keyVar, $scope, $key);
+        $this->declareForeachTarget($foreach->valueVar, $scope, $value);
+    }
+
+    private function declareForeachTarget(?Expr $target, Scope $scope, LocalType $assignedType): void
     {
         if (!$target instanceof Expr\Variable || !is_string($target->name)) {
             if ($target !== null) {
@@ -1056,6 +1324,13 @@ final class CheckWhenExpressionsPass implements SemanticPass
                     $span,
                 );
             } else {
+                if (!$this->compatibility->accepts($symbol->type, $assignedType, $this->context->symbols)) {
+                    $this->addDiagnostic(
+                        DiagnosticCode::AssignmentNotAssignableToDeclaredType,
+                        sprintf('Iteration value of type %s is not assignable to declared type %s.', $assignedType->text, $symbol->type->text),
+                        $span,
+                    );
+                }
                 $symbol->binding?->recordWrite($span);
             }
 
@@ -1075,6 +1350,13 @@ final class CheckWhenExpressionsPass implements SemanticPass
         }
 
         $type = $this->resolveSourceLocalType($declaration->type);
+        if (!$type->equalsCanonical($assignedType)) {
+            $this->addDiagnostic(
+                DiagnosticCode::LoopBindingTypeDoesNotMatch,
+                sprintf('The %s binding type %s must exactly match the collection contract %s.', $declaration->position->value, $type->text, $assignedType->text),
+                $declaration->type->span,
+            );
+        }
         $binding = new LocalBinding(
             $declaration->id,
             $name,
@@ -1084,7 +1366,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
             $declaration->variableSpan,
             null,
             null,
-            LocalType::createUnknown(),
+            $assignedType,
         );
         $binding->recordWrite($declaration->variableSpan);
         $this->context->model->bindings->record($binding);
@@ -1212,19 +1494,89 @@ final class CheckWhenExpressionsPass implements SemanticPass
     }
 
     /**
-     * @param list<array{canComplete: bool, types: list<LocalType>, spans: list<Span>}> $flows
-     * @return array{canComplete: bool, types: list<LocalType>, spans: list<Span>}
+     * @param list<WhenFlow> $flows
+     * @return WhenFlow
      */
     private function mergeFlows(array $flows): array
     {
-        $combined = ['canComplete' => false, 'types' => [], 'spans' => []];
+        $combined = ['canComplete' => false, 'types' => [], 'spans' => [], 'transfers' => [], 'resultConditions' => []];
+        $states = [];
         foreach ($flows as $flow) {
             $combined['canComplete'] = $combined['canComplete'] || $flow['canComplete'];
             array_push($combined['types'], ...$flow['types']);
             array_push($combined['spans'], ...$flow['spans']);
+            array_push($combined['transfers'], ...($flow['transfers'] ?? []));
+            $combined['resultConditions'] += $flow['resultConditions'] ?? [];
+            if ($flow['canComplete']) {
+                $states[] = $flow['conditions'] ?? new WhenConditionState();
+            }
         }
+        $combined['conditions'] = WhenConditionState::join($states);
 
         return $combined;
+    }
+
+    /** @param WhenFlow $flow
+     * @param callable(WhenConditionState): WhenConditionState $continue
+     * @return WhenFlow
+     */
+    private function continueResultConditions(array $flow, callable $continue): array
+    {
+        foreach ($flow['spans'] as $index => $span) {
+            $state = $continue($flow['resultConditions'][$span->start->offset] ?? new WhenConditionState());
+            if (!$state->reachable) {
+                unset($flow['types'][$index], $flow['spans'][$index], $flow['resultConditions'][$span->start->offset]);
+            } else {
+                $flow['resultConditions'][$span->start->offset] = $state;
+            }
+        }
+        $flow['types'] = array_values($flow['types']);
+        $flow['spans'] = array_values($flow['spans']);
+        return $flow;
+    }
+
+    /**
+     * @param WhenFlow $flow
+     * @return WhenFlow
+     */
+    private function consumeTransfers(array $flow, Stmt $target, bool $alwaysRepeats = false): array
+    {
+        $remaining = [];
+        $resumes = false;
+        foreach ($flow['transfers'] ?? [] as $transfer) {
+            if ($transfer['target'] === $target) {
+                // A continue reaches the next condition, not the statement
+                // after an unconditional loop. Break always exits its target.
+                $flow['canComplete'] = $flow['canComplete'] || !$transfer['continues'] || !$alwaysRepeats;
+                $resumes = $resumes || !$transfer['continues'] || !$alwaysRepeats;
+            } else {
+                $remaining[] = $transfer;
+            }
+        }
+        $flow['transfers'] = $remaining;
+        if ($resumes) {
+            $flow['conditions'] = new WhenConditionState(preservesEntry: false);
+        }
+
+        return $flow;
+    }
+
+    /** @param WhenFlow $flow
+     * @return WhenFlow
+     */
+    private function completeLoopFlow(array $flow, Stmt $loop, bool $alwaysRepeats = false): array
+    {
+        $flow = $this->consumeTransfers($flow, $loop, $alwaysRepeats);
+        // A loop may revisit writes, and leaving a foreach can run cleanup.
+        $flow['conditions'] = new WhenConditionState(preservesEntry: false);
+        $flow['resultConditions'] = array_map(static fn (WhenConditionState $state): WhenConditionState =>
+            $state->forget(), $flow['resultConditions'] ?? []);
+        if (!$flow['canComplete'] && ($flow['transfers'] ?? []) === []) {
+            // Share the checked reachability with lowering. An outward break
+            // is not a result, even when this loop cannot finish normally.
+            $this->context->model->whenExpressions->recordTerminatingLoop($this->span($loop)->start->offset);
+        }
+        return $flow;
     }
 
     /** @param list<LocalType> $types */

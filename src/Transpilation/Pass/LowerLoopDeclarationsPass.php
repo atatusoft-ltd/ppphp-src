@@ -65,9 +65,14 @@ final class LowerLoopDeclarationsPass implements TranspilationPass
                 throw new \LogicException('A typed loop declaration cannot be lowered without its semantic binding.');
             }
 
-            $lines[] = sprintf('@var %s %s', (new LocalBindingTypeRenderer())->render($binding, $context), $binding->name);
+            if ($context->shouldEmitLocalAnnotation($declaration->loopKeywordSpan, $binding->name)) {
+                $lines[] = sprintf('@var %s %s', (new LocalBindingTypeRenderer())->render($binding, $context), $binding->name);
+            }
         }
 
+        if ($lines === []) {
+            return;
+        }
         $newline = str_contains($context->parsedFile->sourceFile->contents, "\r\n") ? "\r\n" : "\n";
         $doc = count($lines) === 1
             ? sprintf('/** %s */', $lines[0])
@@ -112,6 +117,6 @@ final class LowerLoopDeclarationsPass implements TranspilationPass
             $trivia .= substr($token->text, $overlapStart - $token->start, $overlapEnd - $overlapStart);
         }
 
-        return trim($trivia) === '' ? ' ' : $trivia;
+        return ltrim($trivia, " \t");
     }
 }

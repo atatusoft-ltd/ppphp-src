@@ -7,6 +7,7 @@ import { ROOT, SPIKE, nativeCase, runProcess, verifyRuntime, readBoundedJson } f
 import { CONFIGURATION, validateCorpus, verifySourceHashes, runtimeConsoleFailures } from '../src/parity-contract.mjs';
 import { createOutput, sha256, launchChrome, collectObservation } from './run-baseline.mjs';
 import { forcedLoaderPlugin, findModeArtifact } from './inspect-runtime-modes.mjs';
+import { compilerPackageArguments } from './prepare-compiler-bundle.mjs';
 
 export function nativeBuild(fixture) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'ppphp-workflow-native-')));
@@ -24,8 +25,8 @@ export function nativeBuild(fixture) {
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
-export async function buildWorkflowPage(runtime) {
-  const bundle = runProcess(process.execPath, [join(SPIKE, 'scripts/prepare-compiler-bundle.mjs')], ROOT, 120000);
+export async function buildWorkflowPage(runtime, compilerArguments = []) {
+  const bundle = runProcess(process.execPath, [join(SPIKE, 'scripts/prepare-compiler-bundle.mjs'), ...compilerArguments], ROOT, 120000);
   if (bundle.exitCode !== 0) throw new Error('Compiler bundle failed: ' + bundle.stderr);
   const descriptor = { phpVersion: '8.4.23', sapi: 'cli', intSize: 8, artifact: 'sha256:' + runtime.wasmSha256, loader: 'sha256:' + runtime.loaderSha256 };
   writeFileSync(join(SPIKE, 'public/generated/workflow-runtime.json'), JSON.stringify(descriptor));
@@ -73,9 +74,10 @@ export async function main(args = process.argv.slice(2)) {
   const options = {};
   for (let i = 0; i < args.length; i += 2) {
     if (args[i] === '--sequence-only') { options[args[i]] = true; i--; continue; }
-    if (!['--runtime', '--wasm-sha256', '--corpus', '--output', '--case'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Invalid workflow option');
+    if (!['--runtime', '--wasm-sha256', '--corpus', '--output', '--case', '--compiler-package', '--compiler-receipt-sha256'].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error('Invalid workflow option');
     options[args[i]] = args[i + 1];
   }
+  const compilerArguments = compilerPackageArguments(options);
   const output = createOutput(options['--output']);
   const report = { format: 'ppphp.bp4-workflow', version: 1, observedAt: new Date().toISOString(), status: 'NOT RUN', productionReady: false, cases: [] };
   const save = () => writeFileSync(join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');
@@ -115,7 +117,7 @@ export async function main(args = process.argv.slice(2)) {
       report.cases.push({ id: fixture.id, native, nativeBuild: build }); save();
       console.log(`Native workflow ${fixture.id}: check ${native.completion?.status}, build ${build?.process.exitCode ?? 'N/A'}`);
     }
-    server = await buildWorkflowPage(report.runtime);
+    server = await buildWorkflowPage(report.runtime, compilerArguments);
     report.compilerArchive = readBoundedJson(join(SPIKE, 'public/generated/compiler.json'));
     const identifyAssets = (directory, prefix = '') => readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const path = prefix + entry.name;

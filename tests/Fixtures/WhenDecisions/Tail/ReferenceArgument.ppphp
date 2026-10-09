@@ -1,0 +1,8 @@
+<?php
+function replaceValue(int &$target, int $replacement): void { $target = $replacement; }
+function invoke(int $value): int
+{
+    replaceValue($value, when (getenv('BRANCH') !== 'other') { return 2; } else { return 3; });
+    return $value;
+}
+echo invoke(1);

@@ -1,0 +1,42 @@
+<?php
+function pick(bool $first, bool $a, bool $b): int
+{
+    int $result = when ($first) {
+        if ($a) {
+            echo 'first|';
+            if ($b) { return 1; }
+        }
+        if ($a || $b) { return 2; }
+        echo 'rest|';
+        return 3;
+    } else { return 4; };
+    return $result;
+}
+function maybe(int $take): ?int
+{
+    ?int $result = when ($take !== -1) {
+        if ($take > 0) {
+            echo 'guard|';
+            if ($take > 5) { return null; }
+        }
+        echo 'rest|';
+        return $take;
+    } else { return -1; };
+    return $result;
+}
+function fromSwitch(int $key): string
+{
+    string $result = when ($key > 0) {
+        switch ($key) {
+            case 1: return 'one';
+            case 2: echo 'two|'; break;
+            default: echo 'other|';
+        }
+        echo 'rest|';
+        return 'tail:' . $key;
+    } else { return 'zero'; };
+    return $result;
+}
+echo pick(true, true, true), '|', pick(true, false, true), '|', pick(true, false, false), '|', pick(false, true, true), '|';
+echo json_encode(maybe(-1)), '|', json_encode(maybe(2)), '|', json_encode(maybe(9)), '|';
+echo fromSwitch(1), '|', fromSwitch(2), '|', fromSwitch(3), '|', fromSwitch(0);

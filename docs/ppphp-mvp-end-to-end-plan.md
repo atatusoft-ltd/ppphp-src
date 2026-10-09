@@ -2,8 +2,8 @@
 
 > **Repository:** `atatusoft-ltd/ppphp-src`
 > **Branch:** `develop`
-> **Status:** Stages 0–12, post-Stage-12 semantic closure, Stages 13A–13D, the post-Stage-13C completion gate, and Stage 14A are complete; Stage 14B publication is next
-> **Last updated:** 2026-09-02
+> **Status:** Stages 0–12, post-Stage-12 semantic closure, Stages 13A–13D, the post-Stage-13C completion gate, and Stage 14A are complete; Release Candidates are published, with Stage 14B public artifact and installation acceptance still incomplete
+> **Last updated:** 2026-10-09
 
 ## 1. Purpose
 
@@ -1181,7 +1181,7 @@ Do not lower through closures. Use deterministic, collision-free temporary varia
 | 13 | Incremental performance, security, and hardening |
 | 14 | Public MVP release |
 
-Stages are completed in order. Stages 0–12, the post-Stage-12 semantic closure, Stages 13A–13D, and Stage 14A are complete; Stage 14B publication is next. A later stage must not excuse an incomplete earlier acceptance criterion.
+Stages are completed in order. Stages 0–12, the post-Stage-12 semantic closure, Stages 13A–13D, and Stage 14A are complete. RC-1 and RC-2 are published, but Stage 14B public artifact and installation acceptance remains incomplete. A later stage must not excuse an incomplete earlier acceptance criterion.
 
 ---
 
@@ -1552,6 +1552,13 @@ composition, defaults, constants, attributes, match arms, arrow bodies, array
 keys or unpacking, call unpacking, by-reference arguments, or another `when`
 condition. Unsupported sites receive a dedicated `P5005` diagnostic.
 
+The owning statement is part of this position contract: loop headers,
+`switch` conditions/cases, `foreach` inputs, and `echo`/`unset` statements are
+not lowering sites, even through an assignment or call. Executable loop bodies
+and assignments in `if`/`elseif` conditions remain supported. Lowering rejects
+any surviving marked `when` placeholder before emitting a replacement; an
+authored `null` is not a placeholder.
+
 Parse each condition and branch body as source-mapped PHP fragments after
 recursively normalizing nested ++PHP syntax. Store semantic branch structure,
 result expressions, result types, termination, and nesting in a dedicated
@@ -1919,6 +1926,33 @@ identity to `2026.3.1-rc-2` while retaining the first candidate's notes as
 history.
 
 ### Stage 14B — Publish And Validate The Release Candidate
+
+**Status:** Partially complete. GitHub published `2026.3.1-rc-1` on
+2026-09-03 and `2026.3.1-rc-2` on 2026-09-08. The 2026-10-09 inventory
+found no attached release assets for RC-2. Public asset, immutable schema,
+checksum and clean Composer-install verification must be recorded before this
+stage can be marked complete. Do not rewrite published tags or treat a
+prerelease listing as acceptance evidence. Stable promotion remains pending.
+
+The same inventory verified a fresh public RC-2 Composer installation on
+macOS with PHP 8.5.11: exact version reporting, `init`, Composer configuration,
+optimized strict autoloading, `check`, `build`, generated PHP lint and execution
+passed with a 512 MiB process allowance. Repeating public RC-2 `check` and
+`build` at the unchanged 128 MiB PHP default exhausted memory. The current
+`develop` compiler passes fresh checks and builds of the same consumer at an
+explicit 128 MiB ceiling; those memory fixes are not in the published tag.
+The installed-distribution gate now starts the CLI at 128 MiB without an
+inherited compiler-budget override, leaving the CLI responsible for its own
+memory policy instead of masking startup defects with a pre-raised allowance.
+RC-2's configured immutable schema URL returned HTTP 404. The tagged
+RC-2 source reconstructed all five release assets reproducibly, but its rendered
+notes differ from the published release body. Completing the public assets and
+notes contract requires the owner's publication decision; no tag or published
+content was changed by this verification.
+The original tagged-release verification job passed; its publication job failed
+at the duplicate-publication guard because the GitHub release already existed.
+Keep that guard intact: rerunning ordinary publication is not a repair procedure
+for an existing release with missing assets.
 
 Prepare on `develop` and integrate intended changes into `main`. Only when ready,
 cut `release/<canonical-version>` from `main`, complete verification of the exact

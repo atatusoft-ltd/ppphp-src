@@ -233,6 +233,10 @@ JSON process result is rejected rather than decoded with replacement characters.
 Use the verified retained runtime directory. Do not rebuild PHP for JavaScript,
 fixtures or documentation changes. Set `PHP_BINARY` to a supported native PHP
 binary and keep all raw outputs in an OS temporary directory outside workspaces.
+To qualify a sealed distribution, also pass `--compiler-package` and its
+independent `--compiler-receipt-sha256` to `run-workflow.mjs`. The shared
+[archive reuse checks](bp3-analyzer-parity.md#qualifying-an-existing-immutable-package)
+preserve its exact compiler bytes and reject a mismatched native reference.
 The evidence directory must be beneath the runtime's `os.tmpdir()`; set `TMPDIR`
 to the chosen OS temporary root when using a different system temporary location.
 The original runtime verification archive is historical provenance, not the

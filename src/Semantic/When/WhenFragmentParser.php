@@ -10,6 +10,7 @@ use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticLabel;
 use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
 use Atatusoft\Ppphp\Frontend\Ast\WhenExpression;
+use Atatusoft\Ppphp\Frontend\Normalization\SourceMask;
 use Atatusoft\Ppphp\Frontend\ParsedFile;
 use Atatusoft\Ppphp\Frontend\PhpSyntaxMessage;
 use Atatusoft\Ppphp\Source\Span;
@@ -226,11 +227,11 @@ final readonly class WhenFragmentParser
 
     private function mask(string $text): string
     {
-        return preg_replace('/[^\r\n]/', ' ', $text) ?? $text;
+        return SourceMask::erase($text);
     }
 
     private function placeholder(string $text): string
     {
-        return substr_replace($this->mask($text), 'null', 0, 4);
+        return substr_replace(SourceMask::erase($text, preserveComments: false), 'null', 0, 4);
     }
 }

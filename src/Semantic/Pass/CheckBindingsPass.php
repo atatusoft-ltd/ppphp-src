@@ -31,6 +31,7 @@ use Atatusoft\Ppphp\Semantic\Type\CompositeTypeValidator;
 use Atatusoft\Ppphp\Semantic\Type\GenericType;
 use Atatusoft\Ppphp\Semantic\Type\IntersectionType;
 use Atatusoft\Ppphp\Semantic\Type\LocalType;
+use Atatusoft\Ppphp\Semantic\Type\IterationTypeResolver;
 use Atatusoft\Ppphp\Semantic\Type\TypeCompatibility;
 use Atatusoft\Ppphp\Semantic\Type\TypedArrayType;
 use Atatusoft\Ppphp\Semantic\Type\TypeParameter;
@@ -521,7 +522,7 @@ final class CheckBindingsPass implements SemanticPass
     {
         $this->processNode($foreach->expr, $scope);
         $declaredBindings = [];
-        [$keyType, $valueType] = $this->resolveIterationTypes(
+        [$keyType, $valueType] = (new IterationTypeResolver())->resolve(
             $this->expressionTypes->resolve($foreach->expr, $scope),
         );
 
@@ -709,21 +710,6 @@ final class CheckBindingsPass implements SemanticPass
         ));
 
         return $binding;
-    }
-
-    /** @return array{LocalType, LocalType} */
-    private function resolveIterationTypes(LocalType $collection): array
-    {
-        $contract = $this->resolveTypedArrayContract($collection->semanticType);
-
-        if ($contract !== null) {
-            return [
-                LocalType::createFromSemanticType($contract->keyType),
-                LocalType::createFromSemanticType($contract->valueType),
-            ];
-        }
-
-        return [LocalType::createAtomic('mixed'), LocalType::createAtomic('mixed')];
     }
 
     private function processIterationTarget(Expr $target, Scope $scope, ?LocalType $assignedType = null): void
@@ -988,6 +974,7 @@ final class CheckBindingsPass implements SemanticPass
 
             $symbol->binding?->recordWrite($span);
             $symbol->binding?->markInitialized();
+            $this->context->model->bindings->recordWriteContract($symbol, $span);
 
             return;
         }
@@ -2014,23 +2001,10 @@ final class CheckBindingsPass implements SemanticPass
             return null;
         }
 
-        $initializerStart = $assignment->expr->getStartFilePos();
-        $initializerEnd = $assignment->expr->getEndFilePos() + 1;
-        $whenId = $assignment->expr->getAttribute('ppphpWhenExpressionId');
-
-        if (is_string($whenId)) {
-            foreach ($this->context->parsedFile->extensionSyntax->whenExpressions as $when) {
-                if ($when->id->value === $whenId) {
-                    $initializerStart = $when->span->start->offset;
-                    $initializerEnd = $when->span->end->offset;
-                    break;
-                }
-            }
-        }
-
+        $initializer = $this->resolveInitializerSpan($assignment->expr);
         if (
-            $declaration->initializerSpan->start->offset !== $initializerStart
-            || $declaration->initializerSpan->end->offset !== $initializerEnd
+            $declaration->initializerSpan->start->offset !== $initializer->start->offset
+            || $declaration->initializerSpan->end->offset !== $initializer->end->offset
         ) {
             $this->addInternalAssociationDiagnostic($declaration);
 
@@ -2049,9 +2023,10 @@ final class CheckBindingsPass implements SemanticPass
             return null;
         }
 
+        $initializer = $this->resolveInitializerSpan($assignment->expr);
         if (
-            $declaration->initializerSpan->start->offset !== $assignment->expr->getStartFilePos()
-            || $declaration->initializerSpan->end->offset !== $assignment->expr->getEndFilePos() + 1
+            $declaration->initializerSpan->start->offset !== $initializer->start->offset
+            || $declaration->initializerSpan->end->offset !== $initializer->end->offset
         ) {
             $this->addDiagnostic(
                 DiagnosticCode::InternalCompilerError,
@@ -2063,6 +2038,20 @@ final class CheckBindingsPass implements SemanticPass
         }
 
         return $declaration;
+    }
+
+    private function resolveInitializerSpan(Expr $expression): Span
+    {
+        $whenId = $expression->getAttribute('ppphpWhenExpressionId');
+        if (is_string($whenId)) {
+            foreach ($this->context->parsedFile->extensionSyntax->whenExpressions as $when) {
+                if ($when->id->value === $whenId) {
+                    return $when->span;
+                }
+            }
+        }
+
+        return $this->createNodeSpan($expression);
     }
 
     private function addInternalAssociationDiagnostic(TypedLocalDeclaration $declaration): void

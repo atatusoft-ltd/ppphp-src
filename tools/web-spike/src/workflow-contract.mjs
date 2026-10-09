@@ -28,9 +28,10 @@ export async function validateInvocation(invocation) {
   const command = invocation.command;
   if (!Array.isArray(command) || command.some((s) => typeof s !== 'string')) throw new Error('Malformed compiler invocation');
   if (invocation.kind === 'phpstan') {
-    if (command.length !== 8 || command[0] !== 'php' || command[1] !== '/opt/ppphp/vendor/phpstan/phpstan/phpstan' || command[2] !== 'analyse'
+    if (command.length !== 9 || command[0] !== 'php' || command[1] !== '/opt/ppphp/vendor/phpstan/phpstan/phpstan' || command[2] !== 'analyse'
       || command[3] !== '--configuration=/workspace/.cache/analysis/phpstan.neon' || command[4] !== '--error-format=json'
-      || command[5] !== '--no-progress' || command[6] !== '--memory-limit=256M' || command[7] !== '--debug'
+      || command[5] !== '--no-progress' || command[6] !== '--autoload-file=/opt/ppphp/resources/phpstan/extensions.php'
+      || command[7] !== '--memory-limit=256M' || command[8] !== '--debug'
       || !Array.isArray(invocation.progressPaths) || !invocation.progressPaths.length || invocation.progressPaths.length > 64) throw new Error('Unapproved analyzer invocation');
     for (const path of invocation.progressPaths) {
       if (!path.startsWith('/workspace/.cache/analysis/selected/')) throw new Error('Unapproved analysis path');

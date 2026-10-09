@@ -7,10 +7,12 @@ namespace Atatusoft\Ppphp\Analysis\Browser;
 /** Only identities and bounded process observations persist, never compiler models. */
 final class WorkflowSession
 {
+    public const int MAXIMUM_BYTES = 3_145_728;
     /**
      * @param list<string> $invocations
      * @param list<string> $usedIds
      * @param array<string, mixed>|null $previousPublication
+     * @param list<WorkflowProcessResult> $annotationResults
      */
     public function __construct(
         public readonly WorkflowRequest $start,
@@ -23,6 +25,7 @@ final class WorkflowSession
         public ?string $candidate = null,
         public array $usedIds = [],
         public readonly ?array $previousPublication = null,
+        public array $annotationResults = [],
     ) {}
 
     public string $continuation {
@@ -35,12 +38,13 @@ final class WorkflowSession
         return ['start' => $this->start->toArray(), 'snapshot' => $this->snapshot, 'previousOutput' => $this->previousOutput,
             'compiler' => $this->compiler, 'phase' => $this->phase, 'invocations' => $this->invocations,
             'analysis' => $this->analysis?->toArray(), 'candidate' => $this->candidate, 'usedIds' => $this->usedIds,
+            'annotationResults' => array_map(static fn (WorkflowProcessResult $result): array => $result->toArray(), $this->annotationResults),
             'previousPublication' => $this->previousPublication];
     }
 
     public static function decode(mixed $value): self
     {
-        $data = WorkflowValues::readObject($value, ['start', 'snapshot', 'previousOutput', 'compiler', 'phase', 'invocations', 'analysis', 'candidate', 'usedIds', 'previousPublication']);
+        $data = WorkflowValues::readObject($value, ['start', 'snapshot', 'previousOutput', 'compiler', 'phase', 'invocations', 'analysis', 'candidate', 'usedIds', 'previousPublication', 'annotationResults']);
         $start = (new WorkflowRequestDecoder())->decode(json_encode($data['start'], JSON_THROW_ON_ERROR));
         if ($start->action !== 'start' || !in_array($data['phase'], ['analysis', 'lint', 'terminal'], true)) {
             throw new \InvalidArgumentException('Invalid saved workflow phase.');
@@ -51,7 +55,10 @@ final class WorkflowSession
             $data['analysis'] === null ? null : WorkflowProcessResult::decode($data['analysis']),
             $data['candidate'] === null ? null : WorkflowValues::readHash($data['candidate']),
             array_map(WorkflowValues::readId(...), WorkflowValues::readList($data['usedIds'], 256)),
-            $data['previousPublication'] === null ? null : self::decodePublication($data['previousPublication']));
+            $data['previousPublication'] === null ? null : self::decodePublication($data['previousPublication']),
+            // Serialized bytes, not an unrelated default list length, bound
+            // the finite sequence of annotation observations.
+            array_map(WorkflowProcessResult::decode(...), WorkflowValues::readList($data['annotationResults'], self::MAXIMUM_BYTES)));
     }
 
     /** @return array{snapshot: string, operationId: string, sequence: int, tree: string, manifestHash: string} */

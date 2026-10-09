@@ -53,6 +53,26 @@ The binding pass checks types it can resolve definitively: literals, broad array
 A declaration may be broader than its initial value: `string $summary = $name . ': done';`
 and `Animal $animal = new Dog();` are valid when `Dog` extends `Animal`.
 Generated PHPDoc does not turn these declarations into narrower-type assertions.
+The full check validates the value being assigned before generated PHPDoc can
+assert the destination's type. An unresolved call result does not become an
+`int` merely because its destination is declared `int`; use a callable with a
+known compatible return contract, or check the value before assigning it.
+This applies to initializers and later assignments, including those inside
+`when` branches. Authored comments remain in the emitted output.
+
+Generated `@var` tags are retained when valid for the emitted statement. If
+PHP already infers a compatible, more precise type (for example, the nonnegative
+result of `count()`), production output omits a tag that would incorrectly widen
+that inference. A tag is also omitted before a `for` loop when its initializer
+has not declared the variable yet. This changes neither the storage contract
+checked by ++PHP nor the initializer's execution. Valid generated tags and
+authored comments are preserved, including inside `when`.
+
+Parameters in `.ppphp` files also keep their declared storage type on assignment.
+For example, an `int $count` parameter cannot be overwritten with a string or
+an unverified call result. Use `mixed` when the variable must hold unrelated
+types, or check the new value before assigning it. Ordinary `.php` files keep
+PHP's native assignment behavior.
 
 Closure literals and arrow functions are `Closure` values and can be stored in
 either `Closure` or `callable` locals:
@@ -65,8 +85,9 @@ Closure $label = function (int $number) use ($prefix): string {
 callable $shortLabel = fn (int $number): string => $prefix . ' #' . $number;
 ~~~
 
-Their generated PHPDoc preserves parameter names, types, reference/variadic and
-optional markers, and return types so PHP tools can check subsequent calls.
+Native signatures and compatible generated PHPDoc preserve parameter names,
+types, reference/variadic and optional markers, and return types so PHP tools
+can check subsequent calls.
 This also applies to typed `for` initializers and declarations inside `when` branches.
 Fresh array literals containing closures also satisfy `array<callable>` contracts.
 This also applies to a `when` result when every value-producing path returns a
@@ -127,7 +148,7 @@ becomes:
 
 Lowering preserves the variable, initializer bytes, surrounding comments, newline style, Unicode, and every unaffected source byte. It removes the local type and local readonly syntax and records the applied edits in a generated-to-original source map. Generated output is ordinary PHP and must pass php -l.
 
-Files without activated syntax are emitted byte-identically. Typed loop declarations use the same source-edit model and add PHPDoc immediately before the loop.
+Files without activated syntax are emitted byte-identically. Typed loop declarations use the same source-edit model and retain compatible PHPDoc immediately before the loop.
 
 ## Diagnostics
 

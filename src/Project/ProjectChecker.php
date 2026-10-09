@@ -81,10 +81,18 @@ final readonly class ProjectChecker
                 );
             }
 
-            $completed = $this->complete(
-                $preparation,
-                ($this->backend ?? new PhpStanProjectAnalyzer())->analyze($preparation->analysisProject),
-            );
+            $backend = $this->backend ?? new PhpStanProjectAnalyzer();
+            if ($backend instanceof PhpStanProjectAnalyzer) {
+                $run = new SupplementalAnalysisRun($preparation, $this->workspacePreparer);
+                $deadline = microtime(true) + $backend->timeout;
+                do {
+                    $run->advance($backend->analyze($run->pendingProject, $deadline - microtime(true)));
+                } while ($run->result === null);
+                $backendResult = $run->result;
+            } else {
+                $backendResult = $backend->analyze($preparation->analysisProject);
+            }
+            $completed = $this->complete($preparation, $backendResult);
             $result = new ProjectCheckResult(
                 $completed->parseResult,
                 $completed->semanticResult,
@@ -153,7 +161,7 @@ final readonly class ProjectChecker
         $combined->addAll($preparation->compilerAnalysis->diagnostics);
         $combined->addAll($backendResult->diagnostics);
         $diagnostics = $this->diagnosticProcessor->process($combined);
-        $finalBackend = new AnalysisResult($diagnostics, $backendResult->metadata);
+        $finalBackend = new AnalysisResult($diagnostics, $backendResult->metadata, $backendResult->localAnnotationOmissions);
 
         return new ProjectCheckResult(
             $preparation->compilerAnalysis->parseResult,
