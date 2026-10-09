@@ -46,9 +46,97 @@ comparison is still required for two-build qualification. An upload containing
 failed/incomplete controls is evidence, not approval. Runner loss before an upload
 can still lose the in-flight build.
 
-Fresh native builds, their full independent comparison, BP-3/BP-4 and packaged
-website qualification remain **NOT RUN** until fresh artifacts are executed and
-verified. The older results below describe their recorded historical inputs only.
+The fresh native builds and independent BP-3/BP-4 qualification below have now
+executed. Packaged Website client, actual-page and delivery qualification remain
+separate gates; none inherits a PASS from the compiler suites. The older results
+below describe their recorded historical inputs only.
+
+### Executed security-refresh results — 9 October 2026
+
+[Source rebuild run 37970325719](https://github.com/atatusoft-ltd/ppphp-src/actions/runs/37970325719)
+completed **SUCCESS** at compiler commit
+`14cc3ceb188ae6afaa9b5e33e0e9deda525c961f`. Verified sources were retained before
+compilation; build 1 was retained at 18:23:17 UTC before build 2 started. Both
+independent clean builds passed 15 compatibility, eight Fiber and 19 native
+controls. The downloaded ZIPs were independently checked against GitHub's
+artifact hashes, then checked for bounded membership, file kinds, paths and CRC
+before extraction. Native checkpoints retained their internal links and modes.
+
+Complete independent comparison is **PASS**: each build contains 886 native-prefix
+files, 15 receipts and 28 candidate inventory entries. Installed inventories,
+producer receipts, effective recipes, source acquisitions and link inputs were
+verified before comparison. The complete comparison matches the separate CI
+result, with no differences and inventory SHA-256
+`8b8d17579700ebf64cb8104fca8df96debb1987fff60197b2e39fee1a21c9d4e`.
+This proves two clean builds on the same pinned Linux profile;
+cross-host native reproducibility is **NOT RUN**.
+
+| Retained artifact | GitHub artifact ID | Actual ZIP SHA-256 |
+| --- | --- | --- |
+| Verified sources | 11634788562 | `ef0cf43d9ce164495ce0d1be07a438655c11df13a326ce92b9ac48e145939651` |
+| Clean build 1 | 11637956155 | `425e9cf1dfb73b234c0bf3469f5412f30f26f9c72209e511e56355ed7cb075e4` |
+| Clean build 2 | 11637944379 | `d3c3a600c0314a5173487c55c2e99a83349d6ace9a100db8c4bb2fb0760b0938` |
+| Full comparison | 11638009444 | `14ff933910512ebe1334da68aa1745a1d23a61825dc6ea8166d519b255c39fb5` |
+
+Both builds produce the same executable inputs:
+
+| Input | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `asyncify/8_4_26/php_8_4.wasm` | 32,950,010 | `f3f75728ffaf4ae5725dcb9d70860f9f5693f74339b7ef4c1642a9c05b1daa87` |
+| `asyncify/php_8_4.js` | 381,974 | `c55e656b579fbbee4c489c9af06c558d3dfe5cfe9b371d101729bda60ef285e5` |
+
+Local controls independently passed the same 15/eight/19 cases against these
+bytes. Structural inspection found zero internal `memory.grow` instructions;
+that inspection does not establish live client isolation or whole-tab memory
+limits. Those remain Website qualification requirements.
+
+Full independent **BP-3: PASS**, all 48 cases (30 compiler plus 18 frozen teaching
+cases), in 805.438 seconds. Full independent **BP-4: PASS**, all 48 cases and the
+complete lifecycle sequence, in 2,354.405 seconds. Both ran real workers with
+Chrome 154.0.8037.98 on macOS against the new executable inputs and compiler head
+above. These local timings are observations, not download or visitor performance
+promises. The frozen teaching corpus remains unchanged.
+
+BP-4 published A, rejected invalid B with no current output while preserving A,
+published exactly native-equivalent C and removed the stale ordinary-PHP file.
+Four actual stale A/B completions were rejected. Twelve validation faults,
+including missing/partial/duplicated/reordered lint, foreign identity, malformed
+requests, mutated candidate bytes/source maps and an unvalidated added artifact,
+were rejected without publication. Actual `php -l` accepted a warning-producing
+copied file without executing its top-level side effect, rejected deliberately
+invalid generated PHP, and permitted subsequent recovery. Partial builds
+preserved validated unselected output. Worker interruption and a subsequent
+successful build passed; cleanup passed. Independent report auditing recalculated
+all case assessments and checked 72 published output/source-map sets against
+their hashes. The terminal BP-4 report SHA-256 is
+`0b53cfe87047f45ea4129fa00f6e3208fa0fa190590e4dd347d95aa416338fb3`.
+
+The separately checksummed native qualification evidence archive is 4,567,046
+bytes, SHA-256
+`2b0417fcc47eff11043a5ca4232e81ee6f81dbaab95958417e41313c80ddf9b3`.
+Its external sidecar and coordinator handoff carry the storage location. CI
+artifacts expire; their IDs alone are not durable retention or a public source
+download. The coordinator must preserve the source/runtime ZIPs and this evidence
+alongside the Website distribution.
+
+The coordinator's complete local compiler run ended **FAIL**: 2,168 tests passed
+and one hit the existing 60-second subprocess deadline in
+`TypedLocalPhpDocTest.php:166` (14,615 assertions; 5,552.80 seconds). The unchanged
+six affected datasets subsequently passed in 15.26 seconds (12 assertions), and
+the complete surrounding file passed all 44 tests in 202.91 seconds (188
+assertions). No product defect was reproduced and no source or timeout was
+changed. A quiet full aggregate rerun remains **PENDING** until Website's browser
+campaign closes; those focused reruns do not make the initial aggregate PASS.
+Final sealed-package BP-5, actual-page, delivery and sustained-use
+checks remain Website-owned and **NOT RUN for this handoff**. Wider device/browser
+coverage, production-host delivery, public source availability and activation
+are **NOT RUN**. `productionReady: false` and all production guards remain enabled.
+
+Andrew's strategic direction is to assess and qualify PHP 8.5 as the next
+baseline through the shared FI-1 foundation. This approved security repair stays
+on PHP 8.4.26; successful PHP 8.5 host CI does not qualify PHP 8.5 WASM. The
+[native work order's successor gates](../ppphp-browser-production-native-rebuild-codex-prompt.md)
+require separate executable and containment qualification before a baseline switch.
 
 ## Inputs and build boundaries
 
