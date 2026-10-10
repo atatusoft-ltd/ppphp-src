@@ -33,6 +33,16 @@ in the owner-controlled BP-8 handoff. BP-7R is complete. The website's
 `docs/browser/bp7r-evidence.md` records its exact input set and limitations.
 This supplement does not renumber BP-0 through BP-10, start the full BP-8 device
 campaign or authorize BP-9 activation.
+
+On 2026-10-10 Andrew accepted the missing September package/raw evidence as
+historical loss and closed recovery. Recovering a September backup is no longer
+a production prerequisite; fresh packages require their own evidence. The
+owner-approved initial rollout is desktop Chrome/macOS, not the entire intended
+matrix below. Unqualified browser/device rows remain visible expansion work;
+safety, security and actual-host activation verification remain required. See
+the Website's `docs/browser/bp9-release-handoff.md` for current acceptance and
+remaining host/publishing approvals.
+
 > Product outcome: Enable the production playground and interactive Learn routes with complete browser-side Check, Build PHP and Run.
 > Canonical home: `atatusoft-ltd/ppphp-src`, `docs/ppphp-browser-production-plan.md`.
 

@@ -154,10 +154,10 @@ Website owns the shared-resource and qualification-adapter repairs. Independent
 20-cycle and native BFCache/undo diagnostics did not reproduce a persistent
 product leak; the original short discovery omitted required navigation/history.
 Whole-isolate heap exceeded 24 MiB even without worker/program execution. The
-coordinator recorded the measurement-method error; owner approval for
+coordinator recorded the measurement-method error. The owner subsequently approved
 representative full-workflow rediscovery and a prospective page-memory usability
-target remains **PENDING**. The original FAIL is retained, with no new budget or
-safety relaxation. Corrected resource-closure packages use the same qualified
+target. The original FAIL is retained; safety limits remain unchanged.
+Corrected resource-closure packages use the same qualified
 native pair. Fresh replacement suites are independently verified **PASS**:
 actual pages 50/50, BP-5 client 75/75 plus 10/10 nested checks, independent edges
 10/10, installed delivery 14/14 and resources 6/6, with complete cleanup. Their
@@ -167,13 +167,28 @@ with selected receipt
 `11175b3bd443841c30bc9345cc924fc004f62cddb3fef4f8b0003c84f4c2b5e5`;
 the Website repair commit is `4694667f8c35cb14250d854c04ea0a02d95881d0`.
 These named suite passes do not make the earlier failed sustained campaign PASS
-or establish aggregate qualification. Current performance confirmation and the
-owner's measurement-method and secondary-drive retention decisions remain
-**PENDING**. Chrome 155,
+or establish aggregate qualification. Fresh confirmation completed on 10 October:
+13/14 campaign cases and 5/9 usability budgets passed, with all 30 repeated runs,
+20 editing cycles, privacy, Back/Forward restoration and cleanup passing. The
+remaining failures are a safely recovered cold-network timeout, first Check
+(29,583 ms), first Run (34,199 ms), warm-document Run (30,230 ms) and heartbeat
+(1,492 ms), against their unchanged targets. Whole-page heap peaked at 34,775,916
+bytes against the prospectively frozen 50,331,648-byte target. The matching
+packages, sources and independently verified evidence are privately retained on
+the owner's approved secondary drive. Website's `docs/browser/bp9-release-handoff.md`
+owns the package and raw-evidence pins; current shipping-browser eligibility
+and actual-host delivery remain unverified. Chrome 155,
 other shipping desktops, physical Android/iOS and native Safari remain
 **NOT RUN or INCOMPLETE**. Production-host delivery, public source availability
 and activation are **NOT RUN**. `productionReady: false` and all production guards
 remain enabled.
+
+Andrew accepted the missing September package and raw evidence as historical
+loss on 10 October and closed recovery. **The September backup requirement is
+removed from the production path.** Historical identities and results remain
+unchanged; they cannot certify the fresh package. Initial rollout uses the
+owner-approved desktop Chrome/macOS subset, with other devices recorded as
+unqualified expansion work rather than inherited PASS results.
 
 Andrew's strategic direction is to assess and qualify PHP 8.5 as the next
 baseline through the shared FI-1 foundation. This approved security repair stays
