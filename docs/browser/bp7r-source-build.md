@@ -119,18 +119,61 @@ artifacts expire; their IDs alone are not durable retention or a public source
 download. The coordinator must preserve the source/runtime ZIPs and this evidence
 alongside the Website distribution.
 
-The coordinator's complete local compiler run ended **FAIL**: 2,168 tests passed
-and one hit the existing 60-second subprocess deadline in
+The coordinator's initial contended complete local compiler run ended **FAIL**:
+2,168 tests passed and one hit the existing 60-second subprocess deadline in
 `TypedLocalPhpDocTest.php:166` (14,615 assertions; 5,552.80 seconds). The unchanged
 six affected datasets subsequently passed in 15.26 seconds (12 assertions), and
 the complete surrounding file passed all 44 tests in 202.91 seconds (188
 assertions). No product defect was reproduced and no source or timeout was
-changed. A quiet full aggregate rerun remains **PENDING** until Website's browser
-campaign closes; those focused reruns do not make the initial aggregate PASS.
-Final sealed-package BP-5, actual-page, delivery and sustained-use
-checks remain Website-owned and **NOT RUN for this handoff**. Wider device/browser
-coverage, production-host delivery, public source availability and activation
-are **NOT RUN**. `productionReady: false` and all production guards remain enabled.
+changed. Those focused reruns do not make the initial aggregate PASS.
+
+The later unchanged, quiet complete local suite is **PASS**: 2,169 tests,
+14,617 assertions and 3,810.24 seconds; exit 0 at 2026-10-09 22:42:27 UTC.
+It ran on PHP 8.5.11 at documentation head
+`b314740eac51a371388f488829ec4c789c11d452`, whose executable/compiler inputs remain
+the tested `14cc3ce` implementation. A preceding restricted-environment attempt
+was interrupted because local sockets were denied; it is retained as invalid
+qualification evidence, not a compiler PASS or qualifying product failure.
+The accepted rerun changed neither source nor deadlines and suppressed no tests.
+PHP 8.5.11 is the host-test identity, not a PHP 8.5 WASM qualification.
+
+The following fresh Website suites are independently verified **PASS**: BP-5 client
+75/75 checks plus 10/10 nested checks, actual pages 50/50, standalone edges 10/10
+and installed delivery 14/14. These ran against coherent package input
+`4ffd0a707159910d7245c975057b8503c5641c0730730fe828c567e367ff5b60`
+on shipping Chrome 154.0.8037.98, macOS 26.6.2, M1 with 8 GiB RAM, in local test
+configuration. Website owns the detailed raw evidence; these results do not
+establish production-host delivery. The later fresh sustained confirmation ended
+**FAIL**: all 30 same-build and 20 edit cycles completed, but only 12/14 campaign
+cases and 7/9 budget gates passed. Retained failures include a 1 Mbit/s,
+300 ms-latency timeout with successful explicit recovery; an unapproved dynamic
+Google Fonts GET (zero-byte body, privacy FAIL, not proven source exfiltration);
+first Check at 22,627 ms against 20,000 ms; and main-page JavaScript memory at
+26,484,864 bytes against 25,165,824 bytes. The other six memory scopes passed.
+Website owns the shared-resource and qualification-adapter repairs. Independent
+20-cycle and native BFCache/undo diagnostics did not reproduce a persistent
+product leak; the original short discovery omitted required navigation/history.
+Whole-isolate heap exceeded 24 MiB even without worker/program execution. The
+coordinator recorded the measurement-method error; owner approval for
+representative full-workflow rediscovery and a prospective page-memory usability
+target remains **PENDING**. The original FAIL is retained, with no new budget or
+safety relaxation. Corrected resource-closure packages use the same qualified
+native pair. Fresh replacement suites are independently verified **PASS**:
+actual pages 50/50, BP-5 client 75/75 plus 10/10 nested checks, independent edges
+10/10, installed delivery 14/14 and resources 6/6, with complete cleanup. Their
+package input is
+`c0492094bd6202a71ad870c76b9e51fd95c7db1d7c42582fcf3492751babd118`,
+with selected receipt
+`11175b3bd443841c30bc9345cc924fc004f62cddb3fef4f8b0003c84f4c2b5e5`;
+the Website repair commit is `4694667f8c35cb14250d854c04ea0a02d95881d0`.
+These named suite passes do not make the earlier failed sustained campaign PASS
+or establish aggregate qualification. Current performance confirmation and the
+owner's measurement-method and secondary-drive retention decisions remain
+**PENDING**. Chrome 155,
+other shipping desktops, physical Android/iOS and native Safari remain
+**NOT RUN or INCOMPLETE**. Production-host delivery, public source availability
+and activation are **NOT RUN**. `productionReady: false` and all production guards
+remain enabled.
 
 Andrew's strategic direction is to assess and qualify PHP 8.5 as the next
 baseline through the shared FI-1 foundation. This approved security repair stays
