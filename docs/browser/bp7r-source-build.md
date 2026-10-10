@@ -4,6 +4,198 @@ This is the implementation record for the [BP-7R work order](../ppphp-browser-pr
 It does not approve a runtime for distribution or production. The retained runtime
 remains an unchanged historical comparison, not an approved public rollback target.
 
+## Approved security refresh — 9 October 2026
+
+The current input manifest selects PHP **8.4.26** (commit
+`c31ae58ecbedc7a85dac0eee5a6a88da73543e70`) and OpenSSL **3.5.9**.
+Their verified archive identities are respectively
+`f77ae0e5dff58fefce9fb1ea95a48275bd374f836064f680d9502478fb9da820`
+(21,859,184 bytes) and
+`603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a`
+(53,279,637 bytes). The PHP archive's complete Git contents/modes were compared
+with its independently fetched upstream tree, accounting for Git archive's
+seven `export-subst` expansions. Zend Fiber source has the same reviewed blob;
+the existing Asyncify repair and all resource/capability limits remain unchanged.
+
+[PHP 8.4.26](https://www.php.net/ChangeLog-8.php#8.4.26) fixes enabled local
+APIs, including conversion filters and PHAR; network denial cannot replace those
+fixes. [OpenSSL 3.5.9](https://openssl-library.org/news/secadv/20260929.txt)
+fixes certificate parsing reachable through `openssl_x509_parse` without network
+access. **The redundant downstream BCMath backport is removed:** this PHP source
+already contains its endpoint fix. The BCMath behavior regression remains;
+two additional bounded controls cover embedded-NUL conversion delimiters and a
+PHAR TAR-size overflow using a small malformed archive, without allocating 4 GiB.
+
+Build preparation and source compilation derive PHP pins from `native-inputs.json`.
+BP-4 derives its declared PHP version from manifest-owned, hash-verified build
+arguments, checks native-receipt coherence when present, and rejects an observed
+worker platform mismatch before compiler phases. Generic verification derives
+the loader/WASM major/minor from those verified arguments; it does not grant
+execution approval. BP-3/BP-4 execution remains on the locked
+`tools/web-spike/package.json` `@php-wasm/web-8-4` integration and existing worker
+imports. A new minor requires a separately qualified harness/runtime profile.
+Historical artifact metadata
+is not rewritten or used as fresh acceptance evidence.
+
+Workflow run `37956420711` lost its hosted runner after both native compilations,
+before artifact retention, with exit 143. No artifacts were retained; complete
+comparison and downstream browser admission are **NOT RUN** for that run. The
+workflow now uploads verified sources first, then each build's candidate, receipts,
+checkpoint and available control results before starting another build. Full
+comparison is still required for two-build qualification. An upload containing
+failed/incomplete controls is evidence, not approval. Runner loss before an upload
+can still lose the in-flight build.
+
+The fresh native builds and independent BP-3/BP-4 qualification below have now
+executed. Packaged Website client, actual-page and delivery qualification remain
+separate gates; none inherits a PASS from the compiler suites. The older results
+below describe their recorded historical inputs only.
+
+### Executed security-refresh results — 9 October 2026
+
+[Source rebuild run 37970325719](https://github.com/atatusoft-ltd/ppphp-src/actions/runs/37970325719)
+completed **SUCCESS** at compiler commit
+`14cc3ceb188ae6afaa9b5e33e0e9deda525c961f`. Verified sources were retained before
+compilation; build 1 was retained at 18:23:17 UTC before build 2 started. Both
+independent clean builds passed 15 compatibility, eight Fiber and 19 native
+controls. The downloaded ZIPs were independently checked against GitHub's
+artifact hashes, then checked for bounded membership, file kinds, paths and CRC
+before extraction. Native checkpoints retained their internal links and modes.
+
+Complete independent comparison is **PASS**: each build contains 886 native-prefix
+files, 15 receipts and 28 candidate inventory entries. Installed inventories,
+producer receipts, effective recipes, source acquisitions and link inputs were
+verified before comparison. The complete comparison matches the separate CI
+result, with no differences and inventory SHA-256
+`8b8d17579700ebf64cb8104fca8df96debb1987fff60197b2e39fee1a21c9d4e`.
+This proves two clean builds on the same pinned Linux profile;
+cross-host native reproducibility is **NOT RUN**.
+
+| Retained artifact | GitHub artifact ID | Actual ZIP SHA-256 |
+| --- | --- | --- |
+| Verified sources | 11634788562 | `ef0cf43d9ce164495ce0d1be07a438655c11df13a326ce92b9ac48e145939651` |
+| Clean build 1 | 11637956155 | `425e9cf1dfb73b234c0bf3469f5412f30f26f9c72209e511e56355ed7cb075e4` |
+| Clean build 2 | 11637944379 | `d3c3a600c0314a5173487c55c2e99a83349d6ace9a100db8c4bb2fb0760b0938` |
+| Full comparison | 11638009444 | `14ff933910512ebe1334da68aa1745a1d23a61825dc6ea8166d519b255c39fb5` |
+
+Both builds produce the same executable inputs:
+
+| Input | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `asyncify/8_4_26/php_8_4.wasm` | 32,950,010 | `f3f75728ffaf4ae5725dcb9d70860f9f5693f74339b7ef4c1642a9c05b1daa87` |
+| `asyncify/php_8_4.js` | 381,974 | `c55e656b579fbbee4c489c9af06c558d3dfe5cfe9b371d101729bda60ef285e5` |
+
+Local controls independently passed the same 15/eight/19 cases against these
+bytes. Structural inspection found zero internal `memory.grow` instructions;
+that inspection does not establish live client isolation or whole-tab memory
+limits. Those remain Website qualification requirements.
+
+Full independent **BP-3: PASS**, all 48 cases (30 compiler plus 18 frozen teaching
+cases), in 805.438 seconds. Full independent **BP-4: PASS**, all 48 cases and the
+complete lifecycle sequence, in 2,354.405 seconds. Both ran real workers with
+Chrome 154.0.8037.98 on macOS against the new executable inputs and compiler head
+above. These local timings are observations, not download or visitor performance
+promises. The frozen teaching corpus remains unchanged.
+
+BP-4 published A, rejected invalid B with no current output while preserving A,
+published exactly native-equivalent C and removed the stale ordinary-PHP file.
+Four actual stale A/B completions were rejected. Twelve validation faults,
+including missing/partial/duplicated/reordered lint, foreign identity, malformed
+requests, mutated candidate bytes/source maps and an unvalidated added artifact,
+were rejected without publication. Actual `php -l` accepted a warning-producing
+copied file without executing its top-level side effect, rejected deliberately
+invalid generated PHP, and permitted subsequent recovery. Partial builds
+preserved validated unselected output. Worker interruption and a subsequent
+successful build passed; cleanup passed. Independent report auditing recalculated
+all case assessments and checked 72 published output/source-map sets against
+their hashes. The terminal BP-4 report SHA-256 is
+`0b53cfe87047f45ea4129fa00f6e3208fa0fa190590e4dd347d95aa416338fb3`.
+
+The separately checksummed native qualification evidence archive is 4,567,046
+bytes, SHA-256
+`2b0417fcc47eff11043a5ca4232e81ee6f81dbaab95958417e41313c80ddf9b3`.
+Its external sidecar and coordinator handoff carry the storage location. CI
+artifacts expire; their IDs alone are not durable retention or a public source
+download. The coordinator must preserve the source/runtime ZIPs and this evidence
+alongside the Website distribution.
+
+The coordinator's initial contended complete local compiler run ended **FAIL**:
+2,168 tests passed and one hit the existing 60-second subprocess deadline in
+`TypedLocalPhpDocTest.php:166` (14,615 assertions; 5,552.80 seconds). The unchanged
+six affected datasets subsequently passed in 15.26 seconds (12 assertions), and
+the complete surrounding file passed all 44 tests in 202.91 seconds (188
+assertions). No product defect was reproduced and no source or timeout was
+changed. Those focused reruns do not make the initial aggregate PASS.
+
+The later unchanged, quiet complete local suite is **PASS**: 2,169 tests,
+14,617 assertions and 3,810.24 seconds; exit 0 at 2026-10-09 22:42:27 UTC.
+It ran on PHP 8.5.11 at documentation head
+`b314740eac51a371388f488829ec4c789c11d452`, whose executable/compiler inputs remain
+the tested `14cc3ce` implementation. A preceding restricted-environment attempt
+was interrupted because local sockets were denied; it is retained as invalid
+qualification evidence, not a compiler PASS or qualifying product failure.
+The accepted rerun changed neither source nor deadlines and suppressed no tests.
+PHP 8.5.11 is the host-test identity, not a PHP 8.5 WASM qualification.
+
+The following fresh Website suites are independently verified **PASS**: BP-5 client
+75/75 checks plus 10/10 nested checks, actual pages 50/50, standalone edges 10/10
+and installed delivery 14/14. These ran against coherent package input
+`4ffd0a707159910d7245c975057b8503c5641c0730730fe828c567e367ff5b60`
+on shipping Chrome 154.0.8037.98, macOS 26.6.2, M1 with 8 GiB RAM, in local test
+configuration. Website owns the detailed raw evidence; these results do not
+establish production-host delivery. The later fresh sustained confirmation ended
+**FAIL**: all 30 same-build and 20 edit cycles completed, but only 12/14 campaign
+cases and 7/9 budget gates passed. Retained failures include a 1 Mbit/s,
+300 ms-latency timeout with successful explicit recovery; an unapproved dynamic
+Google Fonts GET (zero-byte body, privacy FAIL, not proven source exfiltration);
+first Check at 22,627 ms against 20,000 ms; and main-page JavaScript memory at
+26,484,864 bytes against 25,165,824 bytes. The other six memory scopes passed.
+Website owns the shared-resource and qualification-adapter repairs. Independent
+20-cycle and native BFCache/undo diagnostics did not reproduce a persistent
+product leak; the original short discovery omitted required navigation/history.
+Whole-isolate heap exceeded 24 MiB even without worker/program execution. The
+coordinator recorded the measurement-method error. The owner subsequently approved
+representative full-workflow rediscovery and a prospective page-memory usability
+target. The original FAIL is retained; safety limits remain unchanged.
+Corrected resource-closure packages use the same qualified
+native pair. Fresh replacement suites are independently verified **PASS**:
+actual pages 50/50, BP-5 client 75/75 plus 10/10 nested checks, independent edges
+10/10, installed delivery 14/14 and resources 6/6, with complete cleanup. Their
+package input is
+`c0492094bd6202a71ad870c76b9e51fd95c7db1d7c42582fcf3492751babd118`,
+with selected receipt
+`11175b3bd443841c30bc9345cc924fc004f62cddb3fef4f8b0003c84f4c2b5e5`;
+the Website repair commit is `4694667f8c35cb14250d854c04ea0a02d95881d0`.
+These named suite passes do not make the earlier failed sustained campaign PASS
+or establish aggregate qualification. Fresh confirmation completed on 10 October:
+13/14 campaign cases and 5/9 usability budgets passed, with all 30 repeated runs,
+20 editing cycles, privacy, Back/Forward restoration and cleanup passing. The
+remaining failures are a safely recovered cold-network timeout, first Check
+(29,583 ms), first Run (34,199 ms), warm-document Run (30,230 ms) and heartbeat
+(1,492 ms), against their unchanged targets. Whole-page heap peaked at 34,775,916
+bytes against the prospectively frozen 50,331,648-byte target. The matching
+packages, sources and independently verified evidence are privately retained on
+the owner's approved secondary drive. Website's `docs/browser/bp9-release-handoff.md`
+owns the package and raw-evidence pins; current shipping-browser eligibility
+and actual-host delivery remain unverified. Chrome 155,
+other shipping desktops, physical Android/iOS and native Safari remain
+**NOT RUN or INCOMPLETE**. Production-host delivery, public source availability
+and activation are **NOT RUN**. `productionReady: false` and all production guards
+remain enabled.
+
+Andrew accepted the missing September package and raw evidence as historical
+loss on 10 October and closed recovery. **The September backup requirement is
+removed from the production path.** Historical identities and results remain
+unchanged; they cannot certify the fresh package. Initial rollout uses the
+owner-approved desktop Chrome/macOS subset, with other devices recorded as
+unqualified expansion work rather than inherited PASS results.
+
+Andrew's strategic direction is to assess and qualify PHP 8.5 as the next
+baseline through the shared FI-1 foundation. This approved security repair stays
+on PHP 8.4.26; successful PHP 8.5 host CI does not qualify PHP 8.5 WASM. The
+[native work order's successor gates](../ppphp-browser-production-native-rebuild-codex-prompt.md)
+require separate executable and containment qualification before a baseline switch.
+
 ## Inputs and build boundaries
 
 The compiler owns `tools/php-wasm-runtime/native-inputs.json`. It pins the
@@ -28,7 +220,7 @@ Autoconf, Automake, Bison, Flex, libtool, pkgconf and re2c are host tools acquir
 from a dated, signed Ubuntu snapshot. The SDK image is platform/digest pinned.
 Host package versions are recorded; the task does not rebuild LLVM or Ubuntu.
 
-The initial comparison keeps PHP 8.4.23 and Emscripten 4.0.19. These are explicit
+The initial historical comparison kept PHP 8.4.23 and Emscripten 4.0.19. These are explicit
 candidate inputs, not a permanent platform ceiling. OpenSSL 3.5.8 replaces the
 legacy implementation in the executed source-built graph; compilation, link
 provenance and runtime checks establish that replacement. Oniguruma 6.9.10 has
@@ -55,9 +247,9 @@ profile, where no font cache exists. Source patch receipts retain each change.
 The same review checks PHP-bundled libraries rather than trusting the version
 label alone. The pinned PHP source already bounds PHAR link traversal by the
 manifest size; the native suite tests short, long and tail-into-cycle archives.
-BCMath lacks the [upstream fractional-endpoint correction](https://github.com/php/php-src/commit/4f83876af75d43b24cf3ed567394451f42e6bca1)
-for CVE-2026-17544. The source-built path applies that one-line correction with
-strict context and before/after hashes. The historical rebuild and Fiber repair
+The initial PHP 8.4.23 input lacked the [upstream fractional-endpoint correction](https://github.com/php/php-src/commit/4f83876af75d43b24cf3ed567394451f42e6bca1)
+for CVE-2026-17544. That source-built path applied the one-line correction with
+strict context and before/after hashes. The retained historical artifacts and Fiber repair
 are unchanged. The new regression covers small and larger allocations and both
 signs; source correspondence and runtime execution remain separate evidence.
 

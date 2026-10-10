@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir, platform, arch } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createOutput, sha256, launchChrome, collectObservation } from './run-baseline.mjs';
-import { forcedLoaderPlugin, findModeArtifact, verifyLoadedArtifacts } from './inspect-runtime-modes.mjs';
+import { forcedLoaderPlugin, verifyLoadedArtifacts } from './inspect-runtime-modes.mjs';
 import { CONFIGURATION, LIMITS, validateCorpus, verifySourceHashes, frameProcess, assessCase, runtimeConsoleFailures } from '../src/parity-contract.mjs';
 import { resolvePreparedDebugPaths } from '../src/phpstan-debug-output.mjs';
 import { probes } from '../src/baseline-probes.js';
@@ -74,10 +74,36 @@ export function verifyRuntime(path, expectedSha256) {
     const data = readFileSync(file);
     if (data.length !== item.bytes || sha256(data) !== item.sha256) throw new Error('Artifact integrity failure');
   }
-  const wasm = findModeArtifact(root, 'asyncify');
-  const relativeWasm = wasm.slice(root.length + 1);
-  if (!paths.has('asyncify/php_8_4.js') || !paths.has(relativeWasm) || sha256(readFileSync(wasm)) !== expectedSha256) throw new Error('Candidate loader/WASM identity missing or mismatched');
-  return { root, wasmSha256: expectedSha256, loaderSha256: sha256(readFileSync(join(root, 'asyncify/php_8_4.js'))), manifestSha256: sha256(readFileSync(join(root, 'artifacts.json'))) };
+  if (!paths.has('build-arguments.txt')) throw new Error('Manifest-owned PHP build identity missing');
+  const argumentsText = readFileSync(join(root, 'build-arguments.txt'), 'utf8');
+  const findArgument = (name) => {
+    const values = argumentsText.split('\n').filter(line => line.startsWith(name + '=')).map(line => line.slice(name.length + 1));
+    if (values.length !== 1) throw new Error('Missing or duplicate PHP build identity: ' + name);
+    return values[0];
+  };
+  const phpVersion = findArgument('PHP_VERSION');
+  const phpRef = findArgument('PHP_REF');
+  const versionParts = /^([1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$/.exec(phpVersion);
+  if (!versionParts || phpRef !== 'php-' + phpVersion) throw new Error('PHP build identity mismatch');
+  const stem = 'php_' + versionParts[1] + '_' + versionParts[2];
+  const loaderRelative = 'asyncify/' + stem + '.js';
+  const wasmPaths = [...paths].filter(path => path.startsWith('asyncify/') && basename(path) === stem + '.wasm');
+  if (!paths.has(loaderRelative) || wasmPaths.length !== 1 || sha256(readFileSync(join(root, wasmPaths[0]))) !== expectedSha256) throw new Error('Candidate loader/WASM identity missing or mismatched');
+  const loaderPath = join(root, loaderRelative);
+  const wasmPath = join(root, wasmPaths[0]);
+  if (paths.has('native/runtime-build.json')) {
+    const receipt = readBoundedJson(join(root, 'native/runtime-build.json'));
+    if (receipt.manifest?.sources?.['php-src']?.version !== phpVersion || receipt.productionReady !== false) throw new Error('Native PHP build identity mismatch');
+  }
+  return { root, phpVersion, loaderPath, wasmPath, wasmSha256: expectedSha256, loaderSha256: sha256(readFileSync(loaderPath)), manifestSha256: sha256(readFileSync(join(root, 'artifacts.json'))) };
+}
+
+// Execution admission belongs to the locked harness integration, separately
+// from generic artifact identity verification. A new minor needs qualification.
+export function assertHarnessRuntime(runtime) {
+  const packageName = '@php-wasm/web-' + runtime.phpVersion.split('.').slice(0, 2).join('-');
+  const dependencies = readBoundedJson(join(SPIKE, 'package.json')).dependencies;
+  if (packageName !== '@php-wasm/web-8-4' || !dependencies?.[packageName]) throw new Error('Runtime minor is outside the locked browser harness profile');
 }
 
 export function runProcess(binary, args, cwd, timeout = 90000) {
@@ -131,6 +157,7 @@ export function nativeCase(fixture, phpBinary = process.env.PHP_BINARY || 'php')
 }
 
 async function buildPage(runtime, compilerArguments) {
+  assertHarnessRuntime(runtime);
   const bundle = runProcess(process.execPath, [join(SPIKE, 'scripts/prepare-compiler-bundle.mjs'), ...compilerArguments], ROOT, 120000);
   if (bundle.exitCode !== 0) throw new Error('Compiler packaging failed: ' + bundle.stderr);
   const vite = await import('vite'); const configFile = join(SPIKE, 'vite.config.js');
@@ -139,8 +166,8 @@ async function buildPage(runtime, compilerArguments) {
     if (!id.startsWith(runtime.root + '/') || !id.endsWith('.wasm')) return null;
     return `export default import.meta.ROLLUP_FILE_URL_${this.emitFile({ type: 'asset', name: basename(id), source: readFileSync(id) })};`;
   } });
-  await vite.build({ root: SPIKE, configFile, logLevel: 'error', plugins: [forcedLoaderPlugin('asyncify', runtime.root), assets()],
-    worker: { plugins: () => [...config.worker.plugins(), forcedLoaderPlugin('asyncify', runtime.root), assets()] },
+  await vite.build({ root: SPIKE, configFile, logLevel: 'error', plugins: [forcedLoaderPlugin('asyncify', runtime.root, runtime.loaderPath), assets()],
+    worker: { plugins: () => [...config.worker.plugins(), forcedLoaderPlugin('asyncify', runtime.root, runtime.loaderPath), assets()] },
     build: { rolldownOptions: { input: { parity: join(SPIKE, 'parity.html') } } } });
   return vite.preview({ root: SPIKE, configFile, preview: { host: '127.0.0.1', port: 4173, strictPort: true } });
 }

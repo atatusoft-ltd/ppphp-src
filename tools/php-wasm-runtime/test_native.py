@@ -117,14 +117,27 @@ class NativeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 native_recipes.patch_gd_avif_config(invalid)
 
-    def test_bcmath_security_patch_updates_the_copy_endpoint_once(self):
-        source = ('\t\t\t\tstr_scale -= fractional_end - fractional_new_end; /* fractional_end >= fractional_new_end */\n'
-                  '\t\t\t}')
-        patched = source_build.patch_bcmath_bounds(source)
-        self.assertIn('\t\t\t\tfractional_end = fractional_new_end;\n\t\t\t}', patched)
-        for invalid in [patched, source + source, 'unreviewed source']:
-            with self.assertRaises(ValueError):
-                source_build.patch_bcmath_bounds(invalid)
+    def test_php_source_extraction_keeps_upstream_fixes_without_a_downstream_bcmath_patch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = b'fractional_end = fractional_new_end; /* upstream fix */\n'
+            path = 'ext/bcmath/libbcmath/src/str2num.c'
+            pin = {**self.archive(root / 'php.tar.gz', [('root/' + path, source, tarfile.REGTYPE)]), 'patches': []}
+            manifest = {'sources': {'php-src': pin}, 'toolchain': {'sourceDateEpoch': 1234567}}
+            source_build.extract_php(root / 'php.tar.gz', root / 'php', root / 'receipt.json', manifest)
+            self.assertEqual((root / 'php' / path).read_bytes(), source)
+            self.assertEqual(json.loads((root / 'receipt.json').read_text()), {'input': pin, 'patches': []})
+            self.assertEqual(native.load_manifest()['sources']['php-src']['patches'], [])
+
+    def test_unimplemented_php_patches_are_rejected_before_any_extraction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for patches in [None, [{'path': 'required-fix.c'}]]:
+                manifest = {'sources': {'php-src': {'patches': patches}}, 'toolchain': {}}
+                with self.assertRaisesRegex(ValueError, 'Unsupported PHP source patches'):
+                    source_build.extract_php(root / 'missing.tar.gz', root / 'php', root / 'receipt.json', manifest)
+                self.assertFalse((root / 'php').exists())
+                self.assertFalse((root / 'receipt.json').exists())
 
     def test_poisoned_or_removed_upstream_dist_does_not_enter_the_source_context(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -393,7 +406,8 @@ class NativeTests(unittest.TestCase):
         workflow = (native.HERE.parent.parent / '.github/workflows/php-wasm-rebuild.yml').read_text()
         command = 'COPYFILE_DISABLE=1 tar -cf "$directory/native-checkpoint.tar" -C "$directory" native-checkpoint'
         self.assertIn(command, workflow)
-        self.assertIn('/tmp/ppphp-source-build-*/native-checkpoint.tar', workflow)
+        for iteration in (1, 2):
+            self.assertIn(f'/tmp/ppphp-source-build-{iteration}/native-checkpoint.tar', workflow)
         self.assertNotIn('/tmp/ppphp-source-build-*/native-checkpoint/\n', workflow)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

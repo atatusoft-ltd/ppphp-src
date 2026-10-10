@@ -99,9 +99,10 @@ export function symbolizeStack(text, names) {
 
 // Package subpaths are not exported. Resolve their installed files only for
 // this diagnostic build, without editing packages or spoofing feature detection.
-export function forcedLoaderPlugin(mode, packageRoot) {
+export function forcedLoaderPlugin(mode, packageRoot, selectedLoaderPath) {
   if (!modes.includes(mode)) throw new Error(`Unsupported runtime mode: ${mode}`);
-  const loaderPath = join(packageRoot, mode, 'php_8_4.js');
+  const loaderPath = selectedLoaderPath ?? join(packageRoot, mode, 'php_8_4.js');
+  if (resolve(dirname(loaderPath)) !== resolve(packageRoot, mode) || !/^php_[0-9]+_[0-9]+\.js$/.test(basename(loaderPath))) throw new Error('Selected runtime loader path is outside its mode');
   if (!existsSync(loaderPath)) throw new Error(`Pinned ${mode} loader is absent`);
   const virtualId = `\0ppphp-bp0-${mode}-loader`;
   return {

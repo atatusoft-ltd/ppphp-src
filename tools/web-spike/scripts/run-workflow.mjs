@@ -3,10 +3,10 @@ import { join, dirname, resolve, basename } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
-import { ROOT, SPIKE, nativeCase, runProcess, verifyRuntime, readBoundedJson } from './run-project-parity.mjs';
+import { ROOT, SPIKE, nativeCase, runProcess, verifyRuntime, readBoundedJson, assertHarnessRuntime } from './run-project-parity.mjs';
 import { CONFIGURATION, validateCorpus, verifySourceHashes, runtimeConsoleFailures } from '../src/parity-contract.mjs';
 import { createOutput, sha256, launchChrome, collectObservation } from './run-baseline.mjs';
-import { forcedLoaderPlugin, findModeArtifact } from './inspect-runtime-modes.mjs';
+import { forcedLoaderPlugin } from './inspect-runtime-modes.mjs';
 import { compilerPackageArguments } from './prepare-compiler-bundle.mjs';
 
 export function nativeBuild(fixture) {
@@ -26,11 +26,12 @@ export function nativeBuild(fixture) {
 }
 
 export async function buildWorkflowPage(runtime, compilerArguments = []) {
+  assertHarnessRuntime(runtime);
   const bundle = runProcess(process.execPath, [join(SPIKE, 'scripts/prepare-compiler-bundle.mjs'), ...compilerArguments], ROOT, 120000);
   if (bundle.exitCode !== 0) throw new Error('Compiler bundle failed: ' + bundle.stderr);
-  const descriptor = { phpVersion: '8.4.23', sapi: 'cli', intSize: 8, artifact: 'sha256:' + runtime.wasmSha256, loader: 'sha256:' + runtime.loaderSha256 };
+  const descriptor = { phpVersion: runtime.phpVersion, sapi: 'cli', intSize: 8, artifact: 'sha256:' + runtime.wasmSha256, loader: 'sha256:' + runtime.loaderSha256 };
   writeFileSync(join(SPIKE, 'public/generated/workflow-runtime.json'), JSON.stringify(descriptor));
-  copyFileSync(findModeArtifact(runtime.root, 'asyncify'), join(SPIKE, 'public/generated/workflow.wasm.bin'));
+  copyFileSync(runtime.wasmPath, join(SPIKE, 'public/generated/workflow.wasm.bin'));
   const vite = await import('vite');
   const configFile = join(SPIKE, 'vite.config.js');
   const config = (await import(pathToFileURL(configFile).href)).default;
@@ -40,8 +41,8 @@ export async function buildWorkflowPage(runtime, compilerArguments = []) {
     // asset URL against its blob: module URL during module initialization.
     return 'export default "/generated/workflow.wasm.bin";';
   } });
-  await vite.build({ root: SPIKE, configFile, logLevel: 'error', plugins: [forcedLoaderPlugin('asyncify', runtime.root), assets()],
-    worker: { plugins: () => [...config.worker.plugins(), forcedLoaderPlugin('asyncify', runtime.root), assets()], rolldownOptions: { output: { codeSplitting: false } } },
+  await vite.build({ root: SPIKE, configFile, logLevel: 'error', plugins: [forcedLoaderPlugin('asyncify', runtime.root, runtime.loaderPath), assets()],
+    worker: { plugins: () => [...config.worker.plugins(), forcedLoaderPlugin('asyncify', runtime.root, runtime.loaderPath), assets()], rolldownOptions: { output: { codeSplitting: false } } },
     build: { rolldownOptions: { input: { workflow: join(SPIKE, 'workflow.html') } } } });
   return vite.preview({ root: SPIKE, configFile, preview: { host: '127.0.0.1', port: 4173, strictPort: true } });
 }

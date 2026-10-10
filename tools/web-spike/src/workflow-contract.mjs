@@ -7,6 +7,12 @@ function sort(value) {
   if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sort(value[key])]));
   return value;
 }
+export function validateRuntimePlatform(platform, runtime) {
+  if (typeof runtime?.phpVersion !== 'string' || !runtime.phpVersion || runtime.intSize !== 8
+      || platform?.phpVersion !== runtime.phpVersion || platform?.intSize !== runtime.intSize) throw new Error('Observed runtime platform differs from verified build identity');
+  // The filesystem host reports wasm; the separate compiler child uses CLI.
+  return platform;
+}
 export function relativePath(path) {
   if (typeof path !== 'string' || !path || path.length > 512 || /[\x00-\x1f\\:]/.test(path) || path.split('/').some((p) => ['', '.', '..'].includes(p))) throw new Error('Unsafe workflow path');
   return path;

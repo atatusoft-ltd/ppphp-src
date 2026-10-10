@@ -36,14 +36,14 @@
       "notices": ["LICENSE"]
     },
     "php-src": {
-      "version": "8.4.23",
-      "commit": "52cee85adfeeb6f017f2ac796ab7973353702c20",
-      "url": "https://codeload.github.com/php/php-src/tar.gz/52cee85adfeeb6f017f2ac796ab7973353702c20",
-      "sha256": "81ca06b82286b75f35e5a4eaadbbd58f8558cd1c99e0a0bb45268419c990f689",
-      "bytes": 21771825,
+      "version": "8.4.26",
+      "commit": "c31ae58ecbedc7a85dac0eee5a6a88da73543e70",
+      "url": "https://codeload.github.com/php/php-src/tar.gz/c31ae58ecbedc7a85dac0eee5a6a88da73543e70",
+      "sha256": "f77ae0e5dff58fefce9fb1ea95a48275bd374f836064f680d9502478fb9da820",
+      "bytes": 21859184,
       "stripRoot": true,
       "role": "PHP and bundled extensions/libraries",
-      "patches": [{"path": "ext/bcmath/libbcmath/src/str2num.c", "origin": "https://github.com/php/php-src/commit/4f83876af75d43b24cf3ed567394451f42e6bca1", "reason": "CVE-2026-17544: keep the fractional copy endpoint consistent with the truncated allocation length."}],
+      "patches": [],
       "notices": ["LICENSE", "Zend/LICENSE", "TSRM/LICENSE"]
     },
     "emscripten": {
@@ -78,10 +78,10 @@
       "selection": "Current maintenance release includes security audit fixes; one producer for every consumer."
     },
     "openssl": {
-      "version": "3.5.8",
-      "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz",
-      "sha256": "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2",
-      "bytes": 53213818,
+      "version": "3.5.9",
+      "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
+      "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a",
+      "bytes": 53279637,
       "stripRoot": true,
       "dependencies": [],
       "libraries": ["lib/libssl.a", "lib/libcrypto.a"],

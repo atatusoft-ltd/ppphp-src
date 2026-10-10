@@ -5,13 +5,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 UPSTREAM = 'a6ed3872674399baa47c2f55fe1e660633fc8051'
-PHP_COMMIT = '52cee85adfeeb6f017f2ac796ab7973353702c20'
-PHP_VERSION = '8.4.23'
 DOCKER_BLOB = '81f85293110155e19e190f7fc27522c6c4851c84'
 FIBERS_BLOB = 'd571a622e476ba2a7f889e1111ee3c309ac71099'
 BASE_BLOB = '893f51c1b543661fbca89d8e9d58c24361ed9ac8'
@@ -126,7 +125,9 @@ static ZEND_NORETURN void zend_fiber_trampoline(void)''')
     return source
 
 
-def prepare_dockerfile(source: str, *, candidate: bool, jobs: int) -> str:
+def prepare_dockerfile(source: str, *, candidate: bool, jobs: int, php_commit: str) -> str:
+    if not isinstance(php_commit, str) or not re.fullmatch('[a-f0-9]{40}', php_commit):
+        raise ValueError('Explicit PHP source commit must be a full Git identity')
     if jobs not in range(1, 5):
         raise ValueError('Build parallelism must be between one and four')
     if blob_sha(source.encode()) != DOCKER_BLOB:
@@ -134,7 +135,7 @@ def prepare_dockerfile(source: str, *, candidate: bool, jobs: int) -> str:
     source = replace_exact(source, 'FROM playground-php-wasm:base', f'FROM playground-php-wasm:base\nENV BINARYEN_CORES={jobs}')
     # Verify the cloned tag before any upstream/downstream PHP source changes.
     marker = '# Work around memory leak due to PHP using Emscripten\'s incomplete mmap/munmap support'
-    check = f'RUN test "$(git -C /root/php-src rev-parse HEAD)" = "{PHP_COMMIT}"\n'
+    check = f'RUN test "$(git -C /root/php-src rev-parse HEAD)" = "{php_commit}"\n'
     if candidate:
         check += 'COPY ./compile/ppphp-prepare.py /root/ppphp-prepare.py\nRUN python3 /root/ppphp-prepare.py --patch-fibers /root/php-src/Zend/zend_fibers.c\n'
     source = replace_exact(source, marker, check + '\n' + marker)
@@ -174,14 +175,18 @@ def main() -> None:
     path = compile_root / 'php/Dockerfile'
     # Read from the frozen tree, never layer transformations onto a prior output.
     original = subprocess.check_output(['git', '-C', str(root), 'show', f'{UPSTREAM}:packages/php-wasm/compile/php/Dockerfile'], timeout=10).decode()
-    effective = prepare_dockerfile(original, candidate=args.candidate, jobs=args.jobs)
+    # The copied Fiber patch helper runs standalone inside Docker; only the
+    # build-preparation path needs the repository-owned input manifest.
+    import native
+    php = native.load_manifest()['sources']['php-src']
+    effective = prepare_dockerfile(original, candidate=args.candidate, jobs=args.jobs, php_commit=php['commit'])
     path.write_text(effective, encoding='utf-8')
     bridge = compile_root / 'php/phpwasm-emscripten-library.js'
     original_bridge = subprocess.check_output(['git', '-C', str(root), 'show', f'{UPSTREAM}:packages/php-wasm/compile/php/phpwasm-emscripten-library.js'], timeout=10).decode()
     patched_bridge = patch_bridge_errno(original_bridge)
     bridge.write_text(patched_bridge, encoding='utf-8')
     shutil.copyfile(Path(__file__), compile_root / 'ppphp-prepare.py')
-    print(json.dumps({'upstream': head, 'phpCommit': PHP_COMMIT, 'phpVersion': PHP_VERSION,
+    print(json.dumps({'upstream': head, 'phpCommit': php['commit'], 'phpVersion': php['version'],
                       'emscripten': '4.0.19', 'profile': 'experimental-fibers' if args.candidate else 'symbol-baseline',
                       'sourceDockerfileBlob': DOCKER_BLOB,
                       'sourceBridgeBlob': BRIDGE_BLOB,
