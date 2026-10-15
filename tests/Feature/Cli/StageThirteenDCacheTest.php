@@ -57,6 +57,30 @@ function stageThirteenDCacheRecord(string $root, string $kind): string
     throw new RuntimeException(sprintf('The cache record "%s" was not found.', $kind));
 }
 
+test('CLI reports verified unchanged builds without claiming fresh compilation', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/main.ppphp', '<?php int $value = 1; echo $value;');
+    $application = new Atatusoft\Ppphp\Cli\Application();
+    $application->setAutoExit(false);
+    $tester = new Symfony\Component\Console\Tester\ApplicationTester($application);
+    $arguments = ['command' => 'build', '--working-directory' => $root, '--no-ansi' => true, '--debug' => true];
+    $status = $tester->run($arguments);
+    expect($status)->toBe(0, $tester->getDisplay());
+    expect($tester->getDisplay())->toContain('Built 1 File Atomically.');
+    $before = file_get_contents($root . '/build/ppphp/main.php');
+    expect($tester->run($arguments))->toBe(0);
+    expect($tester->getDisplay())->toContain('Build Is Up To Date (1 File Verified).');
+    expect($tester->getDisplay())->not->toContain('Compiled');
+    expect($tester->getDisplay())->not->toContain('Atomically');
+    expect(file_get_contents($root . '/build/ppphp/main.php'))->toBe($before);
+
+    $this->writeFile($root . '/build/ppphp/main.php', '<?php echo "altered";');
+    expect($tester->run($arguments))->toBe(0);
+    expect($tester->getDisplay())->not->toContain('Build Is Up To Date');
+    expect(file_get_contents($root . '/build/ppphp/main.php'))->toBe($before);
+});
+
 test('exact warm checks and builds reuse complete verified evidence', function (): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);

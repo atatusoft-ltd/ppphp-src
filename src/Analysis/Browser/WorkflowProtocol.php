@@ -9,6 +9,7 @@ use Atatusoft\Ppphp\Analysis\AnalysisProject;
 use Atatusoft\Ppphp\Analysis\PhpStan\PhpStanProcessResult;
 use Atatusoft\Ppphp\Analysis\PhpStan\PhpStanProjectAnalyzer;
 use Atatusoft\Ppphp\Cache\CompilerBuildIdentity;
+use Atatusoft\Ppphp\Cache\CompilerCache;
 use Atatusoft\Ppphp\Compiler\CompilationArtifact;
 use Atatusoft\Ppphp\Compiler\Compiler;
 use Atatusoft\Ppphp\Compiler\Manifest\BuildManifestCodec;
@@ -43,6 +44,7 @@ final readonly class WorkflowProtocol
         private NativeBuildFilesystem $filesystem = new NativeBuildFilesystem(),
         private WorkflowSnapshot $snapshots = new WorkflowSnapshot(),
         private BrowserDiagnosticRenderer $renderer = new BrowserDiagnosticRenderer(),
+        private CompilerCache $cache = new CompilerCache(),
     ) {}
 
     /** @return array<string, mixed> */
@@ -186,7 +188,14 @@ final readonly class WorkflowProtocol
     /** @return array<string, mixed> */
     private function build(WorkflowRequest $request, WorkflowSession $session, Project $project, ProjectSelection $selection, ProjectCheckResult $check, string $control): array
     {
-        $production = $this->compiler->prepareProduction($project, $selection, $check);
+        // Use the native artifact cache only after a fresh full check. Cached
+        // output never supplies workflow analysis or continuation authority.
+        try {
+            $snapshot = $this->cache->snapshot($project, $selection->analysisSources);
+        } catch (\Throwable) {
+            $snapshot = null;
+        }
+        $production = $this->compiler->prepareProduction($project, $selection, $check, $snapshot);
         $diagnostics = new DiagnosticBag([...iterator_to_array($check->diagnostics), ...iterator_to_array($production->diagnostics)]);
         if ($diagnostics->hasErrors) {
             return $this->finishDiagnostics($control, $session, $diagnostics, 3);
@@ -250,6 +259,10 @@ final readonly class WorkflowProtocol
             'sequence' => $session->start->sequence, 'tree' => $this->snapshots->identifyTree($project->configuration->outputPath),
             'manifestHash' => ProtocolJson::hash($manifest)];
         $this->filesystem->writeFileAtomically(Path::join($control, 'published.json'), ProtocolJson::encodeCanonical($published));
+        if ($snapshot !== null) {
+            $this->cache->storeArtifactBundle($project, $selection, $snapshot, $production->artifacts,
+                $commit->manifest, $diagnostics, $check);
+        }
         $descriptors = [];
         foreach ($commit->manifest->files as $entry) {
             $descriptors[] = ['path' => $entry->output, 'hash' => $entry->outputHash, 'operation' => $entry->operation->value,

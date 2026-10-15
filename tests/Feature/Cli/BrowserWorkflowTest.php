@@ -17,7 +17,7 @@ function workflowStart(string $id, int $sequence = 1, string $operation = 'build
         ]];
 }
 
-function workflowRequest(string $root, array $request): array
+function workflowRequest(string $root, array $request, ?Atatusoft\Ppphp\Analysis\Browser\WorkflowProtocol $protocol = null): array
 {
     $cwd = getcwd();
     $root = realpath($root);
@@ -25,6 +25,9 @@ function workflowRequest(string $root, array $request): array
     file_put_contents($root . '/.ppphp-browser/request.json', json_encode($request, JSON_THROW_ON_ERROR));
     chdir($root);
     try {
+        if ($protocol !== null) {
+            return $protocol->handle((new WorkflowRequestDecoder())->decode(json_encode($request, JSON_THROW_ON_ERROR)), $root);
+        }
         $app = new Application();
         $app->setAutoExit(false);
         $tester = new ApplicationTester($app);
@@ -54,11 +57,11 @@ function workflowContinue(array $response, ?array $results = null): array
         'continuation' => $response['continuation'], 'results' => $results];
 }
 
-function workflowFinish(string $root, array $request): array
+function workflowFinish(string $root, array $request, ?Atatusoft\Ppphp\Analysis\Browser\WorkflowProtocol $protocol = null): array
 {
-    $response = workflowRequest($root, $request);
+    $response = workflowRequest($root, $request, $protocol);
     for ($i = 0; $i < 30 && str_starts_with($response['status'], 'pending-'); $i++) {
-        $response = workflowRequest($root, workflowContinue($response));
+        $response = workflowRequest($root, workflowContinue($response), $protocol);
     }
     return $response;
 }
@@ -79,6 +82,61 @@ function workflowOutput(string $root): array
     }
     return $files;
 }
+
+test('workflow reuses native artifact units after fresh analysis and still requires lint', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $this->writeFile($root . '/src/First.ppphp', '<?php function firstValue(): int { return 1; }');
+    $this->writeFile($root . '/src/Second.ppphp', '<?php function secondValue(): int { return 2; }');
+    $cache = new Atatusoft\Ppphp\Cache\CompilerCache();
+    $protocol = new Atatusoft\Ppphp\Analysis\Browser\WorkflowProtocol(
+        compiler: new Atatusoft\Ppphp\Compiler\Compiler(cache: $cache), cache: $cache,
+    );
+    expect(workflowFinish($root, workflowStart('cache-cold'), $protocol)['status'])->toBe('complete');
+    expect($cache->statistics->loweringWorkAvoided)->toBe(0);
+    $before = workflowOutput($root);
+
+    // An artifact cache hit cannot stand in for current supplemental analysis.
+    $start = workflowRequest($root, workflowStart('cache-warm', 2), $protocol);
+    expect($start['status'])->toBe('pending-analysis');
+    $pending = workflowRequest($root, workflowContinue($start), $protocol);
+    expect($pending['status'])->toBe('pending-validation');
+    expect($cache->statistics->loweringWorkAvoided)->toBe(2);
+    $complete = workflowRequest($root, workflowContinue($pending), $protocol);
+    expect($complete['status'])->toBe('complete')->and(workflowOutput($root))->toBe($before);
+    expect($cache->statistics->loweringWorkAvoided)->toBe(4);
+
+    // A body edit rechecks the complete project but lowers only the changed file.
+    $this->writeFile($root . '/src/First.ppphp', '<?php function firstValue(): int { return 3; }');
+    expect(workflowFinish($root, workflowStart('cache-edit', 3), $protocol)['status'])->toBe('complete');
+    expect($cache->statistics->loweringWorkAvoided)->toBe(6);
+    expect(workflowOutput($root)['Second.php'])->toBe($before['Second.php']);
+    expect(workflowOutput($root)['First.php'])->not->toBe($before['First.php']);
+
+    // An unchanged successful artifact does not authorize a changed invalid input.
+    $published = workflowOutput($root);
+    $this->writeFile($root . '/src/First.ppphp', '<?php function firstValue(): int { return "wrong"; }');
+    $invalid = workflowFinish($root, workflowStart('cache-invalid', 4), $protocol);
+    expect($invalid['status'])->toBe('diagnostics')->and($invalid['currentOutput'])->toBeNull();
+    expect(workflowOutput($root))->toBe($published);
+    expect($cache->statistics->loweringWorkAvoided)->toBe(6);
+
+    // A changed declaration invalidates even the otherwise unchanged unit.
+    $this->writeFile($root . '/src/First.ppphp', '<?php function renamedValue(): int { return 4; }');
+    $declaration = workflowFinish($root, workflowStart('cache-declaration', 5), $protocol);
+    expect($declaration['status'])->toBe('complete', json_encode($declaration));
+    expect($cache->statistics->loweringWorkAvoided)->toBe(6);
+
+    // Corrupt persisted evidence is a miss, not an invalid or stale publication.
+    $records = glob($root . '/.ppphp-cache/compiler/v1/operations/artifact-unit/*/*.json');
+    expect($records)->not->toBe([]);
+    foreach ($records as $path) $this->writeFile($path, '{');
+    $expected = workflowOutput($root);
+    expect(workflowFinish($root, workflowStart('cache-corruption', 6), $protocol)['status'])->toBe('complete');
+    expect(workflowOutput($root))->toBe($expected);
+    expect($cache->statistics->loweringWorkAvoided)->toBe(6);
+    expect($cache->statistics->corruptEntries)->toBeGreaterThan(0);
+});
 
 test('workflow production preserves per-tag advice across analysis and lint continuations', function (): void {
     $root = $this->createTemporaryDirectory();
