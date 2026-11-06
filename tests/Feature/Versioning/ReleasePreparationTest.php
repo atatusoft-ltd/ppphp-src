@@ -101,6 +101,8 @@ test('CI covers release branches while publication remains tag driven and commit
         ->and(substr_count($ci, 'run: composer check'))->toBe(1)
         ->and($events)->toContain("tags:\n      - '*'")->not->toContain('branches:', 'workflow_dispatch:')
         ->and($release)->toContain('needs: verify', 'ref: $' . '{{ needs.verify.outputs.commit }}', '--commit="$RELEASE_COMMIT"', 'tools/release/verify-unpublished.php', '--verify-tag')
+        ->and($release)->toContain('id: branch-ci', 'actions: read', 'actions/workflows/php.yml/runs', 'RELEASE_COMMIT: $' . '{{ steps.source.outputs.commit }}', 'run: composer check:contracts')
+        ->and($release)->not->toContain("run: composer check\n")
         ->and(substr_count($release, '--publication'))->toBe(1)
         ->and(substr_count($release, 'tools/release/verify-source.php'))->toBe(2)
         ->and(substr_count($release, 'contents: write'))->toBe(1)
