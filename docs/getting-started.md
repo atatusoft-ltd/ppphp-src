@@ -34,8 +34,8 @@ terminal sessions. Embedded library use and the browser analysis protocol retain
 their host's memory policy. Larger dependency graphs can still need more memory;
 the compiler's separate dependency-index safety limits remain enforced.
 
-This configuration is available in the development checkout, not the immutable
-published `2026.3.1-rc-2` package.
+The compiler memory setting is available starting with `2026.3.1`. The
+published `2026.3.1-rc-2` package uses the host PHP memory limit.
 
 ## Create A Project
 

@@ -4,6 +4,8 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 
 ## Unreleased
 
+## 2026.3.1
+
 ### Changed
 
 - Console diagnostics now lead with the source location and specific cause, with simpler excerpts and no repeated explanation or generic repair advice. Syntax errors use a language-neutral title; diagnostic codes and editor ranges are unchanged.

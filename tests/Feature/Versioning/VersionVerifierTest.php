@@ -38,6 +38,8 @@ test('release validation accepts an exact matching expected version and tag', fu
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
 });
 
+$differentVersion = Compiler::VERSION === '2026.3.1' ? '2026.3.1-rc-2' : '2026.3.1';
+
 test('release validation rejects noncanonical and mismatched identities', function (array $arguments, string $message): void {
     $process = runVersionVerifier($arguments);
 
@@ -45,10 +47,10 @@ test('release validation rejects noncanonical and mismatched identities', functi
         ->and($process->getErrorOutput())->toContain($message);
 })->with([
     'noncanonical expected version' => [['--expected=development'], 'not a canonical ++PHP release version'],
-    'mismatched expected version' => [['--expected=dev-2026.3.2'], 'expected version does not match'],
+    'mismatched expected version' => [['--expected=' . $differentVersion], 'expected version does not match'],
     'mismatched tag' => [[
         '--expected=' . Compiler::VERSION,
-        '--tag=2026.3.1',
+        '--tag=' . $differentVersion,
     ], 'Git tag does not exactly match'],
     'empty option' => [['--tag='], 'must be a non-empty string'],
 ]);
