@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, symlinkSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, lstatSync, rmSync, existsSync, symlinkSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { createGzip } from './deterministic-archive.mjs';
-import { compilerPackageArguments, reuseCompilerBundle } from './prepare-compiler-bundle.mjs';
+import { compilerPackageArguments, inspectCompilerBundle, reuseCompilerBundle } from './prepare-compiler-bundle.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = value => JSON.stringify(value, null, 2) + '\n';
@@ -30,6 +30,35 @@ function fixture(t) {
   writeFileSync(receiptPath, json(receipt));
   return { root, output, packageRoot, expected: hash(json(receipt)), bytes, archive, receipt, receiptPath };
 }
+
+function snapshot(directory) {
+  const result = [];
+  const visit = (path, relative) => {
+    const stat = lstatSync(path);
+    result.push({ path: relative, mode: stat.mode, hash: stat.isFile() ? hash(readFileSync(path)) : null });
+    if (stat.isDirectory()) for (const name of readdirSync(path).sort()) visit(join(path, name), relative + '/' + name);
+  };
+  visit(directory, ''); return result;
+}
+
+test('read-only admission preserves historical provenance and accepts unrelated documentation changes', async t => {
+  const f = fixture(t);
+  const producer = '7c49e246c2094e975d3085bceafa8120b49f6c91';
+  f.receipt.identities.provenance = { compilerSourceCommit: producer };
+  writeFileSync(f.receiptPath, json(f.receipt)); f.expected = hash(json(f.receipt));
+  mkdirSync(join(f.root, 'docs')); writeFileSync(join(f.root, 'docs/progress.md'), 'first documentation checkpoint');
+  for (const documentation of ['first documentation checkpoint', 'later documentation checkpoint']) {
+    writeFileSync(join(f.root, 'docs/progress.md'), documentation);
+    const before = snapshot(dirname(f.root));
+    const { manifest, members, bytes } = await inspectCompilerBundle({ root: f.root, packageRoot: f.packageRoot, expected: f.expected });
+    assert.deepEqual(manifest, f.receipt.identities.compiler);
+    assert.deepEqual(bytes, f.bytes);
+    assert.equal(hash(json(members)), manifest.closureSha256);
+    assert.deepEqual(snapshot(dirname(f.root)), before, 'Admission must not create or alter input/output files');
+    assert.equal(existsSync(f.output), false);
+    assert.equal(JSON.parse(readFileSync(f.receiptPath)).identities.provenance.compilerSourceCommit, producer);
+  }
+});
 
 test('sealed compiler reuse preserves exact bytes without running Composer or packaged PHP', async t => {
   const f = fixture(t);
@@ -56,22 +85,31 @@ for (const target of ['receipt', 'archive', 'closure', 'count', 'lock', 'phpstan
       f.receipt.identities.compiler[field] = target === 'count' ? 0 : '0'.repeat(64);
       writeFileSync(f.receiptPath, json(f.receipt)); f.expected = hash(json(f.receipt));
     }
-    await assert.rejects(reuseCompilerBundle(f)); assert.equal(existsSync(f.output), false);
+    for (const admit of [inspectCompilerBundle, reuseCompilerBundle]) {
+      await assert.rejects(admit(f)); assert.equal(existsSync(f.output), false);
+    }
   });
 }
-for (const target of ['src/Compiler/Compiler.php', 'vendor/composer/ClassLoader.php', 'vendor/composer/InstalledVersions.php',
+for (const target of ['bin/ppphp', 'composer.json', 'composer.lock', 'LICENSE.txt', 'resources/phpstan/ppphp.neon',
+  'src/Compiler/Compiler.php', 'vendor/composer/ClassLoader.php', 'vendor/composer/InstalledVersions.php',
   'vendor/composer/LICENSE', 'vendor/composer/semver/src/Semver.php', 'vendor/phpstan/phpstan/phpstan.phar']) {
   test('rejects native reference drift in ' + target, async t => {
     const f = fixture(t); writeFileSync(join(f.root, target), 'changed');
-    await assert.rejects(reuseCompilerBundle(f), /Native reference differs/); assert.equal(existsSync(f.output), false);
+    for (const admit of [inspectCompilerBundle, reuseCompilerBundle]) {
+      await assert.rejects(admit(f), /Native reference differs/); assert.equal(existsSync(f.output), false);
+    }
   });
 }
 test('rejects native source absent from the sealed archive', async t => {
   const f = fixture(t); writeFileSync(join(f.root, 'src/Added.php'), '<?php');
-  await assert.rejects(reuseCompilerBundle(f), /source membership/); assert.equal(existsSync(f.output), false);
+  for (const admit of [inspectCompilerBundle, reuseCompilerBundle]) {
+    await assert.rejects(admit(f), /source membership/); assert.equal(existsSync(f.output), false);
+  }
 });
 test('rejects symlinked archive input', async t => {
   const f = fixture(t), other = join(dirname(f.archive), 'copy'); writeFileSync(other, f.bytes);
   unlinkSync(f.archive); symlinkSync(other, f.archive);
-  await assert.rejects(reuseCompilerBundle(f), /Unsafe/); assert.equal(existsSync(f.output), false);
+  for (const admit of [inspectCompilerBundle, reuseCompilerBundle]) {
+    await assert.rejects(admit(f), /Unsafe/); assert.equal(existsSync(f.output), false);
+  }
 });

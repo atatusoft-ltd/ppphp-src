@@ -52,7 +52,7 @@ final class PhpSignaturePackageLoader
             $manifest = $this->verifiedManifests[$target] ?? null;
             if ($manifest === null || ($this->packageIdentities[$target] ?? null) !== $this->computePackageIdentity($package, $manifest)) {
                 unset($this->verifiedManifests[$target], $this->packageIdentities[$target], $this->parsedModules[$target]);
-                $manifest = $this->verifier->verify($package, $target);
+                $manifest = $this->verifier->verifyInstalled($package, $target);
                 $this->packageIdentities[$target] = $this->computePackageIdentity($package, $manifest);
                 $this->verifiedManifests[$target] = $manifest;
             }

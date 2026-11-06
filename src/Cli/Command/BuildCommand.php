@@ -108,6 +108,13 @@ final class BuildCommand extends ProjectCommand
             $output->writeln('');
         }
 
+        if ($result->upToDate) {
+            $count = count($result->artifacts);
+            $output->writeln(sprintf('Build Is Up To Date (%d %s Verified).', $count, $count === 1 ? 'File' : 'Files'));
+
+            return ExitCode::Success->value;
+        }
+
         $compiled = 0;
         $copied = 0;
 

@@ -39,6 +39,17 @@ manifest construction, partial merge validation and atomic publication. JavaScri
 neither lowers source nor maps diagnostics. The BP-3 adapter stays test-only and
 is not called by the production worker path.
 
+After a fresh full check, production preparation uses the same content-addressed
+artifact-unit cache as native builds. Successful lint and atomic publication
+seed reusable artifacts; unchanged units can then avoid lowering on later
+builds, including after body-only edits elsewhere. Declaration, configuration,
+dependency, compiler and target identities still invalidate incompatible units.
+Corrupt or missing evidence is a cache miss. This transport does not use cached
+artifacts to skip supplemental analysis or the current operation's lint, grant
+Run permission, or reconstruct compiler models from persisted bytes. Browser
+clients may separately retain an exact, privately verified complete build for
+unchanged Run requests.
+
 ## Requests
 
 Objects have exactly the documented fields. Unknown, missing and duplicate JSON

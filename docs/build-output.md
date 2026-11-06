@@ -8,6 +8,14 @@ A pathless build replaces the complete tree, including stale and unmanaged files
 
 Before analysis, an exact cached bundle may validate the current manifest, output files, hashes, and maps. If all inputs and output evidence match, build returns up to date without parsing, semantics, workspace preparation, PHPStan, lowering, lint, candidate creation, or manifest rewriting. If output is absent, complete cached artifacts may reconstruct it, but reconstructed PHP is linted and committed through the normal transaction.
 
+An unchanged verified build prints `Build Is Up To Date` instead of claiming
+fresh compilation. No extra option is needed. A build directory alone is not
+enough: changed source, configuration, dependencies, compiler or target inputs
+invalidate incompatible cache evidence. For changed projects, full checking
+still runs; unchanged artifacts can avoid lowering when their declaration
+context remains compatible. Deleting or corrupting cached data safely causes
+recomputation, not execution of an unverified old build.
+
 ## Manifest Version 2
 
 Every emitted or copied output has a source map and a sorted entry in `<output>/.ppphp/manifest.json`. Format version 2 records:

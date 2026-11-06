@@ -12,6 +12,9 @@ const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..'
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = value => JSON.stringify(value, null, 2) + '\n';
 const archiveName = 'compiler.tar.gz.bin';
+export const compilerOwnedInputPaths = Object.freeze([
+  'bin/ppphp', 'composer.json', 'composer.lock', 'LICENSE.txt', 'resources', 'src',
+]);
 const generatedAutoload = new Set(['vendor/autoload.php', ...[
   'autoload_classmap.php', 'autoload_files.php', 'autoload_namespaces.php', 'autoload_psr4.php',
   'autoload_real.php', 'autoload_static.php', 'installed.json', 'installed.php', 'platform_check.php',
@@ -25,7 +28,10 @@ export function compilerPackageArguments(options) {
   return ['--package', path, '--receipt-sha256', expected];
 }
 
-export async function reuseCompilerBundle({ root = compilerRoot, output, packageRoot, expected }) {
+/** Admit the sealed archive against current compiler inputs without writing or
+ * executing anything. The producer commit remains historical provenance;
+ * equivalence is established by complete membership and actual input bytes. */
+export async function inspectCompilerBundle({ root = compilerRoot, packageRoot, expected }) {
   assert.match(expected, /^[a-f0-9]{64}$/, 'Independent receipt hash required');
   packageRoot = realpathSync(packageRoot);
   const read = (path, maximum) => {
@@ -61,11 +67,16 @@ export async function reuseCompilerBundle({ root = compilerRoot, output, package
     if (stat.isDirectory()) { for (const name of readdirSync(join(root, path))) visit(path + '/' + name); }
     else if (compilerMember(path)) owned.push(path);
   };
-  for (const path of ['bin/ppphp', 'composer.json', 'composer.lock', 'LICENSE.txt', 'resources', 'src']) visit(path);
+  for (const path of compilerOwnedInputPaths) visit(path);
   assert.deepEqual(members.filter(m => !m.path.startsWith('vendor/')).map(m => m.path), owned.sort(), 'Complete native compiler source membership');
   assert.equal(hash(json(members)), manifest.closureSha256, 'Compiler closure identity');
   assert.equal(members.find(m => m.path === 'composer.lock').sha256, manifest.compilerLockSha256);
   assert.equal(members.find(m => m.path === 'vendor/phpstan/phpstan/phpstan.phar').sha256, manifest.phpstanSha256);
+  return { manifest, members, bytes };
+}
+
+export async function reuseCompilerBundle({ root = compilerRoot, output, packageRoot, expected }) {
+  const { manifest, members, bytes } = await inspectCompilerBundle({ root, packageRoot, expected });
   mkdirSync(output, { recursive: true });
   writeFileSync(join(output, archiveName), bytes);
   writeFileSync(join(output, 'compiler.json'), json(manifest));
@@ -110,7 +121,7 @@ export async function prepareCompilerBundle({ root = compilerRoot, output = join
       if (!compilerMember(path)) return;
       files.push({ path, content: readFileSync(full), mode: path === 'bin/ppphp' ? 493 : 420 });
     };
-    for (const path of ['bin/ppphp', 'composer.json', 'composer.lock', 'LICENSE.txt', 'resources', 'src']) visit(root, path);
+    for (const path of compilerOwnedInputPaths) visit(root, path);
     for (const name of productionPackages) visit(stage, 'vendor/' + name);
     visit(stage, 'vendor/autoload.php');
     for (const name of readdirSync(join(stage, 'vendor/composer')).sort()) {

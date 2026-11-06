@@ -2,8 +2,8 @@
 
 > **Repository:** `atatusoft-ltd/ppphp-src`
 > **Branch:** `develop`
-> **Status:** Stages 0–12, post-Stage-12 semantic closure, Stages 13A–13D, the post-Stage-13C completion gate, and Stage 14A are complete; Release Candidates are published, with Stage 14B public artifact and installation acceptance still incomplete
-> **Last updated:** 2026-10-09
+> **Status:** Stages 0–12, post-Stage-12 semantic closure, Stages 13A–13D, the post-Stage-13C completion gate, and Stage 14A are complete. RC-2 public assets and installation have been verified; Stable publication is pending.
+> **Last updated:** 2026-11-06
 
 ## 1. Purpose
 
@@ -1181,7 +1181,7 @@ Do not lower through closures. Use deterministic, collision-free temporary varia
 | 13 | Incremental performance, security, and hardening |
 | 14 | Public MVP release |
 
-Stages are completed in order. Stages 0–12, the post-Stage-12 semantic closure, Stages 13A–13D, and Stage 14A are complete. RC-1 and RC-2 are published, but Stage 14B public artifact and installation acceptance remains incomplete. A later stage must not excuse an incomplete earlier acceptance criterion.
+Stages are completed in order. Stages 0–12, the post-Stage-12 semantic closure, Stages 13A–13D, and Stage 14A are complete. RC-1 and RC-2 are published, and the RC-2 public asset and installation checks have passed. A later stage must not excuse an incomplete earlier acceptance criterion.
 
 ---
 
@@ -1927,12 +1927,12 @@ history.
 
 ### Stage 14B — Publish And Validate The Release Candidate
 
-**Status:** Partially complete. GitHub published `2026.3.1-rc-1` on
-2026-09-03 and `2026.3.1-rc-2` on 2026-09-08. The 2026-10-09 inventory
-found no attached release assets for RC-2. Public asset, immutable schema,
-checksum and clean Composer-install verification must be recorded before this
-stage can be marked complete. Do not rewrite published tags or treat a
-prerelease listing as acceptance evidence. Stable promotion remains pending.
+**Status:** RC-2 public asset and installation checks passed. GitHub published
+`2026.3.1-rc-1` on 2026-09-03 and `2026.3.1-rc-2` on 2026-09-08. The
+2026-10-09 inventory found no attached compiler release assets for RC-2.
+The owner subsequently added the five compiler assets and synchronized the
+release body using the notes rebuilt from the existing RC-2 commit
+`efd12792f991d8058fc121d17acc19e2a051c4b2`. The tag did not move.
 
 The same inventory verified a fresh public RC-2 Composer installation on
 macOS with PHP 8.5.11: exact version reporting, `init`, Composer configuration,
@@ -1944,11 +1944,13 @@ explicit 128 MiB ceiling; those memory fixes are not in the published tag.
 The installed-distribution gate now starts the CLI at 128 MiB without an
 inherited compiler-budget override, leaving the CLI responsible for its own
 memory policy instead of masking startup defects with a pre-raised allowance.
-RC-2's configured immutable schema URL returned HTTP 404. The tagged
-RC-2 source reconstructed all five release assets reproducibly, but its rendered
-notes differ from the published release body. Completing the public assets and
-notes contract requires the owner's publication decision; no tag or published
-content was changed by this verification.
+On 2026-11-06, the owner verified the five public assets against two matching
+reconstructions from the tagged source, including the immutable schema and
+checksums. The public release body matched the rendered notes. A clean Packagist
+install on macOS with PHP 8.5.12 resolved to that exact commit, wrote the matching
+schema URL, and passed Composer projection, `check`, `build`, generated PHP lint
+and source-free execution at 512 MiB. This verification did not retest RC-2 at
+128 MiB. Stable publication remains pending and needs its own candidate checks.
 The original tagged-release verification job passed; its publication job failed
 at the duplicate-publication guard because the GitHub release already existed.
 Keep that guard intact: rerunning ordinary publication is not a repair procedure

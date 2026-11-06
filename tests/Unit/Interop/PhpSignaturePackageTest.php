@@ -15,7 +15,11 @@ use Atatusoft\Ppphp\Source\SourceFile;
 
 test('the committed PHP 8.4 signature package has immutable verified provenance', function (): void {
     $root = dirname(__DIR__, 3) . '/resources/php-signatures/8.4';
-    $manifest = (new PhpSignaturePackageVerifier())->verify($root);
+    $verifier = new PhpSignaturePackageVerifier();
+    $manifest = $verifier->verify($root);
+
+    expect(hash_file('sha256', $root . '/manifest.json'))->toBe(PhpSignaturePackageVerifier::REVIEWED_MANIFESTS['8.4'])
+        ->and($verifier->verifyInstalled($root, '8.4'))->toBe($manifest);
 
     expect($manifest['formatVersion'])->toBe(1)
         ->and($manifest['generatorVersion'])->toBe('2')
@@ -35,6 +39,25 @@ test('the committed PHP 8.4 signature package has immutable verified provenance'
             'implementation-alias',
             'tentative-return-type',
         ]);
+});
+
+test('runtime verification checks even unused signature shards and audits unknown manifests', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $shipped = dirname(__DIR__, 3) . '/resources/php-signatures/8.4';
+    \Tests\Support\StageElevenProject::copyTree($shipped, $root . '/8.4');
+    $package = $root . '/8.4';
+    $shard = $package . '/extensions/zlib.json';
+    $original = file_get_contents($shard);
+    $this->writeFile($shard, $original . "\n");
+    $verifier = new PhpSignaturePackageVerifier();
+    expect(fn () => $verifier->verifyInstalled($package, '8.4'))->toThrow(RuntimeException::class, 'extensions/zlib.json');
+
+    $this->writeFile($shard, $original);
+    $manifestPath = $package . '/manifest.json';
+    $manifest = \Atatusoft\Ppphp\Support\CanonicalJson::decode(file_get_contents($manifestPath));
+    $manifest['counts']['functions']++;
+    $this->writeFile($manifestPath, \Atatusoft\Ppphp\Support\CanonicalJson::encode($manifest));
+    expect(fn () => $verifier->verifyInstalled($package, '8.4'))->toThrow(RuntimeException::class);
 });
 
 test('mutually exclusive function variants normalize to their conservative common contract', function (): void {

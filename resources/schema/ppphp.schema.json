@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://github.com/atatusoft-ltd/ppphp-src/releases/download/2026.3.1-rc-2/ppphp.schema.json",
+    "$id": "https://github.com/atatusoft-ltd/ppphp-src/releases/download/2026.3.1/ppphp.schema.json",
     "title": "++PHP Project Configuration",
     "description": "Configuration for a ++PHP project. Paths are relative to the project root.",
     "type": "object",
