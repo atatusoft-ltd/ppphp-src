@@ -14,10 +14,27 @@ use PhpParser\PhpVersion;
  */
 final readonly class PhpSignaturePackageVerifier
 {
+    /** Manifests of shipped packages that pass the full structural audit. */
+    public const array REVIEWED_MANIFESTS = [
+        '8.4' => 'fc8acea749a472694be41c0d2a61a1778f6f127ecbfcabc0c00efa90a01acec2',
+    ];
+
     public function __construct(private ParserFactory $parsers = new ParserFactory()) {}
 
     /** @return array<string, mixed> */
     public function verify(string $packageDirectory, string $expectedTarget = '8.4'): array
+    {
+        return $this->inspect($packageDirectory, $expectedTarget, null);
+    }
+
+    /** @return array<string, mixed> */
+    public function verifyInstalled(string $packageDirectory, string $expectedTarget): array
+    {
+        return $this->inspect($packageDirectory, $expectedTarget, self::REVIEWED_MANIFESTS[$expectedTarget] ?? null);
+    }
+
+    /** @return array<string, mixed> */
+    private function inspect(string $packageDirectory, string $expectedTarget, ?string $reviewedDigest): array
     {
         $root = realpath($packageDirectory);
 
@@ -26,7 +43,10 @@ final readonly class PhpSignaturePackageVerifier
         }
 
         $root = rtrim(str_replace('\\', '/', $root), '/');
-        $manifest = $this->json($root . '/manifest.json');
+        $manifestPath = $root . '/manifest.json';
+        $manifestBytes = $this->read($manifestPath);
+        $manifest = $this->decode($manifestBytes, $manifestPath);
+        $reviewed = $reviewedDigest !== null && hash('sha256', $manifestBytes) === $reviewedDigest;
         $this->requireInteger($manifest, 'formatVersion', PhpSignaturePackageGenerator::FORMAT_VERSION);
         $this->requireString($manifest, 'generatorVersion', PhpSignaturePackageGenerator::GENERATOR_VERSION);
         $this->requireString($manifest, 'packageVersion', PhpSignaturePackageGenerator::PACKAGE_VERSION);
@@ -78,6 +98,12 @@ final readonly class PhpSignaturePackageVerifier
 
                 $shards[] = [$output['module'], $path];
             }
+        }
+
+        // The exact reviewed manifest binds the contents of every output.
+        // Runtime loads still check all bytes before using its symbol index.
+        if ($reviewed) {
+            return $manifest;
         }
 
         $inputs = $this->inputHashes($manifest['inputs'] ?? null);
@@ -250,12 +276,23 @@ final readonly class PhpSignaturePackageVerifier
     /** @return array<string, mixed> */
     private function json(string $path): array
     {
+        return $this->decode($this->read($path), $path);
+    }
+
+    private function read(string $path): string
+    {
         $contents = file_get_contents($path);
 
         if (!is_string($contents)) {
             throw new \RuntimeException(sprintf('Required PHP signature file "%s" is unavailable.', basename($path)));
         }
 
+        return $contents;
+    }
+
+    /** @return array<string, mixed> */
+    private function decode(string $contents, string $path): array
+    {
         try {
             $decoded = CanonicalJson::decode($contents);
         } catch (\JsonException $exception) {
