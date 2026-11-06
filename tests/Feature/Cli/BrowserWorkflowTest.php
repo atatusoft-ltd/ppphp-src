@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 use Atatusoft\Ppphp\Analysis\Browser\WorkflowRequestDecoder;
+use Atatusoft\Ppphp\Analysis\Browser\WorkflowRequest;
+use Atatusoft\Ppphp\Analysis\Browser\WorkflowRequestPump;
+use Atatusoft\Ppphp\Analysis\Browser\WorkflowProgress;
+use Atatusoft\Ppphp\Analysis\Browser\WorkflowProtocol;
 use Atatusoft\Ppphp\Analysis\Browser\WorkflowValues;
 use Atatusoft\Ppphp\Cli\Application;
 use Symfony\Component\Console\Tester\ApplicationTester;
@@ -17,7 +21,7 @@ function workflowStart(string $id, int $sequence = 1, string $operation = 'build
         ]];
 }
 
-function workflowRequest(string $root, array $request, ?Atatusoft\Ppphp\Analysis\Browser\WorkflowProtocol $protocol = null): array
+function workflowRequest(string $root, array $request, ?WorkflowProtocol $protocol = null, ?WorkflowProgress $progress = null): array
 {
     $cwd = getcwd();
     $root = realpath($root);
@@ -26,7 +30,7 @@ function workflowRequest(string $root, array $request, ?Atatusoft\Ppphp\Analysis
     chdir($root);
     try {
         if ($protocol !== null) {
-            return $protocol->handle((new WorkflowRequestDecoder())->decode(json_encode($request, JSON_THROW_ON_ERROR)), $root);
+            return $protocol->handle((new WorkflowRequestDecoder())->decode(json_encode($request, JSON_THROW_ON_ERROR)), $root, $progress);
         }
         $app = new Application();
         $app->setAutoExit(false);
@@ -162,6 +166,71 @@ echo size([1, 2]);');
     expect($native->getExitCode())->toBe(0, $native->getOutput());
     expect(file_get_contents($root . '/build/ppphp/main.php'))->toBe($php);
 });
+
+test('a live workflow keeps one preparation and revokes it when the project changes', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $path = $root . '/src/main.ppphp';
+    $source = '<?php int $count = count([1, 2]); echo $count;';
+    $this->writeFile($path, $source);
+    $reference = workflowFinish($root, workflowStart('reference'));
+    expect($reference['status'])->toBe('complete');
+    $published = workflowOutput($root);
+
+    $protocol = new WorkflowProtocol();
+    $progress = new WorkflowProgress();
+    $response = workflowRequest($root, workflowStart('retained', 2), $protocol, $progress);
+    $preparation = $progress->preparation;
+    expect($response['status'])->toBe('pending-analysis')->and($preparation)->not->toBeNull();
+    $analysisRounds = 0;
+    while ($response['status'] === 'pending-analysis') {
+        expect(++$analysisRounds)->toBeLessThan(8);
+        $response = workflowRequest($root, workflowContinue($response), $protocol, $progress);
+        expect($progress->preparation)->toBe($preparation);
+    }
+    expect($analysisRounds)->toBeGreaterThan(1)->and($response['status'])->toBe('pending-validation');
+    expect($progress->production)->not->toBeNull();
+    $result = workflowRequest($root, workflowContinue($response), $protocol, $progress);
+    expect($result['status'])->toBe('complete')
+        ->and($result['diagnostics'])->toBe($reference['diagnostics'])
+        ->and(workflowOutput($root))->toBe($published)
+        ->and($progress->preparation)->toBeNull();
+
+    $response = workflowRequest($root, workflowStart('changing', 3), $protocol, $progress);
+    $completion = workflowContinue($response);
+    $this->writeFile($path, str_replace('[1, 2]', '[1]', $source));
+    expect(workflowRequest($root, $completion, $protocol, $progress)['status'])->toBe('rejected')
+        ->and($progress->preparation)->toBeNull();
+    $this->writeFile($path, $source);
+    expect(workflowRequest($root, $completion, $protocol, $progress)['status'])->toBe('rejected')
+        ->and(workflowOutput($root))->toBe($published);
+
+    $response = workflowRequest($root, workflowStart('changed-candidate', 4), $protocol, $progress);
+    for ($round = 0; $round < 8 && $response['status'] === 'pending-analysis'; $round++) {
+        $response = workflowRequest($root, workflowContinue($response), $protocol, $progress);
+    }
+    expect($response['status'])->toBe('pending-validation');
+    $lint = workflowContinue($response);
+    $this->writeFile($root . '/.ppphp-browser/pending/main.php', '<?php echo "changed after lint";');
+    expect(workflowRequest($root, $lint, $protocol, $progress)['status'])->toBe('rejected')
+        ->and($progress->production)->toBeNull()
+        ->and(workflowOutput($root))->toBe($published);
+});
+
+test('the browser device rejects a malformed frame before opening the project', function (int $length): void {
+    $input = fopen('php://temp', 'w+b');
+    $output = fopen('php://temp', 'w+b');
+    fwrite($input, pack('N', $length));
+    rewind($input);
+    try {
+        expect(fn () => (new WorkflowRequestPump())->serve($input, $output, '/invalid'))
+            ->toThrow(InvalidArgumentException::class, 'Invalid workflow request frame length.');
+        expect(ftell($output))->toBe(0);
+    } finally {
+        fclose($input);
+        fclose($output);
+    }
+})->with([0, WorkflowRequest::MAXIMUM_BYTES + 1]);
 
 test('later annotation rounds reject replay malformed advice and timeout without publication', function (): void {
     $root = $this->createTemporaryDirectory();

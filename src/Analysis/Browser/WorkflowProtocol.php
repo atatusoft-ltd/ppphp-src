@@ -45,14 +45,21 @@ final readonly class WorkflowProtocol
         private WorkflowSnapshot $snapshots = new WorkflowSnapshot(),
         private BrowserDiagnosticRenderer $renderer = new BrowserDiagnosticRenderer(),
         private CompilerCache $cache = new CompilerCache(),
+        private bool $embeddedCompiler = false,
     ) {}
 
     /** @return array<string, mixed> */
-    public function handle(WorkflowRequest $request, string $root): array
+    public function handle(WorkflowRequest $request, string $root, ?WorkflowProgress $progress = null): array
     {
         $lock = new ProjectBuildLock();
         $session = null;
+        $retainProgress = false;
         try {
+            if ($progress !== null && ($request->action === 'start'
+                ? $progress->continuation !== null
+                : $request->continuation === null || $request->continuation !== $progress->continuation)) {
+                throw new \InvalidArgumentException('The workflow request does not own this browser operation.');
+            }
             clearstatcache();
             if (realpath($root) !== $root || realpath((string) getcwd()) !== $root || is_link($root)
                 || Path::hasSymlinkAncestor(Path::join($root, self::CONTROL), $root)) {
@@ -120,19 +127,20 @@ final readonly class WorkflowProtocol
                 $this->validateFreshness($session, $project);
                 return $this->finishDiagnostics($control, $session, $selection->diagnostics, 2);
             }
-            $preparation = $this->checker->prepare($project, $selection->selection->analysisSources);
+            $preparation = $progress->preparation ?? $this->checker->prepare($project, $selection->selection->analysisSources);
             if (!$preparation->isSuccessful || $preparation->analysisProject === null) {
                 $this->validateFreshness($session, $project);
                 return $this->finishDiagnostics($control, $session, $preparation->diagnostics, 1);
             }
             $analyzer = new PhpStanProjectAnalyzer();
+            $run = null;
             if ($preparation->analysisProject->selectedFiles === []) {
                 $check = $this->checker->complete($preparation, new AnalysisResult(new DiagnosticBag(), ['backend' => 'phpstan', 'skipped' => true]));
             } else {
-                $run = new SupplementalAnalysisRun($preparation);
+                $run = $progress->analysis ?? new SupplementalAnalysisRun($preparation);
                 $observations = $session->analysis === null ? [] : [$session->analysis, ...$session->annotationResults];
                 $incoming = $request->action === 'complete-analysis' ? ($request->results[0] ?? null) : null;
-                $round = 0;
+                $round = $progress?->analysis === null ? 0 : count($observations);
                 while ($run->result === null) {
                     $invocation = $this->prepareAnalyzerInvocation($session, $run->pendingProject, $root, array_slice($observations, 0, $round));
                     $observed = $observations[$round] ?? $incoming;
@@ -143,6 +151,8 @@ final readonly class WorkflowProtocol
                         $session->invocations = [$invocation['identity']];
                         $this->validateFreshness($session, $project);
                         $this->saveSession($control, $session);
+                        $progress?->retain($session, $preparation, $run);
+                        $retainProgress = true;
                         return $this->respond($session, 'pending-analysis', null, ['invocations' => [$invocation]]);
                     }
                     if ($observed->invocation !== $invocation['identity']) {
@@ -170,7 +180,12 @@ final readonly class WorkflowProtocol
                 $this->validateFreshness($session, $project);
                 return $this->finishDiagnostics($control, $session, $check->diagnostics, $check->isSuccessful ? 0 : 1);
             }
-            return $this->build($request, $session, $project, $selection->selection, $check, $control);
+            $response = $this->build($request, $session, $project, $selection->selection, $check, $control, $progress);
+            if ($response['status'] === 'pending-validation') {
+                $progress?->retain($session, $preparation, $run);
+                $retainProgress = true;
+            }
+            return $response;
         } catch (\InvalidArgumentException $error) {
             return ['version' => 3, 'operationId' => $request->operationId, 'sequence' => $request->sequence,
                 'status' => 'rejected', 'compilerStatus' => 2, 'currentOutput' => null,
@@ -181,21 +196,28 @@ final readonly class WorkflowProtocol
                 'error' => ['code' => 'workflow-failure', 'message' => 'The compiler workflow could not complete.'],
                 'debug' => ['exception' => $error::class, 'message' => $error->getMessage()]];
         } finally {
+            if (!$retainProgress) {
+                $progress?->discard();
+            }
             $lock->release();
         }
     }
 
     /** @return array<string, mixed> */
-    private function build(WorkflowRequest $request, WorkflowSession $session, Project $project, ProjectSelection $selection, ProjectCheckResult $check, string $control): array
+    private function build(WorkflowRequest $request, WorkflowSession $session, Project $project, ProjectSelection $selection, ProjectCheckResult $check, string $control, ?WorkflowProgress $progress): array
     {
         // Use the native artifact cache only after a fresh full check. Cached
         // output never supplies workflow analysis or continuation authority.
-        try {
-            $snapshot = $this->cache->snapshot($project, $selection->analysisSources);
-        } catch (\Throwable) {
-            $snapshot = null;
+        $production = $progress?->production;
+        $snapshot = $progress?->cacheSnapshot;
+        if ($production === null) {
+            try {
+                $snapshot = $this->cache->snapshot($project, $selection->analysisSources);
+            } catch (\Throwable) {
+                $snapshot = null;
+            }
+            $production = $this->compiler->prepareProduction($project, $selection, $check, $snapshot);
         }
-        $production = $this->compiler->prepareProduction($project, $selection, $check, $snapshot);
         $diagnostics = new DiagnosticBag([...iterator_to_array($check->diagnostics), ...iterator_to_array($production->diagnostics)]);
         if ($diagnostics->hasErrors) {
             return $this->finishDiagnostics($control, $session, $diagnostics, 3);
@@ -216,6 +238,7 @@ final readonly class WorkflowProtocol
             $session->invocations = array_column($invocations, 'identity');
             $this->validateFreshness($session, $project);
             $this->saveSession($control, $session);
+            $progress?->retainProduction($production, $snapshot);
             return $this->respond($session, 'pending-validation', null, ['invocations' => $invocations, 'candidates' => $expected]);
         }
         if ($candidate !== $session->candidate) {
@@ -295,10 +318,11 @@ final readonly class WorkflowProtocol
     private function prepareLintInvocations(WorkflowSession $session, array $artifacts, string $pending): array
     {
         $result = [];
+        $binding = $artifacts === [] ? '' : $this->bind($session, 'lint', $session->candidate ?? throw new \LogicException('Missing candidate identity.'));
         foreach ($artifacts as $artifact) {
             $data = ['kind' => 'php-lint', 'command' => ['php', '-n', '-l', Path::join($pending, $artifact->relativeOutputPath)],
                 'workingDirectory' => dirname(dirname($pending)), 'path' => $artifact->relativeOutputPath, 'hash' => $artifact->outputHash,
-                'binding' => $this->bind($session, 'lint', $session->candidate ?? throw new \LogicException('Missing candidate identity.'))];
+                'binding' => $binding];
             $result[] = ['identity' => ProtocolJson::hash(ProtocolJson::encodeCanonical($data)), ...$data];
         }
         return $result;
@@ -384,7 +408,11 @@ final readonly class WorkflowProtocol
     private function validateRuntime(WorkflowRequest $start, Project $project): void
     {
         $runtime = $start->runtime;
-        if ($runtime === null || $runtime['phpVersion'] !== PHP_VERSION || $runtime['sapi'] !== PHP_SAPI
+        // The embedded compiler and CLI children use the same verified Wasm
+        // binary. The wire identity describes the CLI used for analyzer/lint.
+        $sapi = $this->embeddedCompiler && PHP_SAPI === 'wasm' ? 'cli' : PHP_SAPI;
+        if (($this->embeddedCompiler && PHP_SAPI !== 'wasm')
+            || $runtime === null || $runtime['phpVersion'] !== PHP_VERSION || $runtime['sapi'] !== $sapi
             || $runtime['intSize'] !== PHP_INT_SIZE || $project->configuration->targetPhpVersion !== '8.4') {
             throw new \InvalidArgumentException('This workflow requires a matching qualified PHP 8.4 runtime and target.');
         }
