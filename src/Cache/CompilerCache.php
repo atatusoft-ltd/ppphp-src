@@ -6,6 +6,7 @@ namespace Atatusoft\Ppphp\Cache;
 
 use Atatusoft\Ppphp\Analysis\CompilerProjectAnalysis;
 use Atatusoft\Ppphp\Analysis\Enumerations\AnalysisCompleteness;
+use Atatusoft\Ppphp\Cache\Enumerations\CacheScope;
 use Atatusoft\Ppphp\Compiler\CompilationArtifact;
 use Atatusoft\Ppphp\Compiler\Compiler;
 use Atatusoft\Ppphp\Compiler\Manifest\BuildManifest;
@@ -27,6 +28,9 @@ use Atatusoft\Ppphp\Transpilation\SourceMapWriter;
 
 final readonly class CompilerCache
 {
+    private const string BROWSER_ARTIFACT_DIRECTORY = 'browser-artifacts';
+    private const int BROWSER_ARTIFACT_BYTES = 1_048_576;
+
     public CacheStatistics $statistics;
 
     private ProjectInputSnapshotBuilder $snapshots;
@@ -43,6 +47,7 @@ final readonly class CompilerCache
         ?CompilerBuildIdentity $buildIdentity = null,
         ?ConfigurationFingerprint $fingerprints = null,
         ?CacheStatistics $statistics = null,
+        private CacheScope $scope = CacheScope::Native,
     ) {
         $this->buildIdentity = $buildIdentity ?? new CompilerBuildIdentity();
         $this->snapshots = $snapshots ?? new ProjectInputSnapshotBuilder($this->buildIdentity);
@@ -289,6 +294,53 @@ final readonly class CompilerCache
 
         foreach ($artifacts as $artifact) {
             $this->storeArtifactUnit($store, $snapshot, $project, $artifact, $declarationIdentity);
+        }
+    }
+
+    /** @param list<CompilationArtifact> $artifacts */
+    public function replaceBrowserArtifactUnits(
+        Project $project,
+        ProjectInputSnapshot $snapshot,
+        array $artifacts,
+        ProjectCheckResult $check,
+    ): void {
+        if ($this->scope !== CacheScope::BrowserArtifacts) {
+            throw new \LogicException('A browser artifact cache requires a browser cache scope.');
+        }
+
+        $root = $this->cacheRoot($project);
+        if (Path::hasSymlinkAncestor($root, $project->configuration->projectRoot)) {
+            return;
+        }
+
+        $filesystem = new NativeBuildFilesystem();
+        try {
+            $filesystem->remove($root);
+            $declarationIdentity = (new DeclarationFingerprint())->calculate($project, $check);
+            if ($declarationIdentity === null) {
+                return;
+            }
+
+            $store = $this->store($project);
+            foreach ($artifacts as $artifact) {
+                $this->storeArtifactUnit($store, $snapshot, $project, $artifact, $declarationIdentity);
+            }
+
+            clearstatcache();
+            $bytes = 0;
+            foreach ($filesystem->listFiles($root) as $file) {
+                $size = @filesize(Path::join($root, $file));
+                if ($size === false || ($bytes += $size) > self::BROWSER_ARTIFACT_BYTES) {
+                    $filesystem->remove($root);
+                    return;
+                }
+            }
+        } catch (\Throwable) {
+            // A write or cleanup failure cannot change a committed build.
+            try {
+                $filesystem->remove($root);
+            } catch (\Throwable) {
+            }
         }
     }
 
@@ -578,18 +630,25 @@ final readonly class CompilerCache
             return [];
         }
 
+        $store = $this->store($project);
+        $browser = $this->scope === CacheScope::BrowserArtifacts;
+        if ($browser) {
+            $root = $this->cacheRoot($project);
+            if (is_link($root) || Path::hasSymlinkAncestor($root, $project->configuration->projectRoot)) {
+                return [];
+            }
+        }
         $declarationIdentity = (new DeclarationFingerprint())->calculate(
             $project,
             $check,
-            $this->store($project),
-            $snapshot,
+            $browser ? null : $store,
+            $browser ? null : $snapshot,
         );
 
         if ($declarationIdentity === null) {
             return [];
         }
 
-        $store = $this->store($project);
         $artifacts = [];
 
         foreach ($plan as $entry) {
@@ -798,9 +857,16 @@ final readonly class CompilerCache
     {
         return new CacheStore(
             $project->configuration->projectRoot,
-            $project->configuration->cachePath,
+            $this->cacheRoot($project),
             $this->statistics,
         );
+    }
+
+    private function cacheRoot(Project $project): string
+    {
+        return $this->scope === CacheScope::BrowserArtifacts
+            ? Path::join($project->configuration->cachePath, self::BROWSER_ARTIFACT_DIRECTORY)
+            : $project->configuration->cachePath;
     }
 
     private function decodeDiagnostics(mixed $records, Project $project): DiagnosticBag

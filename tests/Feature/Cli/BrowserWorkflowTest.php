@@ -8,6 +8,7 @@ use Atatusoft\Ppphp\Analysis\Browser\WorkflowRequestPump;
 use Atatusoft\Ppphp\Analysis\Browser\WorkflowProgress;
 use Atatusoft\Ppphp\Analysis\Browser\WorkflowProtocol;
 use Atatusoft\Ppphp\Analysis\Browser\WorkflowValues;
+use Atatusoft\Ppphp\Cache\Enumerations\CacheScope;
 use Atatusoft\Ppphp\Cli\Application;
 use Symfony\Component\Console\Tester\ApplicationTester;
 use Symfony\Component\Process\Process;
@@ -25,13 +26,13 @@ function workflowRequest(string $root, array $request, ?WorkflowProtocol $protoc
 {
     $cwd = getcwd();
     $root = realpath($root);
-    if (!is_dir($root . '/.ppphp-browser')) mkdir($root . '/.ppphp-browser');
-    file_put_contents($root . '/.ppphp-browser/request.json', json_encode($request, JSON_THROW_ON_ERROR));
     chdir($root);
     try {
         if ($protocol !== null) {
             return $protocol->handle((new WorkflowRequestDecoder())->decode(json_encode($request, JSON_THROW_ON_ERROR)), $root, $progress);
         }
+        if (!is_dir($root . '/.ppphp-browser')) mkdir($root . '/.ppphp-browser');
+        file_put_contents($root . '/.ppphp-browser/request.json', json_encode($request, JSON_THROW_ON_ERROR));
         $app = new Application();
         $app->setAutoExit(false);
         $tester = new ApplicationTester($app);
@@ -87,15 +88,13 @@ function workflowOutput(string $root): array
     return $files;
 }
 
-test('workflow reuses native artifact units after fresh analysis and still requires lint', function (): void {
+test('workflow reuses verified artifact units after fresh analysis and still requires lint', function (): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
     $this->writeFile($root . '/src/First.ppphp', '<?php function firstValue(): int { return 1; }');
     $this->writeFile($root . '/src/Second.ppphp', '<?php function secondValue(): int { return 2; }');
-    $cache = new Atatusoft\Ppphp\Cache\CompilerCache();
-    $protocol = new Atatusoft\Ppphp\Analysis\Browser\WorkflowProtocol(
-        compiler: new Atatusoft\Ppphp\Compiler\Compiler(cache: $cache), cache: $cache,
-    );
+    $cache = new Atatusoft\Ppphp\Cache\CompilerCache(scope: CacheScope::BrowserArtifacts);
+    $protocol = new WorkflowProtocol(cache: $cache);
     expect(workflowFinish($root, workflowStart('cache-cold'), $protocol)['status'])->toBe('complete');
     expect($cache->statistics->loweringWorkAvoided)->toBe(0);
     $before = workflowOutput($root);
@@ -132,7 +131,7 @@ test('workflow reuses native artifact units after fresh analysis and still requi
     expect($cache->statistics->loweringWorkAvoided)->toBe(6);
 
     // Corrupt persisted evidence is a miss, not an invalid or stale publication.
-    $records = glob($root . '/.ppphp-cache/compiler/v1/operations/artifact-unit/*/*.json');
+    $records = glob($root . '/.ppphp-cache/browser-artifacts/compiler/v1/operations/artifact-unit/*/*.json');
     expect($records)->not->toBe([]);
     foreach ($records as $path) $this->writeFile($path, '{');
     $expected = workflowOutput($root);
@@ -140,6 +139,43 @@ test('workflow reuses native artifact units after fresh analysis and still requi
     expect(workflowOutput($root))->toBe($expected);
     expect($cache->statistics->loweringWorkAvoided)->toBe(6);
     expect($cache->statistics->corruptEntries)->toBeGreaterThan(0);
+});
+
+test('edited builds retain one artifact generation and compact terminal evidence', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $protocol = new WorkflowProtocol();
+    $filesystem = new Atatusoft\Ppphp\Compiler\Output\NativeBuildFilesystem();
+    $cacheRoot = $root . '/.ppphp-cache';
+    $this->writeFile($cacheRoot . '/compiler/native-sentinel', 'native cache');
+    $cache = $cacheRoot . '/browser-artifacts';
+    $previous = [];
+
+    for ($sequence = 1; $sequence <= 6; $sequence++) {
+        $this->writeFile($root . '/src/main.ppphp', '<?php int $value = ' . $sequence . '; echo $value;');
+        $result = workflowFinish($root, workflowStart('edit-' . $sequence, $sequence), $protocol);
+        expect($result['status'])->toBe('complete');
+        expect($result['previousOutput']['sequence'] ?? null)->toBe($sequence === 1 ? null : $sequence - 1);
+        $entries = $filesystem->listFiles($cache);
+        expect(count($entries))->toBe(3);
+        expect(array_intersect($previous, $entries))->toBe([]);
+        $previous = $entries;
+        expect(is_dir($cacheRoot . '/analysis'))->toBeFalse();
+        $session = json_decode(file_get_contents($root . '/.ppphp-browser/session.json'), true, flags: JSON_THROW_ON_ERROR)['state'];
+        expect($session['analysis'])->toBeNull();
+        expect($session['annotationResults'])->toBe([]);
+    }
+
+    $published = workflowOutput($root);
+    $replay = workflowRequest($root, workflowStart('edit-1', 7), $protocol);
+    expect($replay['status'])->toBe('rejected');
+    $this->writeFile($root . '/src/main.ppphp', '<?php int $value = "invalid"; echo $value;');
+    $invalid = workflowFinish($root, workflowStart('invalid', 7), $protocol);
+    expect($invalid['status'])->toBe('diagnostics');
+    expect($invalid['currentOutput'])->toBeNull();
+    expect(workflowOutput($root))->toBe($published);
+    expect($filesystem->listFiles($cache))->toBe($previous);
+    expect(file_get_contents($cacheRoot . '/compiler/native-sentinel'))->toBe('native cache');
 });
 
 test('workflow production preserves per-tag advice across analysis and lint continuations', function (): void {
