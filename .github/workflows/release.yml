@@ -20,6 +20,9 @@ jobs:
     name: Verify tagged release
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
     outputs:
       commit: ${{ steps.source.outputs.commit }}
     steps:
@@ -42,8 +45,29 @@ jobs:
           php tools/verify-version.php --expected="$GITHUB_REF_NAME" --tag="$GITHUB_REF_NAME"
           commit=$(php tools/release/verify-source.php --tag="$GITHUB_REF_NAME" --commit="$GITHUB_SHA" --publication)
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: Require successful CI for the selected release commit
+        id: branch-ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          release_branch="release/$GITHUB_REF_NAME"
+          runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/php.yml/runs" \
+            -f branch="$release_branch" -f head_sha="$RELEASE_COMMIT" -f event=push -f status=success)
+          if ! run_id=$(jq -er --arg repository "$GITHUB_REPOSITORY" --arg branch "$release_branch" \
+            --arg commit "$RELEASE_COMMIT" '
+              first(.workflow_runs[] | select(
+                .repository.full_name == $repository and .head_repository.full_name == $repository
+                and .head_branch == $branch and .head_sha == $commit and .event == "push"
+                and .status == "completed" and .conclusion == "success"
+              ) | .id | numbers)
+            ' <<< "$runs"); then
+            echo "No successful compiler CI push run for $release_branch at $RELEASE_COMMIT." >&2
+            exit 1
+          fi
+          echo "Verified compiler CI run $run_id for $release_branch at $RELEASE_COMMIT."
       - run: composer audit --locked --abandoned=fail
-      - run: composer check
+      - run: composer check:contracts
       - run: composer verify:distribution
       - name: Build and verify deterministic release assets
         env:
