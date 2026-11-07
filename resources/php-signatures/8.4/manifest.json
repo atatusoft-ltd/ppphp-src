@@ -1024,8 +1024,16 @@
             "sha256": "7c657b9f1e26ee62e0bd4e6675fcdec23fa55ac8515ccde85e0659c863dfe1e3"
         },
         {
+            "path": "module-references.json",
+            "sha256": "67f7a63a2fdeacb719d79bc131edcb01456f8dff11f145bc299b47c88d8c75bf"
+        },
+        {
             "path": "overrides.json",
             "sha256": "b2f683cb4d4657286457443645b0040a19d2a5db5810003a04f30457ca85a1dc"
+        },
+        {
+            "path": "phpdoc-metadata.json",
+            "sha256": "1502396daf50f29b1484fa79095a282b2fc2409b767b1c7eb6f16cc85ed5338d"
         },
         {
             "path": "symbols.json",

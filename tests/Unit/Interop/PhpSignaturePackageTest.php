@@ -17,9 +17,12 @@ test('the committed PHP 8.4 signature package has immutable verified provenance'
     $root = dirname(__DIR__, 3) . '/resources/php-signatures/8.4';
     $verifier = new PhpSignaturePackageVerifier();
     $manifest = $verifier->verify($root);
+    $installed = $verifier->verifyInstalledPackage($root, '8.4');
 
     expect(hash_file('sha256', $root . '/manifest.json'))->toBe(PhpSignaturePackageVerifier::REVIEWED_MANIFESTS['8.4'])
-        ->and($verifier->verifyInstalled($root, '8.4'))->toBe($manifest);
+        ->and($verifier->verifyInstalled($root, '8.4'))->toBe($manifest)
+        ->and($installed->manifest)->toBe($manifest)
+        ->and($installed->identity)->toBe('aff1bbf57692a3c618840b4e16545477d9e7d538690bd38a5496319bbc117b86');
 
     expect($manifest['formatVersion'])->toBe(1)
         ->and($manifest['generatorVersion'])->toBe('2')
@@ -231,16 +234,24 @@ test('a retained platform loader revalidates changed resources and recovers afte
     $loader = new PhpSignaturePackageLoader($root);
     $first = $loader->load('8.4', []);
     expect($first->isSuccessful)->toBeTrue();
-    $path = $root . '/8.4/extensions/core.json';
-    $contents = file_get_contents($path);
-    $this->writeFile($path, $contents . "\n");
-    $broken = $loader->load('8.4', []);
-    expect($broken->parsedFiles)->toBe([])
-        ->and($broken->diagnostics->errors[0]->code)->toBe(DiagnosticCode::PhpSignaturePackageInvalid);
-    $this->writeFile($path, $contents);
-    $repaired = $loader->load('8.4', []);
-    expect($repaired->isSuccessful)->toBeTrue()
-        ->and(array_keys($repaired->parsedFiles))->toBe(array_keys($first->parsedFiles));
+    foreach (['core', 'zlib'] as $module) {
+        $path = $root . '/8.4/extensions/' . $module . '.json';
+        $contents = file_get_contents($path);
+        $mtime = filemtime($path);
+        $this->writeFile($path, ' ' . substr($contents, 1));
+        touch($path, $mtime);
+        clearstatcache(true, $path);
+        expect(filesize($path))->toBe(strlen($contents))
+            ->and(filemtime($path))->toBe($mtime);
+
+        $broken = $loader->load('8.4', []);
+        expect($broken->parsedFiles)->toBe([])
+            ->and($broken->diagnostics->errors[0]->code)->toBe(DiagnosticCode::PhpSignaturePackageInvalid);
+        $this->writeFile($path, $contents);
+        $repaired = $loader->load('8.4', []);
+        expect($repaired->isSuccessful)->toBeTrue()
+            ->and(array_keys($repaired->parsedFiles))->toBe(array_keys($first->parsedFiles));
+    }
     rename($root . '/8.4', $root . '/moved');
     symlink($root . '/moved', $root . '/8.4');
     clearstatcache(true);

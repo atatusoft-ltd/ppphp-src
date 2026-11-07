@@ -32,6 +32,15 @@ final class WorkflowSession
         get => ProtocolJson::hash(ProtocolJson::encodeCanonical($this->toArray()));
     }
 
+    public function finish(): void
+    {
+        $this->phase = 'terminal';
+        $this->invocations = [];
+        $this->analysis = null;
+        $this->annotationResults = [];
+        $this->candidate = null;
+    }
+
     /** @return array<string, mixed> */
     public function toArray(): array
     {

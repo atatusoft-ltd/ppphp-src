@@ -100,10 +100,16 @@ final class PhpDocReader
             array_values(array_map(static fn ($tag): string => (string) $tag->type, $node->getThrowsTagValues())),
         );
         if ($document !== null) {
-            self::$metadata[$document] = ['text' => $document->getText(), 'metadata' => $metadata];
+            self::rememberMetadata($document, $metadata);
         }
 
         return $metadata;
+    }
+
+    public static function rememberMetadata(Doc $document, PhpDocMetadata $metadata): void
+    {
+        self::$metadata ??= new \WeakMap();
+        self::$metadata[$document] = ['text' => $document->getText(), 'metadata' => $metadata];
     }
 
     /** @return list<PhpDocThrowsTag> */

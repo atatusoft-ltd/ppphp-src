@@ -33,7 +33,7 @@ final class CompositeTypeParser
             return new UnionType([$this->parse(substr($text, 1)), new AtomicType('null')]);
         }
 
-        $genericOpen = $this->resolveGenericOpen($text);
+        $genericOpen = str_contains($text, '<') ? $this->resolveGenericOpen($text) : null;
 
         if ($genericOpen !== null && str_ends_with($text, '>')) {
             $base = trim(substr($text, 0, $genericOpen));
@@ -76,6 +76,10 @@ final class CompositeTypeParser
     /** @return list<string> */
     public function splitAtTopLevel(string $text, string $separator): array
     {
+        if (!str_contains($text, $separator)) {
+            return [trim($text)];
+        }
+
         $parts = [];
         $start = 0;
         $parenthesisDepth = 0;

@@ -23,6 +23,8 @@ use Atatusoft\Ppphp\Compiler\Output\OutputPathResolver;
 
 final readonly class AnalysisWorkspacePreparer
 {
+    public const string DIRECTORY = 'analysis';
+
     public function __construct(
         private SemanticAnalyzer $semanticAnalyzer = new SemanticAnalyzer(),
         private PhpLowerer $lowerer = new PhpLowerer(),
@@ -40,7 +42,7 @@ final readonly class AnalysisWorkspacePreparer
         $diagnostics = new DiagnosticBag();
         $selectedFiles = [];
         $contextFiles = [];
-        $workspace = Path::join($project->configuration->cachePath, 'analysis');
+        $workspace = Path::join($project->configuration->cachePath, self::DIRECTORY);
         $loweringContext = $this->contextForDeclarationLowering($declarationContext);
 
         try {

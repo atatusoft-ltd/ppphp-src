@@ -8,28 +8,25 @@ use Atatusoft\Ppphp\Semantic\Type\Interfaces\Type;
 
 final class AtomicType implements Type
 {
-    private const BUILTINS = [
-        'array', 'bool', 'callable', 'false', 'float', 'int', 'iterable',
-        'mixed', 'never', 'null', 'object', 'resource', 'string', 'true', 'void',
+    private const array BUILTINS = [
+        'array' => true, 'bool' => true, 'callable' => true, 'false' => true,
+        'float' => true, 'int' => true, 'iterable' => true, 'mixed' => true,
+        'never' => true, 'null' => true, 'object' => true, 'resource' => true,
+        'string' => true, 'true' => true, 'void' => true,
     ];
 
     public readonly string $name;
 
     public readonly bool $isFullyQualified;
 
+    public readonly string $canonical;
+
     public function __construct(string $name, ?bool $isFullyQualified = null)
     {
         $name = trim($name);
         $this->name = ltrim($name, '\\');
+        $this->canonical = strtolower($this->name);
         $this->isFullyQualified = $isFullyQualified ?? str_starts_with($name, '\\');
-    }
-
-    public string $canonical {
-        get {
-            $lower = strtolower($this->name);
-
-            return in_array($lower, self::BUILTINS, true) ? $lower : $lower;
-        }
     }
 
     public bool $isNullable {
@@ -41,7 +38,7 @@ final class AtomicType implements Type
     }
 
     public bool $isBuiltin {
-        get => in_array($this->canonical, self::BUILTINS, true);
+        get => isset(self::BUILTINS[$this->canonical]);
     }
 
     public function renderPhpDoc(): string

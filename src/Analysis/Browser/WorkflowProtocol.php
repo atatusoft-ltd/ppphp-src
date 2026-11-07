@@ -6,10 +6,11 @@ namespace Atatusoft\Ppphp\Analysis\Browser;
 
 use Atatusoft\Ppphp\Analysis\AnalysisResult;
 use Atatusoft\Ppphp\Analysis\AnalysisProject;
+use Atatusoft\Ppphp\Analysis\AnalysisWorkspacePreparer;
 use Atatusoft\Ppphp\Analysis\PhpStan\PhpStanProcessResult;
 use Atatusoft\Ppphp\Analysis\PhpStan\PhpStanProjectAnalyzer;
-use Atatusoft\Ppphp\Cache\CompilerBuildIdentity;
 use Atatusoft\Ppphp\Cache\CompilerCache;
+use Atatusoft\Ppphp\Cache\Enumerations\CacheScope;
 use Atatusoft\Ppphp\Compiler\CompilationArtifact;
 use Atatusoft\Ppphp\Compiler\Compiler;
 use Atatusoft\Ppphp\Compiler\Manifest\BuildManifestCodec;
@@ -38,15 +39,26 @@ final readonly class WorkflowProtocol
     public const string CONTROL = '.ppphp-browser';
     public const int MAXIMUM_RESPONSE_BYTES = 2_097_152;
 
+    private CompilerCache $cache;
+    private WorkflowCompilerInstallation $installation;
+
     public function __construct(
         private Compiler $compiler = new Compiler(),
         private ProjectChecker $checker = new ProjectChecker(),
         private NativeBuildFilesystem $filesystem = new NativeBuildFilesystem(),
         private WorkflowSnapshot $snapshots = new WorkflowSnapshot(),
         private BrowserDiagnosticRenderer $renderer = new BrowserDiagnosticRenderer(),
-        private CompilerCache $cache = new CompilerCache(),
+        ?CompilerCache $cache = null,
         private bool $embeddedCompiler = false,
-    ) {}
+        bool $immutableCompiler = false,
+        ?string $verifiedAnalyzerIdentity = null,
+    ) {
+        if ($immutableCompiler && (!$embeddedCompiler || PHP_SAPI !== 'wasm')) {
+            throw new \InvalidArgumentException('Compiler identity reuse requires an immutable embedded Wasm installation.');
+        }
+        $this->installation = new WorkflowCompilerInstallation($this->filesystem, dirname(__DIR__, 3), $immutableCompiler, $verifiedAnalyzerIdentity);
+        $this->cache = $cache ?? new CompilerCache(buildIdentity: $this->installation->mountedBuildIdentity, scope: CacheScope::BrowserArtifacts);
+    }
 
     /** @return array<string, mixed> */
     public function handle(WorkflowRequest $request, string $root, ?WorkflowProgress $progress = null): array
@@ -96,7 +108,7 @@ final readonly class WorkflowProtocol
                 $publication = $this->filesystem->checkExists($publicationPath)
                     ? WorkflowSession::decodePublication(WorkflowJson::decode($this->filesystem->readFileBounded($publicationPath, 4096))) : null;
                 $session = new WorkflowSession($request, $this->snapshots->identifyProject($project),
-                    $previousOutput, (new CompilerBuildIdentity())->calculate(), usedIds: $usedIds,
+                    $previousOutput, $this->installation->readBuildIdentity(), usedIds: $usedIds,
                     previousPublication: $publication !== null && $publication['tree'] === $previousOutput ? $publication : null);
                 $this->discardPending($control);
                 $this->saveSession($control, $session);
@@ -107,9 +119,8 @@ final readonly class WorkflowProtocol
                 }
                 $session = $saved;
                 if ($request->action === 'abort') {
-                    $session->phase = 'terminal';
+                    $this->saveTerminalSession($control, $project, $session);
                     $this->discardPending($control);
-                    $this->saveSession($control, $session);
                     return $this->respond($session, 'aborted', null);
                 }
                 $this->validateFreshness($session, $project);
@@ -125,12 +136,12 @@ final readonly class WorkflowProtocol
                 $session->start->operation === 'build' ? SelectionMode::Build : SelectionMode::Check);
             if (!$selection->isSuccessful || $selection->selection === null) {
                 $this->validateFreshness($session, $project);
-                return $this->finishDiagnostics($control, $session, $selection->diagnostics, 2);
+                return $this->finishDiagnostics($control, $project, $session, $selection->diagnostics, 2);
             }
             $preparation = $progress->preparation ?? $this->checker->prepare($project, $selection->selection->analysisSources);
             if (!$preparation->isSuccessful || $preparation->analysisProject === null) {
                 $this->validateFreshness($session, $project);
-                return $this->finishDiagnostics($control, $session, $preparation->diagnostics, 1);
+                return $this->finishDiagnostics($control, $project, $session, $preparation->diagnostics, 1);
             }
             $analyzer = new PhpStanProjectAnalyzer();
             $run = null;
@@ -178,7 +189,7 @@ final readonly class WorkflowProtocol
             }
             if (!$check->isSuccessful || $session->start->operation === 'check') {
                 $this->validateFreshness($session, $project);
-                return $this->finishDiagnostics($control, $session, $check->diagnostics, $check->isSuccessful ? 0 : 1);
+                return $this->finishDiagnostics($control, $project, $session, $check->diagnostics, $check->isSuccessful ? 0 : 1);
             }
             $response = $this->build($request, $session, $project, $selection->selection, $check, $control, $progress);
             if ($response['status'] === 'pending-validation') {
@@ -206,7 +217,7 @@ final readonly class WorkflowProtocol
     /** @return array<string, mixed> */
     private function build(WorkflowRequest $request, WorkflowSession $session, Project $project, ProjectSelection $selection, ProjectCheckResult $check, string $control, ?WorkflowProgress $progress): array
     {
-        // Use the native artifact cache only after a fresh full check. Cached
+        // Use verified artifact units only after a fresh full check. Cached
         // output never supplies workflow analysis or continuation authority.
         $production = $progress?->production;
         $snapshot = $progress?->cacheSnapshot;
@@ -216,11 +227,11 @@ final readonly class WorkflowProtocol
             } catch (\Throwable) {
                 $snapshot = null;
             }
-            $production = $this->compiler->prepareProduction($project, $selection, $check, $snapshot);
+            $production = $this->compiler->prepareProduction($project, $selection, $check, $snapshot, $this->cache);
         }
         $diagnostics = new DiagnosticBag([...iterator_to_array($check->diagnostics), ...iterator_to_array($production->diagnostics)]);
         if ($diagnostics->hasErrors) {
-            return $this->finishDiagnostics($control, $session, $diagnostics, 3);
+            return $this->finishDiagnostics($control, $project, $session, $diagnostics, 3);
         }
         $pending = Path::join($control, 'pending');
         $expected = $this->describeArtifacts($production->artifacts);
@@ -268,9 +279,8 @@ final readonly class WorkflowProtocol
         $this->validateFreshness($session, $project);
         // Reserve the terminal state before publication: no replay can publish twice,
         // including if publication succeeds but the response is interrupted.
-        $session->phase = 'terminal';
-        $this->saveSession($control, $session);
-        $commit = (new AtomicBuildCommitter(filesystem: $this->filesystem,
+        $this->saveTerminalSession($control, $project, $session);
+        $commit = (new AtomicBuildCommitter(filesystem: $this->filesystem, buildIdentity: $this->installation->mountedBuildIdentity,
             phpValidator: new PhpLintValidator(runner: new WorkflowLintRunner($records, dirname($project->configuration->outputPath)))))->commit($project, $selection, $production->artifacts);
         $diagnostics->addAll($commit->diagnostics);
         $this->discardPending($control);
@@ -283,8 +293,7 @@ final readonly class WorkflowProtocol
             'manifestHash' => ProtocolJson::hash($manifest)];
         $this->filesystem->writeFileAtomically(Path::join($control, 'published.json'), ProtocolJson::encodeCanonical($published));
         if ($snapshot !== null) {
-            $this->cache->storeArtifactBundle($project, $selection, $snapshot, $production->artifacts,
-                $commit->manifest, $diagnostics, $check);
+            $this->cache->replaceBrowserArtifactUnits($project, $snapshot, $production->artifacts, $check);
         }
         $descriptors = [];
         foreach ($commit->manifest->files as $entry) {
@@ -332,7 +341,7 @@ final readonly class WorkflowProtocol
     {
         return ProtocolJson::hash(ProtocolJson::encodeCanonical(['version' => 3, 'start' => $session->start->toArray(),
             'snapshot' => $session->snapshot, 'compiler' => $session->compiler, 'previousOutput' => $session->previousOutput,
-            'phase' => $phase, 'bytes' => $bytes, 'analyzer' => ProtocolJson::hash($this->filesystem->readFile(dirname(__DIR__, 3) . '/vendor/phpstan/phpstan/phpstan.phar'))]));
+            'phase' => $phase, 'bytes' => $bytes, 'analyzer' => $this->installation->readAnalyzerIdentity()]));
     }
 
     /**
@@ -400,7 +409,7 @@ final readonly class WorkflowProtocol
         $this->validateRuntime($session->start, $project);
         if ($session->snapshot !== $this->snapshots->identifyProject($project)
             || $session->previousOutput !== $this->snapshots->identifyTree($project->configuration->outputPath)
-            || $session->compiler !== (new CompilerBuildIdentity())->calculate()) {
+            || $session->compiler !== $this->installation->readBuildIdentity()) {
             throw new \InvalidArgumentException('The project snapshot, compiler or previous output changed during this operation.');
         }
     }
@@ -480,12 +489,17 @@ final readonly class WorkflowProtocol
         $this->filesystem->remove(Path::join($control, 'pending'));
     }
 
-    /** @return array<string, mixed> */
-    private function finishDiagnostics(string $control, WorkflowSession $session, DiagnosticBag $diagnostics, int $status): array
+    private function saveTerminalSession(string $control, Project $project, WorkflowSession $session): void
     {
-        $session->phase = 'terminal';
-        $session->invocations = [];
+        $session->finish();
         $this->saveSession($control, $session);
+        $this->filesystem->remove(Path::join($project->configuration->cachePath, AnalysisWorkspacePreparer::DIRECTORY));
+    }
+
+    /** @return array<string, mixed> */
+    private function finishDiagnostics(string $control, Project $project, WorkflowSession $session, DiagnosticBag $diagnostics, int $status): array
+    {
+        $this->saveTerminalSession($control, $project, $session);
         $this->discardPending($control);
         return $this->diagnosticResult($session->start, $session, $diagnostics, $status);
     }

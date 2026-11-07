@@ -53,6 +53,11 @@ export function inspectTar(bytes, { limits = archiveLimits, accept = compilerMem
     if (header.every(x => x === 0)) {
       if (at + 1024 > bytes.length || bytes.subarray(at).some(x => x !== 0)) throw new Error('Invalid archive end');
       if (!members.length) throw new Error('Empty archive');
+      for (const { path } of members) {
+        for (let separator = path.indexOf('/'); separator >= 0; separator = path.indexOf('/', separator + 1)) {
+          if (paths.has(path.slice(0, separator))) throw new Error('Archive file/directory collision');
+        }
+      }
       return { members, expandedBytes: bytes.length, dataBytes };
     }
     if (members.length >= limits.files) throw new Error('Archive member count');
@@ -63,9 +68,6 @@ export function inspectTar(bytes, { limits = archiveLimits, accept = compilerMem
     const prefix = field(header, 345, 155), name = field(header, 0, 100);
     const path = archivePath((prefix ? prefix + '/' : '') + name, limits.path);
     if (!accept(path) || paths.has(path)) throw new Error('Forbidden or duplicate archive member: ' + path);
-    const parts = path.split('/');
-    for (let i = 1; i < parts.length; i++) if (paths.has(parts.slice(0, i).join('/'))) throw new Error('Archive file/directory collision');
-    if (members.some(member => member.path.startsWith(path + '/'))) throw new Error('Archive directory/file collision');
     const mode = octal(header, 100, 8), size = octal(header, 124, 12);
     if (![420, 493].includes(mode) || (accept === compilerMember && mode === 493 && path !== 'bin/ppphp')) throw new Error('Unsafe archive mode');
     if (octal(header, 108, 8) !== 0 || octal(header, 116, 8) !== 0 || octal(header, 329, 8) !== 0 || octal(header, 337, 8) !== 0) throw new Error('Unsupported archive ownership/device');
@@ -76,7 +78,12 @@ export function inspectTar(bytes, { limits = archiveLimits, accept = compilerMem
   }
   throw new Error('Missing archive end');
 }
-export async function inspectCompilerArchive(compressed) {
+/**
+ * The optional synchronous visitor receives borrowed member bytes after the
+ * complete archive is admitted. Treat the views as read-only.
+ * @param {(member: {path: string, bytes: number, mode: number, offset: number}, contents: Uint8Array) => void} [visitMember]
+ */
+export async function inspectCompilerArchive(compressed, visitMember) {
   if (!(compressed instanceof Uint8Array) || !compressed.length || compressed.length > archiveLimits.compressed) throw new Error('Archive compressed size');
   const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
   const reader = stream.getReader(), chunks = []; let size = 0;
@@ -93,6 +100,11 @@ export async function inspectCompilerArchive(compressed) {
   for (const required of ['bin/ppphp', 'composer.json', 'composer.lock', 'src/Compiler/Compiler.php', 'vendor/autoload.php',
     'vendor/composer/installed.json', 'vendor/phpstan/phpstan/phpstan.phar', 'resources/phpstan/ppphp.neon']) {
     if (!names.has(required)) throw new Error('Incomplete compiler archive: ' + required);
+  }
+  if (visitMember !== undefined) {
+    for (const member of result.members) {
+      visitMember({ ...member }, bytes.subarray(member.offset, member.offset + member.bytes));
+    }
   }
   return result;
 }

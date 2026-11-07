@@ -55,6 +55,10 @@ final class GenericDeclarationIndex
     /** @return list<GenericDeclarationEntry> */
     public function findVisibleDeclarations(SourceFile $sourceFile, int $offset): array
     {
+        if ($this->entriesByKey === []) {
+            return [];
+        }
+
         $pathKey = Path::buildComparisonKey($sourceFile->path);
         $visible = array_values(array_filter(
             $this->entriesByKey,

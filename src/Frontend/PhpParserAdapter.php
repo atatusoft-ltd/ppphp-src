@@ -13,6 +13,7 @@ use Atatusoft\Ppphp\Frontend\Normalization\NormalizedSource;
 use Atatusoft\Ppphp\Frontend\Token\TokenStream;
 use Atatusoft\Ppphp\Source\SourceFile;
 use PhpParser\ErrorHandler\Collecting;
+use PhpParser\Node\Stmt;
 use PhpParser\Parser as NativeParser;
 use PhpParser\ParserFactory;
 use PhpParser\PhpVersion;
@@ -62,20 +63,44 @@ final readonly class PhpParserAdapter
             $diagnostics->add($this->diagnosticMapper->map($error, $sourceFile, $normalizedSource->sourceMap, $missingSemicolon));
         }
 
-        $parsedFile = $statements === null
-            ? null
-            : new ParsedFile(
-                $sourceFile,
-                $mode,
-                $tokens,
-                $extensionSyntax,
-                $normalizationPlan,
-                $normalizedSource,
-                $normalizedSource->sourceMap,
-                array_values($statements),
-                $this->phpVersion,
-            );
+        $parsedFile = $statements === null ? null : $this->assemble(
+            $sourceFile, $mode, array_values($statements), $tokens, $extensionSyntax, $normalizationPlan, $normalizedSource,
+        );
 
         return new ParseResult($parsedFile, $diagnostics);
+    }
+
+    /** @param list<Stmt> $statements */
+    public function restorePhp(SourceFile $sourceFile, array $statements): ParsedFile
+    {
+        $normalizationPlan = new NormalizationPlan($sourceFile);
+
+        return $this->assemble(
+            $sourceFile, ParseMode::Php, $statements, new TokenStream($sourceFile),
+            ExtensionSyntaxIndex::createEmpty(), $normalizationPlan, $normalizationPlan->normalize(),
+        );
+    }
+
+    /** @param list<Stmt> $statements */
+    private function assemble(
+        SourceFile $sourceFile,
+        ParseMode $mode,
+        array $statements,
+        TokenStream $tokens,
+        ExtensionSyntaxIndex $extensionSyntax,
+        NormalizationPlan $normalizationPlan,
+        NormalizedSource $normalizedSource,
+    ): ParsedFile {
+        return new ParsedFile(
+            $sourceFile,
+            $mode,
+            $tokens,
+            $extensionSyntax,
+            $normalizationPlan,
+            $normalizedSource,
+            $normalizedSource->sourceMap,
+            $statements,
+            $this->phpVersion,
+        );
     }
 }
