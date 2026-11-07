@@ -62,7 +62,7 @@ final readonly class WorkflowRequestPump
         );
         $progress = new WorkflowProgress();
         $deadline = hrtime(true) + 360_000_000_000;
-        if ($preparePlatform && $signatures !== null) {
+        if ($preparePlatform) {
             (new WorkflowPlatformPreparation())->prepare($signatures, $protocol);
             $this->writeResponse($output, ['prepared' => true]);
         }
