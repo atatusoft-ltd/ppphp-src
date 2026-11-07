@@ -76,3 +76,30 @@ test('platform cache misses on wrong identities, corruption, and oversized data'
     file_put_contents($path, str_repeat('x', BrowserPhpSignatureCache::MAXIMUM_BYTES + 1), FILE_APPEND);
     expect($open($identity)->restore('core/stub.php'))->toBeNull();
 });
+
+test('a platform fingerprint rejects a different valid cache entry with the same package identity', function (): void {
+    $path = $this->createTemporaryDirectory() . '/platform.cache';
+    $key = 'core/stub.php';
+    $open = static function () use ($path): BrowserPhpSignatureCache {
+        $cache = new BrowserPhpSignatureCache('sha256:' . str_repeat('a', 64), $path);
+        $cache->useVerifiedPackage('8.4', str_repeat('b', 64));
+
+        return $cache;
+    };
+
+    $original = [new Nop(['proof' => 'original'])];
+    $substitute = [new Nop(['proof' => 'substitute'])];
+    $digest = BrowserPhpSignatureCache::fingerprint($original);
+    expect($digest)->not->toBeNull();
+
+    $cache = $open();
+    $cache->remember($key, $original);
+    $cache->save();
+    expect($open()->restore($key, $digest))->toEqual($original);
+
+    $cache = $open();
+    $cache->remember($key, $substitute);
+    $cache->save();
+    expect($open()->restore($key))->toEqual($substitute)
+        ->and($open()->restore($key, $digest))->toBeNull();
+});

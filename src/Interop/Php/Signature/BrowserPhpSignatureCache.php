@@ -113,32 +113,67 @@ final class BrowserPhpSignatureCache
     }
 
     /** @return list<Stmt>|null */
-    public function restore(string $document): ?array
+    public function restore(string $document, ?string $expectedDigest = null): ?array
     {
         $bytes = $this->documents[$document] ?? null;
         if ($bytes === null) {
             return null;
         }
+        if ($expectedDigest === null || hash_equals($expectedDigest, hash('sha256', $bytes))) {
+            // A verified manifest fingerprint binds the exact validated syntax.
+            $statements = self::decodeStatements($bytes, $expectedDigest === null);
+            if ($statements !== null) {
+                return $statements;
+            }
+        }
+
+        unset($this->documents[$document]);
+
+        return null;
+    }
+
+    /** @param list<Stmt> $statements */
+    public static function fingerprint(array $statements): ?string
+    {
+        $precision = ini_get('serialize_precision');
+        if ($precision !== '-1' && ini_set('serialize_precision', '-1') === false) {
+            throw new \RuntimeException('Cannot set canonical precision for PHP signature fingerprints.');
+        }
+
+        try {
+            $bytes = serialize($statements);
+            $restored = self::decodeStatements($bytes, true);
+
+            return $restored !== null && $restored == $statements ? hash('sha256', $bytes) : null;
+        } finally {
+            if ($precision !== '-1' && $precision !== false) {
+                ini_set('serialize_precision', $precision);
+            }
+        }
+    }
+
+    /** @return list<Stmt>|null */
+    private static function decodeStatements(string $bytes, bool $validateTree): ?array
+    {
         try {
             $statements = @unserialize($bytes, ['allowed_classes' => self::AST_CLASSES, 'max_depth' => 64]);
-            $budget = strlen($bytes);
-            if (is_array($statements) && array_is_list($statements)) {
-                $restored = [];
-                foreach ($statements as $statement) {
-                    if (!$statement instanceof Stmt || !self::isAstData($statement, $budget)) {
-                        break;
-                    }
-                    $restored[] = $statement;
-                }
-                if (count($restored) === count($statements)) {
-                    return $restored;
-                }
+            if (!is_array($statements) || !array_is_list($statements)) {
+                return null;
             }
+            $budget = strlen($bytes);
+            $restored = [];
+            foreach ($statements as $statement) {
+                if (!$statement instanceof Stmt || ($validateTree && !self::isAstData($statement, $budget))) {
+                    return null;
+                }
+                $restored[] = $statement;
+            }
+
+            return $restored;
         } catch (\Throwable) {
             // Invalid cached objects are disposable.
+            return null;
         }
-        unset($this->documents[$document]);
-        return null;
     }
 
     /** @param list<Stmt> $statements */

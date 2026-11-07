@@ -23,6 +23,9 @@ final class PhpSignaturePackageLoader
     /** @var array<string, PhpSignaturePhpDocIndex> */
     private array $phpDocIndexes = [];
 
+    /** @var array<string, PhpSignatureSyntaxIndex> */
+    private array $syntaxIndexes = [];
+
     /**
      * @var array<string, array<string, array{
      *     parsedFiles: array<string, ParsedFile>,
@@ -49,12 +52,19 @@ final class PhpSignaturePackageLoader
         try {
             $verification = $this->verifiedPackages[$target] ?? null;
             if ($verification === null || !$verification->matches($package)) {
-                unset($this->verifiedPackages[$target], $this->parsedModules[$target], $this->phpDocIndexes[$target]);
+                unset($this->verifiedPackages[$target], $this->parsedModules[$target], $this->phpDocIndexes[$target], $this->syntaxIndexes[$target]);
                 $verification = $this->verifier->verifyInstalledPackage($package, $target);
                 $phpDoc = $verification->readOptionalOutput($package, PhpSignaturePhpDocIndex::PATH);
                 $index = $phpDoc === null ? null : PhpSignaturePhpDocIndex::decode($phpDoc, $target);
                 if ($index !== null) {
                     $this->phpDocIndexes[$target] = $index;
+                }
+                if ($this->browserCache !== null) {
+                    $bytes = $verification->readOptionalOutput($package, PhpSignatureSyntaxIndex::PATH);
+                    $syntax = $bytes === null ? null : PhpSignatureSyntaxIndex::decode($bytes, $target);
+                    if ($syntax !== null) {
+                        $this->syntaxIndexes[$target] = $syntax;
+                    }
                 }
                 $this->verifiedPackages[$target] = $verification;
             }
@@ -142,7 +152,7 @@ final class PhpSignaturePackageLoader
 
             $sourceFile = PhpSignatureModuleReferences::createSource($package, $target, $document['path'], $document['source']);
             $cacheKey = $module . '/' . $document['path'];
-            $cached = $this->browserCache?->restore($cacheKey);
+            $cached = $this->browserCache?->restore($cacheKey, ($this->syntaxIndexes[$target] ?? null)?->find($cacheKey));
             if ($cached === null) {
                 $result = $this->parser->parse($sourceFile, ParseMode::Php);
                 if ($result->parsedFile === null || $result->diagnostics->hasErrors) {

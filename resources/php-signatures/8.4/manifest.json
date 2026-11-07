@@ -1038,6 +1038,10 @@
         {
             "path": "symbols.json",
             "sha256": "7f73a2ccf22e7f14d3e999bae1add4a00cfc9a8f6c021c6a78836633af7f1468"
+        },
+        {
+            "path": "syntax-fingerprints.json",
+            "sha256": "4602db9d6a14bb2d9c98b5c20267a0deb59664a6beb333158b76d5e7f2a7f7b3"
         }
     ],
     "packageVersion": "8.4.23.2",

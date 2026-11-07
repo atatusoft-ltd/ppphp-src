@@ -127,7 +127,8 @@ final readonly class PhpSignaturePackageGenerator
         ];
 
         $phpDoc = new PhpSignaturePhpDocIndex();
-        $references = CanonicalJson::encode($this->moduleReferences->build($outputDirectory, $target, $modules, $symbolIndex, $phpDoc));
+        $syntax = new PhpSignatureSyntaxIndex();
+        $references = CanonicalJson::encode($this->moduleReferences->build($outputDirectory, $target, $modules, $symbolIndex, $phpDoc, $syntax));
         $this->write($outputDirectory, PhpSignatureModuleReferences::PATH, $references);
         $outputs[] = [
             'path' => PhpSignatureModuleReferences::PATH,
@@ -139,6 +140,13 @@ final readonly class PhpSignaturePackageGenerator
         $outputs[] = [
             'path' => PhpSignaturePhpDocIndex::PATH,
             'sha256' => hash('sha256', $metadata),
+        ];
+
+        $fingerprints = $syntax->encode($target);
+        $this->write($outputDirectory, PhpSignatureSyntaxIndex::PATH, $fingerprints);
+        $outputs[] = [
+            'path' => PhpSignatureSyntaxIndex::PATH,
+            'sha256' => hash('sha256', $fingerprints),
         ];
 
         $overridesJson = CanonicalJson::encode([

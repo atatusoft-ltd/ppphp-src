@@ -34,6 +34,7 @@ final readonly class PhpSignatureModuleReferences
         array $documentsByModule,
         array $symbols,
         ?PhpSignaturePhpDocIndex $phpDoc = null,
+        ?PhpSignatureSyntaxIndex $syntax = null,
     ): array {
         $modules = [];
         foreach ($documentsByModule as $module => $documents) {
@@ -49,6 +50,7 @@ final readonly class PhpSignatureModuleReferences
                 }
                 $parsed[] = $result->parsedFile;
                 $phpDoc?->collect($result->parsedFile, $this->phpDoc);
+                $syntax?->collect($module . '/' . $document['path'], $result->parsedFile->statements);
             }
             $dependencies = [];
             self::addModules($dependencies, $symbols, $this->references->collect($parsed));

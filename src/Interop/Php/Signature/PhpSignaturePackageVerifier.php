@@ -16,11 +16,12 @@ final readonly class PhpSignaturePackageVerifier
 {
     /** Manifests of shipped packages that pass the full structural audit. */
     public const array REVIEWED_MANIFESTS = [
-        '8.4' => 'cba33a3fff60a74e6f6b7a40ac7f914ae014a1c9df8fec555be3e522448d87ff',
+        '8.4' => 'ecf9a0a52df05f8709ef2360653bb4a92e0c5a0aabd19da1c0b5c66b197f7ba3',
     ];
 
     private const array LEGACY_REVIEWED_MANIFESTS = [
         '8.4' => [
+            'cba33a3fff60a74e6f6b7a40ac7f914ae014a1c9df8fec555be3e522448d87ff',
             'fc8acea749a472694be41c0d2a61a1778f6f127ecbfcabc0c00efa90a01acec2',
             'c36db35fbc15be24a03fe88fce73c5fcf9c03bfe9037465a7443c83511e225d3',
         ],
@@ -126,7 +127,8 @@ final readonly class PhpSignaturePackageVerifier
 
         $hasModuleReferences = isset($digests[PhpSignatureModuleReferences::PATH]);
         $phpDoc = isset($digests[PhpSignaturePhpDocIndex::PATH]) ? new PhpSignaturePhpDocIndex() : null;
-        $requiresDerivedData = $hasModuleReferences || $phpDoc !== null;
+        $syntax = isset($digests[PhpSignatureSyntaxIndex::PATH]) ? new PhpSignatureSyntaxIndex() : null;
+        $requiresDerivedData = $hasModuleReferences || $phpDoc !== null || $syntax !== null;
         /** @var array<string, list<array{path: string, source: string}>> $moduleDocuments */
         $moduleDocuments = [];
         $inputs = $this->inputHashes($manifest['inputs'] ?? null);
@@ -240,13 +242,16 @@ final readonly class PhpSignaturePackageVerifier
         }
 
         if ($requiresDerivedData) {
-            $expectedReferences = (new PhpSignatureModuleReferences())->build($root, $expectedTarget, $moduleDocuments, $index, $phpDoc);
+            $expectedReferences = (new PhpSignatureModuleReferences())->build($root, $expectedTarget, $moduleDocuments, $index, $phpDoc, $syntax);
             if ($hasModuleReferences
                 && hash('sha256', CanonicalJson::encode($expectedReferences)) !== $digests[PhpSignatureModuleReferences::PATH]) {
                 throw new \RuntimeException('The PHP signature module reference index does not match its shards.');
             }
             if ($phpDoc !== null && hash('sha256', $phpDoc->encode($expectedTarget)) !== $digests[PhpSignaturePhpDocIndex::PATH]) {
                 throw new \RuntimeException('The platform PHPDoc metadata index does not match its shards.');
+            }
+            if ($syntax !== null && hash('sha256', $syntax->encode($expectedTarget)) !== $digests[PhpSignatureSyntaxIndex::PATH]) {
+                throw new \RuntimeException('The platform syntax fingerprint index does not match its shards.');
             }
         }
 
