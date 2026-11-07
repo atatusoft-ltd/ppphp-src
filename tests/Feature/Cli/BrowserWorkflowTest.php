@@ -600,3 +600,19 @@ test('partial continuation rejects previous generation drift and mismatched runt
     expect(workflowRequest($root, $wrong)['status'])->toBe('rejected')->and(workflowOutput($root))->toBe($changed);
     expect(workflowFinish($root, workflowStart('generation-recovery', 4))['status'])->toBe('complete');
 });
+
+test('source-free platform preparation requires the verified browser host', function (): void {
+    $input = fopen('php://memory', 'w+b');
+    $output = fopen('php://memory', 'w+b');
+    try {
+        expect(fn () => (new WorkflowRequestPump())->serve($input, $output, '/unused', preparePlatform: true))
+            ->toThrow(InvalidArgumentException::class, 'Platform preparation requires a verified signature cache identity.');
+        expect(fn () => (new WorkflowRequestPump())->serve($input, $output, '/unused',
+            immutableCompiler: true, signatureCacheIdentity: 'sha256:' . str_repeat('a', 64), preparePlatform: true))
+            ->toThrow(InvalidArgumentException::class, 'Signature reuse requires the trusted immutable Wasm compiler.');
+        expect(ftell($output))->toBe(0);
+    } finally {
+        fclose($input);
+        fclose($output);
+    }
+});

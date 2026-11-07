@@ -60,6 +60,11 @@ final readonly class WorkflowProtocol
         $this->cache = $cache ?? new CompilerCache(buildIdentity: $this->installation->mountedBuildIdentity, scope: CacheScope::BrowserArtifacts);
     }
 
+    public function prepareInstallationIdentity(): void
+    {
+        $this->installation->readBuildIdentity();
+    }
+
     /** @return array<string, mixed> */
     public function handle(WorkflowRequest $request, string $root, ?WorkflowProgress $progress = null): array
     {

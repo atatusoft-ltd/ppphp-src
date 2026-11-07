@@ -32,6 +32,7 @@ final readonly class WorkflowRequestPump
         bool $immutableCompiler = false,
         ?string $signatureCacheIdentity = null,
         ?string $verifiedAnalyzerIdentity = null,
+        bool $preparePlatform = false,
     ): void {
         if ($verifiedAnalyzerIdentity !== null && (!$immutableCompiler || PHP_SAPI !== 'wasm' || $this->protocol !== null)) {
             throw new \InvalidArgumentException('An analyzer fingerprint requires the trusted immutable Wasm compiler.');
@@ -43,11 +44,15 @@ final readonly class WorkflowRequestPump
             }
             $cache = new BrowserPhpSignatureCache($signatureCacheIdentity);
         }
+        $signatures = $cache === null ? null : new PhpSignaturePackageLoader(browserCache: $cache);
+        if ($preparePlatform && $signatures === null) {
+            throw new \InvalidArgumentException('Platform preparation requires a verified signature cache identity.');
+        }
         $protocol = $this->protocol ?? new WorkflowProtocol(
-            checker: $cache === null ? new ProjectChecker() : new ProjectChecker(
+            checker: $signatures === null ? new ProjectChecker() : new ProjectChecker(
                 compilerAnalyzer: new CompilerProjectAnalyzer(
                     declarationCollector: new DeclarationContextCollector(
-                        phpSignatures: new PhpSignaturePackageLoader(browserCache: $cache),
+                        phpSignatures: $signatures,
                     ),
                 ),
             ),
@@ -57,6 +62,11 @@ final readonly class WorkflowRequestPump
         );
         $progress = new WorkflowProgress();
         $deadline = hrtime(true) + 360_000_000_000;
+        if ($preparePlatform && $signatures !== null) {
+            (new WorkflowPlatformPreparation())->prepare($signatures, $protocol);
+            $this->writeResponse($output, ['prepared' => true]);
+        }
+
         do {
             $header = unpack('Nlength', $this->readBytes($input, 4, $deadline));
             $length = $header['length'] ?? 0;
@@ -65,18 +75,27 @@ final readonly class WorkflowRequestPump
             }
             $request = $this->decoder->decode($this->readBytes($input, $length, $deadline));
             $response = $protocol->handle($request, $root, $progress);
-            $json = json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-            if (strlen($json) > WorkflowProtocol::MAXIMUM_RESPONSE_BYTES) {
-                throw new \RuntimeException('The workflow response exceeds its byte limit.');
-            }
-            if ($response['status'] === 'complete' && ($response['compilerStatus'] ?? null) === 0) {
-                $cache?->save();
-            }
-            $frame = pack('N', strlen($json)) . $json;
-            if (fwrite($output, $frame) !== strlen($frame) || !fflush($output)) {
-                throw new \RuntimeException('The workflow response frame could not be sent.');
-            }
+            $this->writeResponse($output, $response, $cache);
         } while (in_array($response['status'], ['pending-analysis', 'pending-validation'], true));
+    }
+
+    /**
+     * @param resource $output
+     * @param array<string, mixed> $response
+     */
+    private function writeResponse($output, array $response, ?BrowserPhpSignatureCache $cache = null): void
+    {
+        $json = json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        if (strlen($json) > WorkflowProtocol::MAXIMUM_RESPONSE_BYTES) {
+            throw new \RuntimeException('The workflow response exceeds its byte limit.');
+        }
+        if (($response['status'] ?? null) === 'complete' && ($response['compilerStatus'] ?? null) === 0) {
+            $cache?->save();
+        }
+        $frame = pack('N', strlen($json)) . $json;
+        if (fwrite($output, $frame) !== strlen($frame) || !fflush($output)) {
+            throw new \RuntimeException('The workflow response frame could not be sent.');
+        }
     }
 
     /** @param resource $channel */
