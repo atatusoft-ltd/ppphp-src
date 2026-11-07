@@ -80,3 +80,15 @@ test('source managers reuse duplicate normalized paths', function (): void {
         ->and(FileKind::resolveFromPath('example.ppphp'))->toBe(FileKind::Ppphp)
         ->and(FileKind::resolveFromPath('example.stub.php'))->toBe(FileKind::Stub);
 });
+
+test('mixed line endings and malformed UTF-8 preserve byte offsets and columns', function (): void {
+    $source = new SourceFile('/project/bytes.php', 'bytes.php', FileKind::Php, "\x00\x80\xC0\r\n\xFF\xBF\ra\n");
+
+    expect($source->lineCount)->toBe(4)
+        ->and($source->resolveLineStartOffset(2))->toBe(5)
+        ->and($source->resolveLineStartOffset(3))->toBe(8)
+        ->and($source->resolveLineStartOffset(4))->toBe(10)
+        ->and($source->resolvePositionAt(3)->column)->toBe(3)
+        ->and($source->resolvePositionAt(7)->column)->toBe(2)
+        ->and($source->readLineText(2))->toBe("\xFF\xBF");
+});

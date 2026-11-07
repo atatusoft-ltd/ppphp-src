@@ -47,6 +47,10 @@ final readonly class SourceTypeResolver
         array $localParameters = [],
     ): Type {
         if ($node instanceof Node\Identifier) {
+            if ($parsedFile->extensionSyntax->genericTypes === []) {
+                return new AtomicType($node->toString());
+            }
+
             $offset = $this->spans->resolve($parsedFile, $node)->start->offset;
             $applied = $this->findAppliedType($parsedFile, $offset);
 

@@ -25,6 +25,19 @@ final readonly class GenericDeclarationIndexer
         private SourceTypeResolver $sourceTypes = new SourceTypeResolver(),
     ) {}
 
+    public function hasCandidates(ProjectParseResult $parseResult): bool
+    {
+        foreach ($parseResult->parsedFiles as $parsedFile) {
+            if ($parsedFile->extensionSyntax->genericDeclarations !== []
+                || ($parsedFile->sourceFile->kind !== FileKind::Ppphp
+                    && $this->hasImportedTemplates($parsedFile->statements))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function build(ProjectParseResult $parseResult, SymbolTable $symbols): GenericDeclarationIndex
     {
         $index = new GenericDeclarationIndex();
@@ -87,6 +100,34 @@ final readonly class GenericDeclarationIndexer
         }
 
         return $index;
+    }
+
+    /** @param array<Stmt> $statements */
+    private function hasImportedTemplates(array $statements): bool
+    {
+        foreach ($statements as $statement) {
+            if ($statement instanceof Stmt\Namespace_) {
+                if ($this->hasImportedTemplates($statement->stmts)) {
+                    return true;
+                }
+                continue;
+            }
+
+            if (($statement instanceof Stmt\Function_ || $statement instanceof Stmt\ClassLike)
+                && $this->phpDoc->hasTemplates($statement->getDocComment())) {
+                return true;
+            }
+
+            if ($statement instanceof Stmt\ClassLike) {
+                foreach ($statement->getMethods() as $method) {
+                    if ($this->phpDoc->hasTemplates($method->getDocComment())) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     private function recordImportedDeclarations(

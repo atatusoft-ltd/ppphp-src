@@ -21,7 +21,10 @@ final readonly class PhpSignaturePackageGenerator
     /** @var list<string> */
     private const array INTRINSIC_OVERRIDES = IntrinsicFunctionRepository::FUNCTION_NAMES;
 
-    public function __construct(private PhpStubNormalizer $normalizer = new PhpStubNormalizer()) {}
+    public function __construct(
+        private PhpStubNormalizer $normalizer = new PhpStubNormalizer(),
+        private PhpSignatureModuleReferences $moduleReferences = new PhpSignatureModuleReferences(),
+    ) {}
 
     /** @return array<string, mixed> */
     public function generate(
@@ -121,6 +124,21 @@ final readonly class PhpSignaturePackageGenerator
         $outputs[] = [
             'path' => 'symbols.json',
             'sha256' => hash('sha256', $symbolsJson),
+        ];
+
+        $phpDoc = new PhpSignaturePhpDocIndex();
+        $references = CanonicalJson::encode($this->moduleReferences->build($outputDirectory, $target, $modules, $symbolIndex, $phpDoc));
+        $this->write($outputDirectory, PhpSignatureModuleReferences::PATH, $references);
+        $outputs[] = [
+            'path' => PhpSignatureModuleReferences::PATH,
+            'sha256' => hash('sha256', $references),
+        ];
+
+        $metadata = $phpDoc->encode($target);
+        $this->write($outputDirectory, PhpSignaturePhpDocIndex::PATH, $metadata);
+        $outputs[] = [
+            'path' => PhpSignaturePhpDocIndex::PATH,
+            'sha256' => hash('sha256', $metadata),
         ];
 
         $overridesJson = CanonicalJson::encode([

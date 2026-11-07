@@ -4,19 +4,57 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Analysis\Browser;
 
+use Atatusoft\Ppphp\Analysis\CompilerProjectAnalyzer;
+use Atatusoft\Ppphp\Analysis\DeclarationContextCollector;
+use Atatusoft\Ppphp\Interop\Php\Signature\BrowserPhpSignatureCache;
+use Atatusoft\Ppphp\Interop\Php\Signature\PhpSignaturePackageLoader;
+use Atatusoft\Ppphp\Project\ProjectChecker;
+
 /** Drives the existing protocol over the browser worker's private device. */
 final readonly class WorkflowRequestPump
 {
     public function __construct(
-        private WorkflowProtocol $protocol = new WorkflowProtocol(embeddedCompiler: true),
+        private ?WorkflowProtocol $protocol = null,
         private WorkflowRequestDecoder $decoder = new WorkflowRequestDecoder(),
     ) {}
 
-    /** @param resource $input
-     *  @param resource $output
+    /**
+     * The trusted host may opt in after protecting the verified compiler from
+     * writes. The optional cache identity binds the exact compiler and runtime.
+     *
+     * @param resource $input
+     * @param resource $output
      */
-    public function serve($input, $output, string $root): void
-    {
+    public function serve(
+        $input,
+        $output,
+        string $root,
+        bool $immutableCompiler = false,
+        ?string $signatureCacheIdentity = null,
+        ?string $verifiedAnalyzerIdentity = null,
+    ): void {
+        if ($verifiedAnalyzerIdentity !== null && (!$immutableCompiler || PHP_SAPI !== 'wasm' || $this->protocol !== null)) {
+            throw new \InvalidArgumentException('An analyzer fingerprint requires the trusted immutable Wasm compiler.');
+        }
+        $cache = null;
+        if ($signatureCacheIdentity !== null) {
+            if (!$immutableCompiler || PHP_SAPI !== 'wasm' || $this->protocol !== null) {
+                throw new \InvalidArgumentException('Signature reuse requires the trusted immutable Wasm compiler.');
+            }
+            $cache = new BrowserPhpSignatureCache($signatureCacheIdentity);
+        }
+        $protocol = $this->protocol ?? new WorkflowProtocol(
+            checker: $cache === null ? new ProjectChecker() : new ProjectChecker(
+                compilerAnalyzer: new CompilerProjectAnalyzer(
+                    declarationCollector: new DeclarationContextCollector(
+                        phpSignatures: new PhpSignaturePackageLoader(browserCache: $cache),
+                    ),
+                ),
+            ),
+            embeddedCompiler: true,
+            immutableCompiler: $immutableCompiler,
+            verifiedAnalyzerIdentity: $verifiedAnalyzerIdentity,
+        );
         $progress = new WorkflowProgress();
         $deadline = hrtime(true) + 360_000_000_000;
         do {
@@ -26,10 +64,13 @@ final readonly class WorkflowRequestPump
                 throw new \InvalidArgumentException('Invalid workflow request frame length.');
             }
             $request = $this->decoder->decode($this->readBytes($input, $length, $deadline));
-            $response = $this->protocol->handle($request, $root, $progress);
+            $response = $protocol->handle($request, $root, $progress);
             $json = json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
             if (strlen($json) > WorkflowProtocol::MAXIMUM_RESPONSE_BYTES) {
                 throw new \RuntimeException('The workflow response exceeds its byte limit.');
+            }
+            if ($response['status'] === 'complete' && ($response['compilerStatus'] ?? null) === 0) {
+                $cache?->save();
             }
             $frame = pack('N', strlen($json)) . $json;
             if (fwrite($output, $frame) !== strlen($frame) || !fflush($output)) {

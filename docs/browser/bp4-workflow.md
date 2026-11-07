@@ -182,6 +182,15 @@ and `currentOutput` together. Rejected requests use CLI exit 2; internal excepti
 use 70. Retained analyzer failures can report infrastructure status with compiler
 status 1, matching the native compiler diagnostic contract.
 
+The embedded Wasm host can pass `immutableCompiler: true` to
+`WorkflowRequestPump::serve` after verifying the compiler archive and
+protecting its mounted files against writes for the entire operation.
+The pump then reuses one compiler identity across continuation, cache and
+publication checks, and one streamed PHAR fingerprint across analysis and
+lint bindings. Analyzer invocations, project inputs and output trees are
+still validated normally. Native and CLI workflow invocations continue to
+recheck the installation.
+
 Actual `php -n -l` invokes Zend compilation without executing candidate top-level
 code. `WorkflowLintRunner` consumes the complete bound observations through the
 existing `PhpLintValidator`; it checks the exact restaged bytes and complete final
@@ -308,3 +317,20 @@ late results and recovery. Measure aggregate JS/WASM memory and choose productio
 deadlines from evidence. Archive allowlists, upstream loader warnings and broader
 browser/device qualification remain later production gates. Do not wire website
 routes or enable production execution as part of this handoff.
+
+### Platform signature cache
+
+The trusted host can pass a fifth argument, `sha256:<64 lowercase hex digits>`,
+to `WorkflowRequestPump::serve` with immutable-compiler mode enabled. The
+digest must identify the verified compiler archive and the exact Wasm runtime.
+The compiler additionally keys each cache to the PHP target, the verified
+platform-signature package, and the cache format.
+
+Before starting a fresh compiler guest, the host may restore at most 8 MiB of
+its own bytes to `/tmp/ppphp-platform-signatures.cache`. The host must keep the
+file outside the project mount and inaccessible to the analyzer, linter, and
+user program guests. Import bytes only after a successful terminal response and
+clean completion of the compiler guest. Cache data is optional and disposable.
+The compiler verifies the signature package independently and resolves the
+required modules from the current project on every operation. The file stores
+parsed platform syntax only.

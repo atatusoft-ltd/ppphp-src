@@ -253,6 +253,11 @@ test('a live workflow keeps one preparation and revokes it when the project chan
         ->and(workflowOutput($root))->toBe($published);
 });
 
+test('native workflow cannot opt in to immutable compiler identity reuse', function (): void {
+    expect(fn () => new WorkflowProtocol(embeddedCompiler: true, immutableCompiler: true))
+        ->toThrow(InvalidArgumentException::class, 'Compiler identity reuse requires an immutable embedded Wasm installation.');
+});
+
 test('the browser device rejects a malformed frame before opening the project', function (int $length): void {
     $input = fopen('php://temp', 'w+b');
     $output = fopen('php://temp', 'w+b');
