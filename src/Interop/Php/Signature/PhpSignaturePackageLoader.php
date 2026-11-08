@@ -81,6 +81,37 @@ final class PhpSignaturePackageLoader
         return $this->verifiedPackages[$target] = $this->verifier->verifyInstalledPackage($this->packagePath($target), $target);
     }
 
+    /** @param list<string> $classNames */
+    public function verifyLocalClasses(string $target, array $classNames): bool
+    {
+        $verification = $this->verifyPackage($target);
+        if ($classNames === []) {
+            return true;
+        }
+
+        $symbols = $this->symbolIndexes[$target] ?? $this->readSymbolIndex($this->packagePath($target), $verification);
+        $classes = $symbols['classes'] ?? null;
+        if (!is_array($classes)) {
+            throw new \RuntimeException('The PHP signature class index is unavailable.');
+        }
+        foreach ($classNames as $name) {
+            if (array_key_exists(strtolower(ltrim($name, '\\')), $classes)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @return array<string, mixed> */
+    private function readSymbolIndex(string $package, PhpSignaturePackageVerification $verification): array
+    {
+        $symbols = $verification->readOptionalOutput($package, 'symbols.json')
+            ?? throw new \RuntimeException('The PHP signature symbol index is unavailable.');
+
+        return $this->decodeObject($symbols, 'symbols.json');
+    }
+
     /** @param iterable<ParsedFile> $projectFiles */
     public function load(string $target, iterable $projectFiles): ProjectParseResult
     {
@@ -102,9 +133,7 @@ final class PhpSignaturePackageLoader
                         $this->syntaxIndexes[$target] = $syntax;
                     }
                 }
-                $symbols = $verification->readOptionalOutput($package, 'symbols.json')
-                    ?? throw new \RuntimeException('The PHP signature symbol index is unavailable.');
-                $symbolIndex = $this->decodeObject($symbols, 'symbols.json');
+                $symbolIndex = $this->readSymbolIndex($package, $verification);
                 $this->moduleGraphs[$target] = null;
                 $graphBytes = $verification->readOptionalOutput($package, PhpSignatureModuleReferences::PATH);
                 if ($graphBytes !== null) {

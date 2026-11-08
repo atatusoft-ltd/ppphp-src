@@ -53,7 +53,12 @@ final readonly class ScalarScriptProof
             return false;
         }
 
+        $localNames = [];
         foreach ($file->statements as $statement) {
+            if ($statement instanceof Stmt\Class_ && $statement->name !== null) {
+                $localNames[] = strtolower($statement->name->toString());
+                continue;
+            }
             if (!$statement instanceof Stmt\Nop && !$statement instanceof Stmt\Echo_ && !$statement instanceof Stmt\Foreach_
                 && (!$statement instanceof Stmt\Expression || !$statement->expr instanceof Expr\Assign)) {
                 return false;
@@ -62,7 +67,13 @@ final readonly class ScalarScriptProof
 
         $references = (new DeclarationReferenceCollector())->collect([$file]);
 
-        return $references['classes'] === [] && $references['constants'] === []
+        foreach ($file->extensionSyntax->genericDeclarations as $declaration) {
+            foreach ($declaration->parameters as $parameter) {
+                $localNames[] = strtolower($parameter->nameSpan->text);
+            }
+        }
+
+        return array_diff(array_map(strtolower(...), $references['classes']), $localNames) === [] && $references['constants'] === []
             && array_diff(array_map(strtolower(...), $references['functions']), ['count']) === [];
     }
 
@@ -97,6 +108,10 @@ final readonly class ScalarScriptProof
             if ($token->id === T_DOC_COMMENT || ($token->id === T_COMMENT && str_contains($token->text, '@'))) {
                 return false;
             }
+        }
+
+        if (array_any($parsed->statements, static fn (Stmt $node): bool => $node instanceof Stmt\Class_)) {
+            return (new RecordScriptProof())->check($semantic, $model);
         }
 
         $declarations = [];

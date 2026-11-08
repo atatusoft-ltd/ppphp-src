@@ -30,12 +30,11 @@ final readonly class DeclarationContextCollector
         private PhpSignaturePackageLoader $phpSignatures = new PhpSignaturePackageLoader(),
     ) {}
 
-    public function verifyPlatform(Project $project): bool
+    /** @param list<string> $localClasses */
+    public function verifyPlatform(Project $project, array $localClasses): bool
     {
         try {
-            $this->phpSignatures->verifyPackage($project->configuration->targetPhpVersion);
-
-            return true;
+            return $this->phpSignatures->verifyLocalClasses($project->configuration->targetPhpVersion, $localClasses);
         } catch (\Throwable) {
             // The full collector owns the diagnostic and its source.
             return false;

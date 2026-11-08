@@ -10,6 +10,7 @@ use PhpParser\Node\Scalar;
 
 /**
  * @phpstan-type ScalarValue bool|float|int|string|UntrackedString
+ * @phpstan-type Records array<string, array<string, bool|float|int|string>>
  * @phpstan-type Locals array<string, ScalarValue>
  * @phpstan-type Collections array<string, non-empty-array<int|string, ScalarValue>>
  */
@@ -33,6 +34,7 @@ final class ScriptExpressionProof
      * @param Locals $assigned
      * @param Collections $arrays
      * @param array<string, true> $reads
+     * @param Records $records
      */
     public static function resolve(
         Expr $expression,
@@ -41,6 +43,7 @@ final class ScriptExpressionProof
         array &$reads,
         int &$steps,
         int $depth,
+        array $records = [],
     ): bool|float|int|string|UntrackedString|null {
         if ($depth === 0 || --$steps < 0) {
             return null;
@@ -49,9 +52,16 @@ final class ScriptExpressionProof
             $reads[$expression->name] = true;
             return $assigned[$expression->name];
         }
+        if ($expression instanceof Expr\PropertyFetch && $expression->var instanceof Expr\Variable
+            && is_string($expression->var->name) && $expression->name instanceof \PhpParser\Node\Identifier
+            && isset($records[$expression->var->name][$expression->name->toString()])) {
+            $reads[$expression->var->name] = true;
+
+            return $records[$expression->var->name][$expression->name->toString()];
+        }
         if ($expression instanceof Expr\ArrayDimFetch && $expression->var instanceof Expr\Variable
             && is_string($expression->var->name) && $expression->dim !== null && isset($arrays[$expression->var->name])) {
-            $key = self::resolve($expression->dim, $assigned, $arrays, $reads, $steps, $depth - 1);
+            $key = self::resolve($expression->dim, $assigned, $arrays, $reads, $steps, $depth - 1, $records);
 
             return is_int($key) || is_string($key) ? ($arrays[$expression->var->name][$key] ?? null) : null;
         }
@@ -59,8 +69,8 @@ final class ScriptExpressionProof
             return self::resolveLiteral($expression);
         }
 
-        $left = self::resolve($expression->left, $assigned, $arrays, $reads, $steps, $depth - 1);
-        $right = self::resolve($expression->right, $assigned, $arrays, $reads, $steps, $depth - 1);
+        $left = self::resolve($expression->left, $assigned, $arrays, $reads, $steps, $depth - 1, $records);
+        $right = self::resolve($expression->right, $assigned, $arrays, $reads, $steps, $depth - 1, $records);
         if ($expression instanceof Expr\BinaryOp\Concat) {
             // Do not materialize strings that could grow exponentially. The
             // result still has a known type but cannot prove an exact key.
