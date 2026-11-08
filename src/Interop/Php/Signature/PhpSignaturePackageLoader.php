@@ -81,22 +81,27 @@ final class PhpSignaturePackageLoader
         return $this->verifiedPackages[$target] = $this->verifier->verifyInstalledPackage($this->packagePath($target), $target);
     }
 
-    /** @param list<string> $classNames */
-    public function verifyLocalClasses(string $target, array $classNames): bool
+    /**
+     * @param list<string> $classNames
+     * @param list<string> $functionNames
+     */
+    public function verifyLocalDeclarations(string $target, array $classNames, array $functionNames): bool
     {
         $verification = $this->verifyPackage($target);
-        if ($classNames === []) {
+        if ($classNames === [] && $functionNames === []) {
             return true;
         }
 
-        $symbols = $this->symbolIndexes[$target] ?? $this->readSymbolIndex($this->packagePath($target), $verification);
-        $classes = $symbols['classes'] ?? null;
-        if (!is_array($classes)) {
-            throw new \RuntimeException('The PHP signature class index is unavailable.');
-        }
-        foreach ($classNames as $name) {
-            if (array_key_exists(strtolower(ltrim($name, '\\')), $classes)) {
-                return false;
+        $symbols = $this->symbolIndexes[$target] ??= $this->readSymbolIndex($this->packagePath($target), $verification);
+        foreach (['classes' => $classNames, 'functions' => $functionNames] as $kind => $names) {
+            $platform = $symbols[$kind] ?? null;
+            if (!is_array($platform)) {
+                throw new \RuntimeException(sprintf('The PHP signature %s index is unavailable.', $kind));
+            }
+            foreach ($names as $name) {
+                if (array_key_exists(strtolower(ltrim($name, '\\')), $platform)) {
+                    return false;
+                }
             }
         }
 
@@ -120,7 +125,8 @@ final class PhpSignaturePackageLoader
 
         try {
             $verification = $this->verifyPackage($target);
-            if (!isset($this->symbolIndexes[$target])) {
+            $symbols = $this->symbolIndexes[$target] ??= $this->readSymbolIndex($package, $verification);
+            if (!array_key_exists($target, $this->moduleGraphs)) {
                 $phpDoc = $verification->readOptionalOutput($package, PhpSignaturePhpDocIndex::PATH);
                 $index = $phpDoc === null ? null : PhpSignaturePhpDocIndex::decode($phpDoc, $target);
                 if ($index !== null) {
@@ -133,20 +139,18 @@ final class PhpSignaturePackageLoader
                         $this->syntaxIndexes[$target] = $syntax;
                     }
                 }
-                $symbolIndex = $this->readSymbolIndex($package, $verification);
-                $this->moduleGraphs[$target] = null;
+                $graph = null;
                 $graphBytes = $verification->readOptionalOutput($package, PhpSignatureModuleReferences::PATH);
                 if ($graphBytes !== null) {
                     $index = CanonicalJson::decode($graphBytes);
                     if (!is_array($index) || !is_array($index['modules'] ?? null)) {
                         throw new \RuntimeException('The PHP signature module reference index is malformed.');
                     }
-                    $this->moduleGraphs[$target] = $index['modules'];
+                    $graph = $index['modules'];
                 }
-                $this->symbolIndexes[$target] = $symbolIndex;
+                $this->moduleGraphs[$target] = $graph;
             }
             $this->browserCache?->useVerifiedPackage($target, $verification->identity);
-            $symbols = $this->symbolIndexes[$target];
             $graph = $this->moduleGraphs[$target];
             $references = $this->references->collect($projectFiles);
             $modules = ['core' => true];

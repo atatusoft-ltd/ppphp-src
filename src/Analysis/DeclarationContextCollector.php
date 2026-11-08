@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Analysis;
 
+use Atatusoft\Ppphp\Analysis\Declaration\DeclarationReferenceCollector;
 use Atatusoft\Ppphp\Diagnostics\Diagnostic;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
 use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
@@ -30,11 +31,16 @@ final readonly class DeclarationContextCollector
         private PhpSignaturePackageLoader $phpSignatures = new PhpSignaturePackageLoader(),
     ) {}
 
-    /** @param list<string> $localClasses */
-    public function verifyPlatform(Project $project, array $localClasses): bool
+    public function verifyPlatform(Project $project, ProjectParseResult $parsed): bool
     {
         try {
-            return $this->phpSignatures->verifyLocalClasses($project->configuration->targetPhpVersion, $localClasses);
+            $names = (new DeclarationReferenceCollector())->collectDeclarations($parsed->parsedFiles);
+
+            return $this->phpSignatures->verifyLocalDeclarations(
+                $project->configuration->targetPhpVersion,
+                $names['classes'],
+                $names['functions'],
+            );
         } catch (\Throwable) {
             // The full collector owns the diagnostic and its source.
             return false;

@@ -16,7 +16,6 @@ use Atatusoft\Ppphp\Project\ProjectParseResult;
 use Atatusoft\Ppphp\Project\ProjectSyntaxChecker;
 use Atatusoft\Ppphp\Project\SourceSet;
 use Atatusoft\Ppphp\Semantic\SemanticAnalyzer;
-use Atatusoft\Ppphp\Semantic\Symbol\ClassSymbol;
 
 final readonly class CompilerProjectAnalyzer
 {
@@ -53,9 +52,8 @@ final readonly class CompilerProjectAnalyzer
         if ($proof->canAnalyzeLocally($project, $selectedSources, $parseResult)) {
             $local = $this->analyzeSemantics($project, $selectedSources, $parseResult, $this->emptyContext());
             $check = $proof->check($local);
-            if ($check !== null && $local->semanticResult !== null) {
-                $names = array_map(static fn (ClassSymbol $symbol): string => $symbol->fullyQualifiedName, $local->semanticResult->symbols->classes);
-                if ($this->declarationCollector->verifyPlatform($project, $names)) {
+            if ($check !== null) {
+                if ($this->declarationCollector->verifyPlatform($project, $parseResult)) {
                     return $check;
                 }
 
@@ -65,7 +63,9 @@ final readonly class CompilerProjectAnalyzer
 
         $full = $this->analyzeParsed($project, $selectedSources, $parseResult);
 
-        return $proof->check($full) ?? $full;
+        $check = $proof->check($full);
+
+        return $check !== null && $this->declarationCollector->verifyPlatform($project, $parseResult) ? $check : $full;
     }
 
     private function analyzeParsed(

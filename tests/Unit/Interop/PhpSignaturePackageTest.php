@@ -233,7 +233,8 @@ test('a retained platform loader revalidates changed resources and recovers afte
     \Tests\Support\StageElevenProject::copyTree(dirname(__DIR__, 3) . '/resources/php-signatures/8.4', $root . '/8.4');
     $loader = new PhpSignaturePackageLoader($root);
     $first = $loader->load('8.4', []);
-    expect($first->isSuccessful)->toBeTrue();
+    expect($first->isSuccessful)->toBeTrue()
+        ->and($loader->verifyLocalDeclarations('8.4', [], ['ppphpLessonLookup']))->toBeTrue();
     foreach (['core', 'zlib'] as $module) {
         $path = $root . '/8.4/extensions/' . $module . '.json';
         $contents = file_get_contents($path);
@@ -244,13 +245,15 @@ test('a retained platform loader revalidates changed resources and recovers afte
         expect(filesize($path))->toBe(strlen($contents))
             ->and(filemtime($path))->toBe($mtime);
 
+        expect(fn () => $loader->verifyLocalDeclarations('8.4', [], ['ppphpLessonLookup']))->toThrow(RuntimeException::class);
         $broken = $loader->load('8.4', []);
         expect($broken->parsedFiles)->toBe([])
             ->and($broken->diagnostics->errors[0]->code)->toBe(DiagnosticCode::PhpSignaturePackageInvalid);
         $this->writeFile($path, $contents);
         $repaired = $loader->load('8.4', []);
         expect($repaired->isSuccessful)->toBeTrue()
-            ->and(array_keys($repaired->parsedFiles))->toBe(array_keys($first->parsedFiles));
+            ->and(array_keys($repaired->parsedFiles))->toBe(array_keys($first->parsedFiles))
+            ->and($loader->verifyLocalDeclarations('8.4', [], ['ppphpLessonLookup']))->toBeTrue();
     }
     rename($root . '/8.4', $root . '/moved');
     symlink($root . '/moved', $root . '/8.4');
@@ -260,4 +263,19 @@ test('a retained platform loader revalidates changed resources and recovers afte
     rename($root . '/moved', $root . '/8.4');
     clearstatcache(true);
     expect($loader->load('8.4', [])->isSuccessful)->toBeTrue();
+});
+
+test('verified platform declarations distinguish class and function collisions and retain full loading', function (): void {
+    $loader = new PhpSignaturePackageLoader();
+
+    expect($loader->verifyLocalDeclarations('8.4', ['PpphpLessonError'], ['ppphpLessonLookup']))->toBeTrue()
+        ->and($loader->verifyLocalDeclarations('8.4', ['\\ExCePtIoN'], []))->toBeFalse()
+        ->and($loader->verifyLocalDeclarations('8.4', [], ['\\StRlEn']))->toBeFalse()
+        ->and($loader->verifyLocalDeclarations('8.4', ['strlen'], ['Exception']))->toBeTrue();
+
+    $platform = $loader->load('8.4', []);
+
+    expect($platform->isSuccessful)->toBeTrue()
+        ->and($platform->parsedFiles)->not->toBeEmpty()
+        ->and($loader->verifyLocalDeclarations('8.4', ['PpphpLessonError'], ['strlen']))->toBeFalse();
 });

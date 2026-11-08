@@ -131,6 +131,10 @@ final readonly class ScalarScriptProof
             }
         }
 
+        if ($parsed->extensionSyntax->throwsClauses !== []) {
+            return count($analysis->selectedSources) === 1 && (new CheckedErrorScriptProof())->check($model, $semantic->symbols);
+        }
+
         if (count($analysis->selectedSources) > 1
             || array_any($parsed->statements, static fn (Stmt $node): bool => $node instanceof Stmt\Class_)) {
             return (new RecordScriptProof())->check($analysis, $model);
