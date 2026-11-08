@@ -26,6 +26,12 @@ final class PhpSignaturePackageLoader
     /** @var array<string, PhpSignatureSyntaxIndex> */
     private array $syntaxIndexes = [];
 
+    /** @var array<string, array<string, mixed>> */
+    private array $symbolIndexes = [];
+
+    /** @var array<string, array<array-key, mixed>|null> */
+    private array $moduleGraphs = [];
+
     /**
      * @var array<string, array<string, array{
      *     parsedFiles: array<string, ParsedFile>,
@@ -52,7 +58,14 @@ final class PhpSignaturePackageLoader
         try {
             $verification = $this->verifiedPackages[$target] ?? null;
             if ($verification === null || !$verification->matches($package)) {
-                unset($this->verifiedPackages[$target], $this->parsedModules[$target], $this->phpDocIndexes[$target], $this->syntaxIndexes[$target]);
+                unset(
+                    $this->verifiedPackages[$target],
+                    $this->parsedModules[$target],
+                    $this->phpDocIndexes[$target],
+                    $this->syntaxIndexes[$target],
+                    $this->symbolIndexes[$target],
+                    $this->moduleGraphs[$target],
+                );
                 $verification = $this->verifier->verifyInstalledPackage($package, $target);
                 $phpDoc = $verification->readOptionalOutput($package, PhpSignaturePhpDocIndex::PATH);
                 $index = $phpDoc === null ? null : PhpSignaturePhpDocIndex::decode($phpDoc, $target);
@@ -66,19 +79,23 @@ final class PhpSignaturePackageLoader
                         $this->syntaxIndexes[$target] = $syntax;
                     }
                 }
+                $symbols = $verification->readOptionalOutput($package, 'symbols.json')
+                    ?? throw new \RuntimeException('The PHP signature symbol index is unavailable.');
+                $this->symbolIndexes[$target] = $this->decodeObject($symbols, 'symbols.json');
+                $this->moduleGraphs[$target] = null;
+                $graphBytes = $verification->readOptionalOutput($package, PhpSignatureModuleReferences::PATH);
+                if ($graphBytes !== null) {
+                    $index = CanonicalJson::decode($graphBytes);
+                    if (!is_array($index) || !is_array($index['modules'] ?? null)) {
+                        throw new \RuntimeException('The PHP signature module reference index is malformed.');
+                    }
+                    $this->moduleGraphs[$target] = $index['modules'];
+                }
                 $this->verifiedPackages[$target] = $verification;
             }
             $this->browserCache?->useVerifiedPackage($target, $verification->identity);
-            $symbols = $this->json($package . '/symbols.json');
-            $graphBytes = $verification->readOptionalOutput($package, PhpSignatureModuleReferences::PATH);
-            $graph = null;
-            if ($graphBytes !== null) {
-                $index = CanonicalJson::decode($graphBytes);
-                if (!is_array($index) || !is_array($index['modules'] ?? null)) {
-                    throw new \RuntimeException('The PHP signature module reference index is malformed.');
-                }
-                $graph = $index['modules'];
-            }
+            $symbols = $this->symbolIndexes[$target];
+            $graph = $this->moduleGraphs[$target];
             $references = $this->references->collect($projectFiles);
             $modules = ['core' => true];
             PhpSignatureModuleReferences::addModules($modules, $symbols, $references);
@@ -196,6 +213,12 @@ final class PhpSignaturePackageLoader
             throw new \RuntimeException(sprintf('Required PHP signature resource "%s" is unavailable.', basename($path)));
         }
 
+        return $this->decodeObject($contents, basename($path));
+    }
+
+    /** @return array<string, mixed> */
+    private function decodeObject(string $contents, string $path): array
+    {
         $decoded = CanonicalJson::decode($contents);
 
         if (!is_array($decoded) || array_is_list($decoded)) {

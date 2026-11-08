@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Semantic\Pass;
 
+use Atatusoft\Ppphp\Analysis\Declaration\DeclarationOrigin;
+use Atatusoft\Ppphp\Frontend\ParsedFile;
+use Atatusoft\Ppphp\Project\ProjectParseResult;
 use Atatusoft\Ppphp\Semantic\ProjectSemanticContext;
+use Atatusoft\Ppphp\Semantic\ResolvedNameTable;
 use PhpParser\ErrorHandler\Collecting;
 use PhpParser\NameContext;
 use PhpParser\Node;
@@ -14,23 +18,55 @@ use PhpParser\Node\Stmt;
 
 final class ResolveNamesPass
 {
-    public function execute(ProjectSemanticContext $context): void
+    /** @var \WeakMap<ParsedFile, ResolvedNameTable> */
+    private \WeakMap $platformNames;
+
+    public function __construct(private readonly bool $reusePlatformNames = false)
     {
-        foreach ($context->parseResult->parsedFiles as $parsedFile) {
-            $names = new NameContext(new Collecting());
-            $names->startNamespace();
-            $this->resolveStatements($parsedFile->statements, $names, $context);
+        $this->platformNames = new \WeakMap();
+    }
+
+    public function preparePlatformNames(ProjectParseResult $platform): void
+    {
+        if (!$this->reusePlatformNames) {
+            throw new \LogicException('Platform name reuse is unavailable.');
+        }
+        foreach ($platform->parsedFiles as $file) {
+            if ($file->sourceFile->declarationOrigin !== DeclarationOrigin::PhpPlatform) {
+                throw new \LogicException('Only verified PHP platform names may be prepared.');
+            }
+            $this->platformNames[$file] ??= $this->resolveFile($file, new ResolvedNameTable());
         }
     }
 
+    public function execute(ProjectSemanticContext $context): void
+    {
+        foreach ($context->parseResult->parsedFiles as $file) {
+            if (isset($this->platformNames[$file])) {
+                $context->resolvedNames->merge($this->platformNames[$file]);
+                continue;
+            }
+            $this->resolveFile($file, $context->resolvedNames);
+        }
+    }
+
+    private function resolveFile(ParsedFile $file, ResolvedNameTable $resolved): ResolvedNameTable
+    {
+        $names = new NameContext(new Collecting());
+        $names->startNamespace();
+        $this->resolveStatements($file->statements, $names, $resolved);
+
+        return $resolved;
+    }
+
     /** @param list<Stmt> $statements */
-    private function resolveStatements(array $statements, NameContext $names, ProjectSemanticContext $context): void
+    private function resolveStatements(array $statements, NameContext $names, ResolvedNameTable $table): void
     {
         foreach ($statements as $statement) {
             if ($statement instanceof Stmt\Namespace_) {
                 $nested = new NameContext(new Collecting());
                 $nested->startNamespace($statement->name);
-                $this->resolveStatements(array_values($statement->stmts), $nested, $context);
+                $this->resolveStatements(array_values($statement->stmts), $nested, $table);
                 continue;
             }
 
@@ -54,24 +90,24 @@ final class ResolveNamesPass
                 continue;
             }
 
-            $this->resolveNode($statement, $names, $context, Stmt\Use_::TYPE_NORMAL);
+            $this->resolveNode($statement, $names, $table, Stmt\Use_::TYPE_NORMAL);
         }
     }
 
     /** @param Stmt\Use_::TYPE_* $type */
-    private function resolveNode(Node $node, NameContext $names, ProjectSemanticContext $context, int $type): void
+    private function resolveNode(Node $node, NameContext $names, ResolvedNameTable $table, int $type): void
     {
         if ($node instanceof Name) {
             $resolved = $names->getResolvedName($node, $type);
-            $context->resolvedNames->record($node, ($resolved ?? $node)->toString());
+            $table->record($node, ($resolved ?? $node)->toString());
 
             return;
         }
 
         if ($node instanceof Expr\FuncCall && $node->name instanceof Name) {
-            $this->resolveNode($node->name, $names, $context, Stmt\Use_::TYPE_FUNCTION);
+            $this->resolveNode($node->name, $names, $table, Stmt\Use_::TYPE_FUNCTION);
         } elseif ($node instanceof Expr\ConstFetch) {
-            $this->resolveNode($node->name, $names, $context, Stmt\Use_::TYPE_CONSTANT);
+            $this->resolveNode($node->name, $names, $table, Stmt\Use_::TYPE_CONSTANT);
         }
 
         foreach ($node->getSubNodeNames() as $subNodeName) {
@@ -82,11 +118,11 @@ final class ResolveNamesPass
                     continue;
                 }
 
-                $this->resolveNode($value, $names, $context, Stmt\Use_::TYPE_NORMAL);
+                $this->resolveNode($value, $names, $table, Stmt\Use_::TYPE_NORMAL);
             } elseif (is_array($value)) {
                 foreach ($value as $child) {
                     if ($child instanceof Node) {
-                        $this->resolveNode($child, $names, $context, Stmt\Use_::TYPE_NORMAL);
+                        $this->resolveNode($child, $names, $table, Stmt\Use_::TYPE_NORMAL);
                     }
                 }
             }

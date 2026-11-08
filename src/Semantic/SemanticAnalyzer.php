@@ -61,6 +61,21 @@ final readonly class SemanticAnalyzer
         $this->errorResolver = $errorResolver ?? new ErrorResolver();
     }
 
+    public function preparePlatformDeclarations(ProjectParseResult $platform): void
+    {
+        $context = new ProjectSemanticContext(
+            $platform,
+            new SymbolTable(),
+            new ResolvedNameTable(),
+            new DiagnosticBag(),
+            new CallableErrorIndex(),
+            [],
+        );
+        $this->resolveNames->preparePlatformNames($platform);
+        $this->resolveNames->execute($context);
+        $this->declareSymbols->preparePlatformDeclarations($context);
+    }
+
     public function analyze(ProjectParseResult $parseResult, ?ProjectParseResult $contextResult = null): SemanticAnalysisResult
     {
         $diagnostics = new DiagnosticBag();

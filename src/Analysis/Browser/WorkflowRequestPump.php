@@ -9,6 +9,9 @@ use Atatusoft\Ppphp\Analysis\DeclarationContextCollector;
 use Atatusoft\Ppphp\Interop\Php\Signature\BrowserPhpSignatureCache;
 use Atatusoft\Ppphp\Interop\Php\Signature\PhpSignaturePackageLoader;
 use Atatusoft\Ppphp\Project\ProjectChecker;
+use Atatusoft\Ppphp\Semantic\Pass\DeclareSymbolsPass;
+use Atatusoft\Ppphp\Semantic\Pass\ResolveNamesPass;
+use Atatusoft\Ppphp\Semantic\SemanticAnalyzer;
 
 /** Drives the existing protocol over the browser worker's private device. */
 final readonly class WorkflowRequestPump
@@ -48,12 +51,17 @@ final readonly class WorkflowRequestPump
         if ($preparePlatform && $signatures === null) {
             throw new \InvalidArgumentException('Platform preparation requires a verified signature cache identity.');
         }
+        $semanticAnalyzer = new SemanticAnalyzer(
+            declareSymbols: new DeclareSymbolsPass(reusePlatformDeclarations: $preparePlatform),
+            resolveNames: new ResolveNamesPass(reusePlatformNames: $preparePlatform),
+        );
         $protocol = $this->protocol ?? new WorkflowProtocol(
             checker: $signatures === null ? new ProjectChecker() : new ProjectChecker(
                 compilerAnalyzer: new CompilerProjectAnalyzer(
                     declarationCollector: new DeclarationContextCollector(
                         phpSignatures: $signatures,
                     ),
+                    semanticAnalyzer: $semanticAnalyzer,
                 ),
             ),
             embeddedCompiler: true,
@@ -63,7 +71,7 @@ final readonly class WorkflowRequestPump
         $progress = new WorkflowProgress();
         $deadline = hrtime(true) + 360_000_000_000;
         if ($preparePlatform) {
-            (new WorkflowPlatformPreparation())->prepare($signatures, $protocol);
+            (new WorkflowPlatformPreparation())->prepare($signatures, $protocol, $semanticAnalyzer);
             $this->writeResponse($output, ['prepared' => true]);
         }
 
