@@ -105,7 +105,10 @@ final readonly class ScalarScriptProof
         return $printed && count($assigned) === count($declarations) && count($reads) === count($assigned);
     }
 
-    /** @param array<string,string> $assigned @param array<string,true> $reads */
+    /**
+     * @param array<string, string> $assigned
+     * @param array<string, true> $reads
+     */
     private function resolveEchoType(Expr $expression, array $assigned, array &$reads, int $depth): ?string
     {
         if ($depth === 0) {
