@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Analysis;
 
+use Atatusoft\Ppphp\Analysis\Declaration\DeclarationReferenceCollector;
 use Atatusoft\Ppphp\Diagnostics\Diagnostic;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
 use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
@@ -29,6 +30,32 @@ final readonly class DeclarationContextCollector
         private DependencyDeclarationProvider $composerDependencies = new InstalledComposerDeclarationProvider(),
         private PhpSignaturePackageLoader $phpSignatures = new PhpSignaturePackageLoader(),
     ) {}
+
+    public function verifyPlatform(Project $project, ProjectParseResult $parsed): bool
+    {
+        try {
+            $names = (new DeclarationReferenceCollector())->collectDeclarations($parsed->parsedFiles);
+
+            return $this->phpSignatures->verifyLocalDeclarations(
+                $project->configuration->targetPhpVersion,
+                $names['classes'],
+                $names['functions'],
+            );
+        } catch (\Throwable) {
+            // The full collector owns the diagnostic and its source.
+            return false;
+        }
+    }
+
+    public function selectPlatformDocument(Project $project, string $class): ?ProjectParseResult
+    {
+        try {
+            return $this->phpSignatures->loadClassDocument($project->configuration->targetPhpVersion, $class);
+        } catch (\Throwable) {
+            // The full collector owns the diagnostic and its source.
+            return null;
+        }
+    }
 
     public function collect(
         Project $project,

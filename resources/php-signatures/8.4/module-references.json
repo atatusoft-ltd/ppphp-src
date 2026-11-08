@@ -1,0 +1,303 @@
+{
+    "formatVersion": 1,
+    "modules": {
+        "bcmath": [
+            "core",
+            "spl",
+            "standard"
+        ],
+        "bz2": [
+            "spl"
+        ],
+        "calendar": [
+            "spl"
+        ],
+        "com_dotnet": [
+            "core",
+            "spl"
+        ],
+        "core": [
+            "spl"
+        ],
+        "ctype": [
+            "spl"
+        ],
+        "curl": [
+            "spl"
+        ],
+        "date": [
+            "core",
+            "spl"
+        ],
+        "dba": [
+            "spl"
+        ],
+        "dl_test": [
+            "spl"
+        ],
+        "dom": [
+            "core",
+            "spl"
+        ],
+        "enchant": [
+            "core",
+            "spl"
+        ],
+        "exif": [
+            "spl"
+        ],
+        "ffi": [
+            "core",
+            "spl"
+        ],
+        "fileinfo": [
+            "spl"
+        ],
+        "filter": [
+            "spl"
+        ],
+        "ftp": [
+            "core",
+            "spl"
+        ],
+        "gd": [
+            "spl"
+        ],
+        "gettext": [
+            "spl"
+        ],
+        "gmp": [
+            "spl"
+        ],
+        "hash": [
+            "core",
+            "spl"
+        ],
+        "iconv": [
+            "spl"
+        ],
+        "intl": [
+            "core",
+            "date",
+            "spl"
+        ],
+        "json": [
+            "core",
+            "spl"
+        ],
+        "ldap": [
+            "core",
+            "spl"
+        ],
+        "libxml": [
+            "core",
+            "spl"
+        ],
+        "mbstring": [
+            "spl",
+            "standard"
+        ],
+        "mysqli": [
+            "core",
+            "spl"
+        ],
+        "odbc": [
+            "core",
+            "spl"
+        ],
+        "opcache": [
+            "core",
+            "spl"
+        ],
+        "openssl": [
+            "core",
+            "sodium",
+            "spl",
+            "standard"
+        ],
+        "pcntl": [
+            "spl"
+        ],
+        "pcre": [
+            "spl"
+        ],
+        "pdo": [
+            "core",
+            "spl"
+        ],
+        "pdo_dblib": [
+            "pdo"
+        ],
+        "pdo_firebird": [
+            "pdo",
+            "spl"
+        ],
+        "pdo_mysql": [
+            "pdo",
+            "spl"
+        ],
+        "pdo_odbc": [
+            "pdo"
+        ],
+        "pdo_pgsql": [
+            "pdo",
+            "spl"
+        ],
+        "pdo_sqlite": [
+            "pdo",
+            "spl"
+        ],
+        "pgsql": [
+            "core",
+            "spl",
+            "standard"
+        ],
+        "phar": [
+            "core",
+            "spl",
+            "standard"
+        ],
+        "posix": [
+            "spl"
+        ],
+        "random": [
+            "core",
+            "spl"
+        ],
+        "readline": [
+            "spl"
+        ],
+        "reflection": [
+            "core",
+            "spl"
+        ],
+        "sapi-apache2handler": [
+            "sapi-cgi",
+            "sapi-cli",
+            "sapi-fpm",
+            "sapi-litespeed",
+            "spl"
+        ],
+        "sapi-cgi": [
+            "sapi-apache2handler",
+            "sapi-cli",
+            "sapi-fpm",
+            "sapi-litespeed",
+            "spl"
+        ],
+        "sapi-cli": [
+            "sapi-apache2handler",
+            "sapi-cgi",
+            "sapi-fpm",
+            "sapi-litespeed",
+            "spl"
+        ],
+        "sapi-fpm": [
+            "sapi-apache2handler",
+            "sapi-cgi",
+            "sapi-cli",
+            "sapi-litespeed",
+            "spl"
+        ],
+        "sapi-litespeed": [
+            "sapi-apache2handler",
+            "sapi-cgi",
+            "sapi-cli",
+            "sapi-fpm",
+            "spl"
+        ],
+        "sapi-phpdbg": [
+            "spl"
+        ],
+        "session": [
+            "spl"
+        ],
+        "shmop": [
+            "core",
+            "spl"
+        ],
+        "simplexml": [
+            "core",
+            "spl"
+        ],
+        "skeleton": [
+            "spl"
+        ],
+        "snmp": [
+            "spl"
+        ],
+        "soap": [
+            "core",
+            "spl"
+        ],
+        "sockets": [
+            "spl"
+        ],
+        "sodium": [
+            "core",
+            "openssl",
+            "spl",
+            "standard"
+        ],
+        "spl": [
+            "core",
+            "json",
+            "standard"
+        ],
+        "sqlite3": [
+            "core",
+            "spl"
+        ],
+        "standard": [
+            "core",
+            "openssl",
+            "sodium",
+            "spl"
+        ],
+        "sysvmsg": [
+            "spl"
+        ],
+        "sysvsem": [
+            "spl"
+        ],
+        "sysvshm": [
+            "spl"
+        ],
+        "tidy": [
+            "spl"
+        ],
+        "tokenizer": [
+            "core",
+            "spl"
+        ],
+        "xml": [
+            "core",
+            "spl"
+        ],
+        "xmlreader": [
+            "dom",
+            "spl"
+        ],
+        "xmlwriter": [
+            "spl"
+        ],
+        "xsl": [
+            "dom",
+            "simplexml",
+            "spl"
+        ],
+        "zend_test": [
+            "core",
+            "spl"
+        ],
+        "zip": [
+            "core",
+            "spl"
+        ],
+        "zlib": [
+            "spl",
+            "standard"
+        ]
+    },
+    "targetPhpVersion": "8.4"
+}

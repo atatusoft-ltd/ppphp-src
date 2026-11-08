@@ -8,4 +8,5 @@ enum AnalysisCompleteness: string
 {
     case CompilerCore = 'compilerCore';
     case Full = 'full';
+    case ExperimentalScalarProof = 'experimentalScalarProof';
 }

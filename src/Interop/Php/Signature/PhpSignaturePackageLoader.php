@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Atatusoft\Ppphp\Interop\Php\Signature;
 
-use Atatusoft\Ppphp\Analysis\Declaration\DeclarationOrigin;
 use Atatusoft\Ppphp\Analysis\Declaration\DeclarationReferenceCollector;
 use Atatusoft\Ppphp\Diagnostics\Diagnostic;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
@@ -13,18 +12,30 @@ use Atatusoft\Ppphp\Frontend\Enumerations\ParseMode;
 use Atatusoft\Ppphp\Frontend\ParsedFile;
 use Atatusoft\Ppphp\Frontend\PpphpParser;
 use Atatusoft\Ppphp\Project\ProjectParseResult;
-use Atatusoft\Ppphp\Source\Enumerations\FileKind;
 use Atatusoft\Ppphp\Source\SourceFile;
 use Atatusoft\Ppphp\Support\CanonicalJson;
 use Atatusoft\Ppphp\Support\Path;
 
 final class PhpSignaturePackageLoader
 {
-    /** @var array<string, array<string, mixed>> */
-    private array $verifiedManifests = [];
+    /** @var array<string, PhpSignaturePackageVerification> */
+    private array $verifiedPackages = [];
 
-    /** @var array<string, string> */
-    private array $packageIdentities = [];
+    private ?PhpSignaturePackageVerification $immutableVerification = null;
+    /** @var array<string, PhpSignaturePhpDocIndex> */
+    private array $phpDocIndexes = [];
+
+    /** @var array<string, PhpSignatureSyntaxIndex> */
+    private array $syntaxIndexes = [];
+
+    /** @var array<string, array<string, mixed>> */
+    private array $symbolIndexes = [];
+
+    /** @var array<string, array<array-key, mixed>|null> */
+    private array $moduleGraphs = [];
+
+    /** @var array<string, array<string, ParsedFile>> */
+    private array $parsedProofDocuments = [];
 
     /**
      * @var array<string, array<string, array{
@@ -40,7 +51,112 @@ final class PhpSignaturePackageLoader
         private readonly PhpSignaturePackageVerifier $verifier = new PhpSignaturePackageVerifier(),
         private readonly PpphpParser $parser = new PpphpParser(),
         private readonly DeclarationReferenceCollector $references = new DeclarationReferenceCollector(),
+        private readonly ?BrowserPhpSignatureCache $browserCache = null,
     ) {}
+
+    /** Retains the result of the full initial check on the browser's read-only compiler mount. */
+    public function retainImmutableVerification(string $target): void
+    {
+        if (PHP_SAPI !== 'wasm' || $this->browserCache === null || $this->resourceRoot !== null) {
+            throw new \LogicException('Retaining platform verification requires the immutable Wasm compiler installation.');
+        }
+
+        $this->immutableVerification = $this->verifiedPackages[$target]
+            ?? throw new \LogicException('Platform verification must complete before it can be retained.');
+    }
+
+    public function verifyPackage(string $target): PhpSignaturePackageVerification
+    {
+        $verification = $this->verifiedPackages[$target] ?? null;
+        if ($verification !== null && ($verification === $this->immutableVerification || $verification->matches($this->packagePath($target)))) {
+            return $verification;
+        }
+
+        unset(
+            $this->verifiedPackages[$target],
+            $this->parsedModules[$target],
+            $this->parsedProofDocuments[$target],
+            $this->phpDocIndexes[$target],
+            $this->syntaxIndexes[$target],
+            $this->symbolIndexes[$target],
+            $this->moduleGraphs[$target],
+        );
+
+        return $this->verifiedPackages[$target] = $this->verifier->verifyInstalledPackage($this->packagePath($target), $target);
+    }
+
+    /**
+     * @param list<string> $classNames
+     * @param list<string> $functionNames
+     */
+    public function verifyLocalDeclarations(string $target, array $classNames, array $functionNames): bool
+    {
+        $verification = $this->verifyPackage($target);
+        if ($classNames === [] && $functionNames === []) {
+            return true;
+        }
+
+        $symbols = $this->symbolIndexes[$target] ??= $this->readSymbolIndex($this->packagePath($target), $verification);
+        foreach (['classes' => $classNames, 'functions' => $functionNames] as $kind => $names) {
+            $platform = $symbols[$kind] ?? null;
+            if (!is_array($platform)) {
+                throw new \RuntimeException(sprintf('The PHP signature %s index is unavailable.', $kind));
+            }
+            foreach ($names as $name) {
+                if (array_key_exists(strtolower(ltrim($name, '\\')), $platform)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /** @return array<string, mixed> */
+    private function readSymbolIndex(string $package, PhpSignaturePackageVerification $verification): array
+    {
+        $symbols = $verification->readOptionalOutput($package, 'symbols.json')
+            ?? throw new \RuntimeException('The PHP signature symbol index is unavailable.');
+
+        return $this->decodeObject($symbols, 'symbols.json');
+    }
+
+    /**
+     * Selects one authenticated declaration document for a bounded analysis proof.
+     * The caller owns the dependency proof. Normal platform loading resolves modules.
+     */
+    public function loadClassDocument(string $target, string $class): ?ProjectParseResult
+    {
+        $verification = $this->verifyPackage($target);
+        $package = $this->packagePath($target);
+        $symbols = $this->symbolIndexes[$target] ??= $this->readSymbolIndex($package, $verification);
+        $classes = $symbols['classes'] ?? null;
+        $entries = is_array($classes) ? ($classes[strtolower($class)] ?? null) : null;
+        if (!is_array($entries) || !array_is_list($entries) || count($entries) !== 1) {
+            return null;
+        }
+
+        $entry = $entries[0];
+        if (!is_array($entry) || ($entry['name'] ?? null) !== $class
+            || !array_key_exists('availability', $entry) || $entry['availability'] !== null
+            || !is_string($entry['module'] ?? null) || !is_string($entry['document'] ?? null)) {
+            return null;
+        }
+        $module = $entry['module'];
+        $document = $entry['document'];
+        $key = Path::buildComparisonKey(PhpSignatureModuleReferences::createSource($package, $target, $document, '')->path);
+        $parsed = $this->parsedModules[$target][$module]['parsedFiles'][$key]
+            ?? $this->parsedProofDocuments[$target][$key]
+            ?? $this->parseModule($package, $target, $module, false, $verification, $document)['parsedFiles'][$key]
+            ?? null;
+        if ($parsed === null) {
+            return null;
+        }
+
+        $this->parsedProofDocuments[$target][$key] = $parsed;
+
+        return new ProjectParseResult([$key => $parsed], [$key => $parsed->sourceFile], new DiagnosticBag());
+    }
 
     /** @param iterable<ParsedFile> $projectFiles */
     public function load(string $target, iterable $projectFiles): ProjectParseResult
@@ -49,17 +165,37 @@ final class PhpSignaturePackageLoader
         $package = $this->packagePath($target);
 
         try {
-            $manifest = $this->verifiedManifests[$target] ?? null;
-            if ($manifest === null || ($this->packageIdentities[$target] ?? null) !== $this->computePackageIdentity($package, $manifest)) {
-                unset($this->verifiedManifests[$target], $this->packageIdentities[$target], $this->parsedModules[$target]);
-                $manifest = $this->verifier->verifyInstalled($package, $target);
-                $this->packageIdentities[$target] = $this->computePackageIdentity($package, $manifest);
-                $this->verifiedManifests[$target] = $manifest;
+            $verification = $this->verifyPackage($target);
+            $symbols = $this->symbolIndexes[$target] ??= $this->readSymbolIndex($package, $verification);
+            if (!array_key_exists($target, $this->moduleGraphs)) {
+                $phpDoc = $verification->readOptionalOutput($package, PhpSignaturePhpDocIndex::PATH);
+                $index = $phpDoc === null ? null : PhpSignaturePhpDocIndex::decode($phpDoc, $target);
+                if ($index !== null) {
+                    $this->phpDocIndexes[$target] = $index;
+                }
+                if ($this->browserCache !== null) {
+                    $bytes = $verification->readOptionalOutput($package, PhpSignatureSyntaxIndex::PATH);
+                    $syntax = $bytes === null ? null : PhpSignatureSyntaxIndex::decode($bytes, $target);
+                    if ($syntax !== null) {
+                        $this->syntaxIndexes[$target] = $syntax;
+                    }
+                }
+                $graph = null;
+                $graphBytes = $verification->readOptionalOutput($package, PhpSignatureModuleReferences::PATH);
+                if ($graphBytes !== null) {
+                    $index = CanonicalJson::decode($graphBytes);
+                    if (!is_array($index) || !is_array($index['modules'] ?? null)) {
+                        throw new \RuntimeException('The PHP signature module reference index is malformed.');
+                    }
+                    $graph = $index['modules'];
+                }
+                $this->moduleGraphs[$target] = $graph;
             }
-            $symbols = $this->json($package . '/symbols.json');
+            $this->browserCache?->useVerifiedPackage($target, $verification->identity);
+            $graph = $this->moduleGraphs[$target];
             $references = $this->references->collect($projectFiles);
             $modules = ['core' => true];
-            $this->addModules($modules, $symbols, $references);
+            PhpSignatureModuleReferences::addModules($modules, $symbols, $references);
             $parsedFiles = [];
             $sourceFiles = [];
             $loadedModules = [];
@@ -70,10 +206,23 @@ final class PhpSignaturePackageLoader
                 foreach ($pending as $module) {
                     $loadedModules[$module] = true;
                     $parsedModule = $this->parsedModules[$target][$module]
-                        ??= $this->parseModule($package, $target, $module);
+                        ??= $this->parseModule($package, $target, $module, $graph === null, $verification);
                     $parsedFiles = array_replace($parsedFiles, $parsedModule['parsedFiles']);
                     $sourceFiles = array_replace($sourceFiles, $parsedModule['sourceFiles']);
-                    $this->addModules($modules, $symbols, $parsedModule['references']);
+                    if ($graph === null) {
+                        PhpSignatureModuleReferences::addModules($modules, $symbols, $parsedModule['references']);
+                    } else {
+                        $dependencies = $graph[$module] ?? null;
+                        if (!is_array($dependencies) || !array_is_list($dependencies)) {
+                            throw new \RuntimeException(sprintf('PHP signature module "%s" has invalid references.', $module));
+                        }
+                        foreach ($dependencies as $dependency) {
+                            if (!is_string($dependency)) {
+                                throw new \RuntimeException(sprintf('PHP signature module "%s" has an invalid dependency.', $module));
+                            }
+                            $modules[$dependency] = true;
+                        }
+                    }
                 }
             }
 
@@ -96,9 +245,18 @@ final class PhpSignaturePackageLoader
     /**
      * @return array{parsedFiles: array<string, ParsedFile>, sourceFiles: array<string, SourceFile>, references: array{classes: list<string>, functions: list<string>, constants: list<string>}}
      */
-    private function parseModule(string $package, string $target, string $module): array
-    {
-        $shard = $this->json($package . '/extensions/' . $module . '.json');
+    private function parseModule(
+        string $package,
+        string $target,
+        string $module,
+        bool $collectReferences,
+        PhpSignaturePackageVerification $verification,
+        ?string $onlyDocument = null,
+    ): array {
+        $path = 'extensions/' . $module . '.json';
+        $bytes = $verification->readOptionalOutput($package, $path)
+            ?? throw new \RuntimeException(sprintf('Required PHP signature resource "%s" is unavailable.', $path));
+        $shard = $this->decodeObject($bytes, $path);
         $documents = $shard['documents'] ?? null;
 
         if (!is_array($documents) || !array_is_list($documents)) {
@@ -115,28 +273,38 @@ final class PhpSignaturePackageLoader
                 throw new \RuntimeException(sprintf('PHP signature module "%s" contains an invalid document.', $module));
             }
 
-            $sourceFile = new SourceFile(
-                $package . '/declarations/' . $document['path'],
-                sprintf('<PHP %s platform>/%s', $target, $document['path']),
-                FileKind::Stub,
-                $document['source'],
-                DeclarationOrigin::PhpPlatform,
-            );
-            $result = $this->parser->parse($sourceFile, ParseMode::Php);
-
-            if ($result->parsedFile === null || $result->diagnostics->hasErrors) {
-                throw new \RuntimeException(sprintf(
-                    'Normalized PHP signature document "%s" could not be loaded.',
-                    $document['path'],
-                ));
+            if ($onlyDocument !== null && $onlyDocument !== $document['path']) {
+                continue;
+            }
+            $sourceFile = PhpSignatureModuleReferences::createSource($package, $target, $document['path'], $document['source']);
+            $cacheKey = $module . '/' . $document['path'];
+            $cache = $onlyDocument === null ? $this->browserCache : null;
+            $cached = $cache?->restore($cacheKey, ($this->syntaxIndexes[$target] ?? null)?->find($cacheKey));
+            if ($cached === null) {
+                $result = $this->parser->parse($sourceFile, ParseMode::Php);
+                if ($result->parsedFile === null || $result->diagnostics->hasErrors) {
+                    throw new \RuntimeException(sprintf(
+                        'Normalized PHP signature document "%s" could not be loaded.',
+                        $document['path'],
+                    ));
+                }
+                $parsed = $result->parsedFile;
+                $cache?->remember($cacheKey, $parsed->statements);
+            } else {
+                $parsed = $this->parser->restorePhp($sourceFile, $cached);
             }
 
+            ($this->phpDocIndexes[$target] ?? null)?->prime($parsed);
             $key = Path::buildComparisonKey($sourceFile->path);
             $sourceFiles[$key] = $sourceFile;
-            $parsedFiles[$key] = $result->parsedFile;
+            $parsedFiles[$key] = $parsed;
         }
 
-        return ['parsedFiles' => $parsedFiles, 'sourceFiles' => $sourceFiles, 'references' => $this->references->collect($parsedFiles)];
+        return [
+            'parsedFiles' => $parsedFiles,
+            'sourceFiles' => $sourceFiles,
+            'references' => $collectReferences ? $this->references->collect($parsedFiles) : ['classes' => [], 'functions' => [], 'constants' => []],
+        ];
     }
 
     private function packagePath(string $target): string
@@ -146,44 +314,9 @@ final class PhpSignaturePackageLoader
         return rtrim(str_replace('\\', '/', $root), '/') . '/' . $target;
     }
 
-    /** @param array<string, mixed> $manifest Previously verified manifest. */
-    private function computePackageIdentity(string $package, array $manifest): string
-    {
-        if (!is_dir($package) || is_link($package)) {
-            throw new \RuntimeException('The PHP signature package directory is unavailable.');
-        }
-        $paths = ['manifest.json'];
-        $outputs = $manifest['outputs'] ?? null;
-        if (!is_array($outputs)) {
-            throw new \RuntimeException('The verified signature output list is unavailable.');
-        }
-        foreach ($outputs as $output) {
-            if (!is_array($output) || !is_string($output['path'] ?? null)) {
-                throw new \RuntimeException('A verified signature output path is unavailable.');
-            }
-            $paths[] = $output['path'];
-        }
-        $hash = hash_init('sha256');
-        foreach ($paths as $path) {
-            $digest = @hash_file('sha256', $package . '/' . $path);
-            if ($digest === false) {
-                throw new \RuntimeException('A signature resource could not be read.');
-            }
-            hash_update($hash, $path . "\0" . $digest . "\0");
-        }
-
-        return hash_final($hash);
-    }
-
     /** @return array<string, mixed> */
-    private function json(string $path): array
+    private function decodeObject(string $contents, string $path): array
     {
-        $contents = file_get_contents($path);
-
-        if (!is_string($contents)) {
-            throw new \RuntimeException(sprintf('Required PHP signature resource "%s" is unavailable.', basename($path)));
-        }
-
         $decoded = CanonicalJson::decode($contents);
 
         if (!is_array($decoded) || array_is_list($decoded)) {
@@ -201,38 +334,5 @@ final class PhpSignaturePackageLoader
         }
 
         return $object;
-    }
-
-    /**
-     * @param array<string, true> $modules
-     * @param array<string, mixed> $symbols
-     * @param array{classes: list<string>, functions: list<string>, constants: list<string>} $references
-     */
-    private function addModules(array &$modules, array $symbols, array $references): void
-    {
-        foreach ($references as $bucket => $names) {
-            $index = $symbols[$bucket] ?? null;
-
-            if (!is_array($index)) {
-                throw new \RuntimeException(sprintf('PHP signature %s index is malformed.', $bucket));
-            }
-
-            foreach ($names as $name) {
-                $key = $bucket === 'constants' ? $name : strtolower($name);
-                $locations = $index[$key] ?? [];
-
-                if (!is_array($locations)) {
-                    throw new \RuntimeException(sprintf('PHP signature index entry "%s" is malformed.', $name));
-                }
-
-                foreach ($locations as $location) {
-                    if (!is_array($location) || !is_string($location['module'] ?? null)) {
-                        throw new \RuntimeException(sprintf('PHP signature index location "%s" is malformed.', $name));
-                    }
-
-                    $modules[$location['module']] = true;
-                }
-            }
-        }
     }
 }

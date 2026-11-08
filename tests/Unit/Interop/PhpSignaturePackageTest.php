@@ -17,9 +17,12 @@ test('the committed PHP 8.4 signature package has immutable verified provenance'
     $root = dirname(__DIR__, 3) . '/resources/php-signatures/8.4';
     $verifier = new PhpSignaturePackageVerifier();
     $manifest = $verifier->verify($root);
+    $installed = $verifier->verifyInstalledPackage($root, '8.4');
 
     expect(hash_file('sha256', $root . '/manifest.json'))->toBe(PhpSignaturePackageVerifier::REVIEWED_MANIFESTS['8.4'])
-        ->and($verifier->verifyInstalled($root, '8.4'))->toBe($manifest);
+        ->and($verifier->verifyInstalled($root, '8.4'))->toBe($manifest)
+        ->and($installed->manifest)->toBe($manifest)
+        ->and($installed->identity)->toBe('26fa87733966e337726d85647e1671a26453406d9a0783537d674251231e4c91');
 
     expect($manifest['formatVersion'])->toBe(1)
         ->and($manifest['generatorVersion'])->toBe('2')
@@ -230,17 +233,28 @@ test('a retained platform loader revalidates changed resources and recovers afte
     \Tests\Support\StageElevenProject::copyTree(dirname(__DIR__, 3) . '/resources/php-signatures/8.4', $root . '/8.4');
     $loader = new PhpSignaturePackageLoader($root);
     $first = $loader->load('8.4', []);
-    expect($first->isSuccessful)->toBeTrue();
-    $path = $root . '/8.4/extensions/core.json';
-    $contents = file_get_contents($path);
-    $this->writeFile($path, $contents . "\n");
-    $broken = $loader->load('8.4', []);
-    expect($broken->parsedFiles)->toBe([])
-        ->and($broken->diagnostics->errors[0]->code)->toBe(DiagnosticCode::PhpSignaturePackageInvalid);
-    $this->writeFile($path, $contents);
-    $repaired = $loader->load('8.4', []);
-    expect($repaired->isSuccessful)->toBeTrue()
-        ->and(array_keys($repaired->parsedFiles))->toBe(array_keys($first->parsedFiles));
+    expect($first->isSuccessful)->toBeTrue()
+        ->and($loader->verifyLocalDeclarations('8.4', [], ['ppphpLessonLookup']))->toBeTrue();
+    foreach (['core', 'zlib'] as $module) {
+        $path = $root . '/8.4/extensions/' . $module . '.json';
+        $contents = file_get_contents($path);
+        $mtime = filemtime($path);
+        $this->writeFile($path, ' ' . substr($contents, 1));
+        touch($path, $mtime);
+        clearstatcache(true, $path);
+        expect(filesize($path))->toBe(strlen($contents))
+            ->and(filemtime($path))->toBe($mtime);
+
+        expect(fn () => $loader->verifyLocalDeclarations('8.4', [], ['ppphpLessonLookup']))->toThrow(RuntimeException::class);
+        $broken = $loader->load('8.4', []);
+        expect($broken->parsedFiles)->toBe([])
+            ->and($broken->diagnostics->errors[0]->code)->toBe(DiagnosticCode::PhpSignaturePackageInvalid);
+        $this->writeFile($path, $contents);
+        $repaired = $loader->load('8.4', []);
+        expect($repaired->isSuccessful)->toBeTrue()
+            ->and(array_keys($repaired->parsedFiles))->toBe(array_keys($first->parsedFiles))
+            ->and($loader->verifyLocalDeclarations('8.4', [], ['ppphpLessonLookup']))->toBeTrue();
+    }
     rename($root . '/8.4', $root . '/moved');
     symlink($root . '/moved', $root . '/8.4');
     clearstatcache(true);
@@ -249,4 +263,46 @@ test('a retained platform loader revalidates changed resources and recovers afte
     rename($root . '/moved', $root . '/8.4');
     clearstatcache(true);
     expect($loader->load('8.4', [])->isSuccessful)->toBeTrue();
+});
+
+test('verified platform declarations distinguish class and function collisions and retain full loading', function (): void {
+    $loader = new PhpSignaturePackageLoader();
+
+    expect($loader->verifyLocalDeclarations('8.4', ['PpphpLessonError'], ['ppphpLessonLookup']))->toBeTrue()
+        ->and($loader->verifyLocalDeclarations('8.4', ['\\ExCePtIoN'], []))->toBeFalse()
+        ->and($loader->verifyLocalDeclarations('8.4', [], ['\\StRlEn']))->toBeFalse()
+        ->and($loader->verifyLocalDeclarations('8.4', ['strlen'], ['Exception']))->toBeTrue();
+
+    $platform = $loader->load('8.4', []);
+
+    expect($platform->isSuccessful)->toBeTrue()
+        ->and($platform->parsedFiles)->not->toBeEmpty()
+        ->and($loader->verifyLocalDeclarations('8.4', ['PpphpLessonError'], ['strlen']))->toBeFalse();
+});
+
+test('an authenticated class document leaves complete module loading and integrity checks intact', function (): void {
+    $root = $this->createTemporaryDirectory();
+    \Tests\Support\StageElevenProject::copyTree(dirname(__DIR__, 3) . '/resources/php-signatures/8.4', $root . '/8.4');
+    $loader = new PhpSignaturePackageLoader($root);
+
+    $exception = $loader->loadClassDocument('8.4', 'Exception');
+    expect($exception?->parsedFiles)->toHaveCount(1)
+        ->and($loader->loadClassDocument('8.4', 'Exception')?->parsedFiles)->toBe($exception->parsedFiles)
+        ->and($loader->loadClassDocument('8.4', 'exception'))->toBeNull()
+        ->and($loader->loadClassDocument('8.4', 'MissingProofClass'))->toBeNull();
+
+    $full = $loader->load('8.4', []);
+    expect($full->isSuccessful)->toBeTrue()
+        ->and(count($full->parsedFiles))->toBeGreaterThan(1)
+        ->and($loader->loadClassDocument('8.4', 'Exception')?->parsedFiles)->toEqual($exception->parsedFiles);
+
+    $unrelatedShard = $root . '/8.4/extensions/zlib.json';
+    $contents = file_get_contents($unrelatedShard);
+    $this->writeFile($unrelatedShard, $contents . ' ');
+    expect(fn () => $loader->loadClassDocument('8.4', 'Exception'))->toThrow(RuntimeException::class);
+
+    $this->writeFile($unrelatedShard, $contents);
+    expect($loader->loadClassDocument('8.4', 'Exception')?->parsedFiles)
+        ->toEqual($exception->parsedFiles)
+        ->not->toBe($exception->parsedFiles);
 });

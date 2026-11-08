@@ -16,6 +16,7 @@ use Atatusoft\Ppphp\Frontend\Token\Enumerations\TokenKind;
 use Atatusoft\Ppphp\Source\SourceFile;
 use PhpParser\Node;
 use PhpParser\Node\Expr;
+use PhpParser\Node\Stmt;
 
 final readonly class PpphpParser implements Parser
 {
@@ -72,6 +73,12 @@ final readonly class PpphpParser implements Parser
         $diagnostics->addAll($phpResult->diagnostics);
 
         return new ParseResult($phpResult->parsedFile, $diagnostics);
+    }
+
+    /** @param list<Stmt> $statements */
+    public function restorePhp(SourceFile $sourceFile, array $statements): ParsedFile
+    {
+        return $this->phpParserAdapter->restorePhp($sourceFile, $statements);
     }
 
     private function markWhenPlaceholders(ParsedFile $parsedFile): void

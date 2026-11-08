@@ -104,19 +104,16 @@ final class SourceFile
         $starts = [0];
         $length = strlen($contents);
 
-        for ($offset = 0; $offset < $length; $offset++) {
-            if ($contents[$offset] === "\r") {
-                if ($offset + 1 < $length && $contents[$offset + 1] === "\n") {
-                    $offset++;
-                }
-
-                $starts[] = $offset + 1;
-                continue;
+        $offset = 0;
+        while ($offset < $length) {
+            $offset += strcspn($contents, "\r\n", $offset);
+            if ($offset === $length) {
+                break;
             }
-
-            if ($contents[$offset] === "\n") {
-                $starts[] = $offset + 1;
+            if ($contents[$offset] === "\r" && $offset + 1 < $length && $contents[$offset + 1] === "\n") {
+                $offset++;
             }
+            $starts[] = ++$offset;
         }
 
         return $starts;
@@ -142,14 +139,13 @@ final class SourceFile
 
     private function countCodePoints(int $start, int $end): int
     {
-        $count = 0;
-
-        for ($offset = $start; $offset < $end; $offset++) {
-            if ((ord($this->contents[$offset]) & 0xC0) !== 0x80) {
-                $count++;
-            }
+        $length = $end - $start;
+        // Match bytes without UTF mode to retain columns for malformed input.
+        $continuations = preg_match_all('/[\x80-\xBF]/', substr($this->contents, $start, $length));
+        if ($continuations === false) {
+            throw new \LogicException('Could not count source columns.');
         }
 
-        return $count;
+        return $length - $continuations;
     }
 }

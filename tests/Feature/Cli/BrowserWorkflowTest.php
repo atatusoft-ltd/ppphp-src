@@ -3,7 +3,12 @@
 declare(strict_types=1);
 
 use Atatusoft\Ppphp\Analysis\Browser\WorkflowRequestDecoder;
+use Atatusoft\Ppphp\Analysis\Browser\WorkflowRequest;
+use Atatusoft\Ppphp\Analysis\Browser\WorkflowRequestPump;
+use Atatusoft\Ppphp\Analysis\Browser\WorkflowProgress;
+use Atatusoft\Ppphp\Analysis\Browser\WorkflowProtocol;
 use Atatusoft\Ppphp\Analysis\Browser\WorkflowValues;
+use Atatusoft\Ppphp\Cache\Enumerations\CacheScope;
 use Atatusoft\Ppphp\Cli\Application;
 use Symfony\Component\Console\Tester\ApplicationTester;
 use Symfony\Component\Process\Process;
@@ -17,17 +22,17 @@ function workflowStart(string $id, int $sequence = 1, string $operation = 'build
         ]];
 }
 
-function workflowRequest(string $root, array $request, ?Atatusoft\Ppphp\Analysis\Browser\WorkflowProtocol $protocol = null): array
+function workflowRequest(string $root, array $request, ?WorkflowProtocol $protocol = null, ?WorkflowProgress $progress = null): array
 {
     $cwd = getcwd();
     $root = realpath($root);
-    if (!is_dir($root . '/.ppphp-browser')) mkdir($root . '/.ppphp-browser');
-    file_put_contents($root . '/.ppphp-browser/request.json', json_encode($request, JSON_THROW_ON_ERROR));
     chdir($root);
     try {
         if ($protocol !== null) {
-            return $protocol->handle((new WorkflowRequestDecoder())->decode(json_encode($request, JSON_THROW_ON_ERROR)), $root);
+            return $protocol->handle((new WorkflowRequestDecoder())->decode(json_encode($request, JSON_THROW_ON_ERROR)), $root, $progress);
         }
+        if (!is_dir($root . '/.ppphp-browser')) mkdir($root . '/.ppphp-browser');
+        file_put_contents($root . '/.ppphp-browser/request.json', json_encode($request, JSON_THROW_ON_ERROR));
         $app = new Application();
         $app->setAutoExit(false);
         $tester = new ApplicationTester($app);
@@ -83,15 +88,13 @@ function workflowOutput(string $root): array
     return $files;
 }
 
-test('workflow reuses native artifact units after fresh analysis and still requires lint', function (): void {
+test('workflow reuses verified artifact units after fresh analysis and still requires lint', function (): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);
     $this->writeFile($root . '/src/First.ppphp', '<?php function firstValue(): int { return 1; }');
     $this->writeFile($root . '/src/Second.ppphp', '<?php function secondValue(): int { return 2; }');
-    $cache = new Atatusoft\Ppphp\Cache\CompilerCache();
-    $protocol = new Atatusoft\Ppphp\Analysis\Browser\WorkflowProtocol(
-        compiler: new Atatusoft\Ppphp\Compiler\Compiler(cache: $cache), cache: $cache,
-    );
+    $cache = new Atatusoft\Ppphp\Cache\CompilerCache(scope: CacheScope::BrowserArtifacts);
+    $protocol = new WorkflowProtocol(cache: $cache);
     expect(workflowFinish($root, workflowStart('cache-cold'), $protocol)['status'])->toBe('complete');
     expect($cache->statistics->loweringWorkAvoided)->toBe(0);
     $before = workflowOutput($root);
@@ -128,7 +131,7 @@ test('workflow reuses native artifact units after fresh analysis and still requi
     expect($cache->statistics->loweringWorkAvoided)->toBe(6);
 
     // Corrupt persisted evidence is a miss, not an invalid or stale publication.
-    $records = glob($root . '/.ppphp-cache/compiler/v1/operations/artifact-unit/*/*.json');
+    $records = glob($root . '/.ppphp-cache/browser-artifacts/compiler/v1/operations/artifact-unit/*/*.json');
     expect($records)->not->toBe([]);
     foreach ($records as $path) $this->writeFile($path, '{');
     $expected = workflowOutput($root);
@@ -136,6 +139,43 @@ test('workflow reuses native artifact units after fresh analysis and still requi
     expect(workflowOutput($root))->toBe($expected);
     expect($cache->statistics->loweringWorkAvoided)->toBe(6);
     expect($cache->statistics->corruptEntries)->toBeGreaterThan(0);
+});
+
+test('edited builds retain one artifact generation and compact terminal evidence', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $protocol = new WorkflowProtocol();
+    $filesystem = new Atatusoft\Ppphp\Compiler\Output\NativeBuildFilesystem();
+    $cacheRoot = $root . '/.ppphp-cache';
+    $this->writeFile($cacheRoot . '/compiler/native-sentinel', 'native cache');
+    $cache = $cacheRoot . '/browser-artifacts';
+    $previous = [];
+
+    for ($sequence = 1; $sequence <= 6; $sequence++) {
+        $this->writeFile($root . '/src/main.ppphp', '<?php int $value = ' . $sequence . '; echo $value;');
+        $result = workflowFinish($root, workflowStart('edit-' . $sequence, $sequence), $protocol);
+        expect($result['status'])->toBe('complete');
+        expect($result['previousOutput']['sequence'] ?? null)->toBe($sequence === 1 ? null : $sequence - 1);
+        $entries = $filesystem->listFiles($cache);
+        expect(count($entries))->toBe(3);
+        expect(array_intersect($previous, $entries))->toBe([]);
+        $previous = $entries;
+        expect(is_dir($cacheRoot . '/analysis'))->toBeFalse();
+        $session = json_decode(file_get_contents($root . '/.ppphp-browser/session.json'), true, flags: JSON_THROW_ON_ERROR)['state'];
+        expect($session['analysis'])->toBeNull();
+        expect($session['annotationResults'])->toBe([]);
+    }
+
+    $published = workflowOutput($root);
+    $replay = workflowRequest($root, workflowStart('edit-1', 7), $protocol);
+    expect($replay['status'])->toBe('rejected');
+    $this->writeFile($root . '/src/main.ppphp', '<?php int $value = "invalid"; echo $value;');
+    $invalid = workflowFinish($root, workflowStart('invalid', 7), $protocol);
+    expect($invalid['status'])->toBe('diagnostics');
+    expect($invalid['currentOutput'])->toBeNull();
+    expect(workflowOutput($root))->toBe($published);
+    expect($filesystem->listFiles($cache))->toBe($previous);
+    expect(file_get_contents($cacheRoot . '/compiler/native-sentinel'))->toBe('native cache');
 });
 
 test('workflow production preserves per-tag advice across analysis and lint continuations', function (): void {
@@ -162,6 +202,76 @@ echo size([1, 2]);');
     expect($native->getExitCode())->toBe(0, $native->getOutput());
     expect(file_get_contents($root . '/build/ppphp/main.php'))->toBe($php);
 });
+
+test('a live workflow keeps one preparation and revokes it when the project changes', function (): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $path = $root . '/src/main.ppphp';
+    $source = '<?php int $count = count([1, 2]); echo $count;';
+    $this->writeFile($path, $source);
+    $reference = workflowFinish($root, workflowStart('reference'));
+    expect($reference['status'])->toBe('complete');
+    $published = workflowOutput($root);
+
+    $protocol = new WorkflowProtocol();
+    $progress = new WorkflowProgress();
+    $response = workflowRequest($root, workflowStart('retained', 2), $protocol, $progress);
+    $preparation = $progress->preparation;
+    expect($response['status'])->toBe('pending-analysis')->and($preparation)->not->toBeNull();
+    $analysisRounds = 0;
+    while ($response['status'] === 'pending-analysis') {
+        expect(++$analysisRounds)->toBeLessThan(8);
+        $response = workflowRequest($root, workflowContinue($response), $protocol, $progress);
+        expect($progress->preparation)->toBe($preparation);
+    }
+    expect($analysisRounds)->toBeGreaterThan(1)->and($response['status'])->toBe('pending-validation');
+    expect($progress->production)->not->toBeNull();
+    $result = workflowRequest($root, workflowContinue($response), $protocol, $progress);
+    expect($result['status'])->toBe('complete')
+        ->and($result['diagnostics'])->toBe($reference['diagnostics'])
+        ->and(workflowOutput($root))->toBe($published)
+        ->and($progress->preparation)->toBeNull();
+
+    $response = workflowRequest($root, workflowStart('changing', 3), $protocol, $progress);
+    $completion = workflowContinue($response);
+    $this->writeFile($path, str_replace('[1, 2]', '[1]', $source));
+    expect(workflowRequest($root, $completion, $protocol, $progress)['status'])->toBe('rejected')
+        ->and($progress->preparation)->toBeNull();
+    $this->writeFile($path, $source);
+    expect(workflowRequest($root, $completion, $protocol, $progress)['status'])->toBe('rejected')
+        ->and(workflowOutput($root))->toBe($published);
+
+    $response = workflowRequest($root, workflowStart('changed-candidate', 4), $protocol, $progress);
+    for ($round = 0; $round < 8 && $response['status'] === 'pending-analysis'; $round++) {
+        $response = workflowRequest($root, workflowContinue($response), $protocol, $progress);
+    }
+    expect($response['status'])->toBe('pending-validation');
+    $lint = workflowContinue($response);
+    $this->writeFile($root . '/.ppphp-browser/pending/main.php', '<?php echo "changed after lint";');
+    expect(workflowRequest($root, $lint, $protocol, $progress)['status'])->toBe('rejected')
+        ->and($progress->production)->toBeNull()
+        ->and(workflowOutput($root))->toBe($published);
+});
+
+test('native workflow cannot opt in to immutable compiler identity reuse', function (): void {
+    expect(fn () => new WorkflowProtocol(embeddedCompiler: true, immutableCompiler: true))
+        ->toThrow(InvalidArgumentException::class, 'Compiler identity reuse requires an immutable embedded Wasm installation.');
+});
+
+test('the browser device rejects a malformed frame before opening the project', function (int $length): void {
+    $input = fopen('php://temp', 'w+b');
+    $output = fopen('php://temp', 'w+b');
+    fwrite($input, pack('N', $length));
+    rewind($input);
+    try {
+        expect(fn () => (new WorkflowRequestPump())->serve($input, $output, '/invalid'))
+            ->toThrow(InvalidArgumentException::class, 'Invalid workflow request frame length.');
+        expect(ftell($output))->toBe(0);
+    } finally {
+        fclose($input);
+        fclose($output);
+    }
+})->with([0, WorkflowRequest::MAXIMUM_BYTES + 1]);
 
 test('later annotation rounds reject replay malformed advice and timeout without publication', function (): void {
     $root = $this->createTemporaryDirectory();
@@ -490,3 +600,21 @@ test('partial continuation rejects previous generation drift and mismatched runt
     expect(workflowRequest($root, $wrong)['status'])->toBe('rejected')->and(workflowOutput($root))->toBe($changed);
     expect(workflowFinish($root, workflowStart('generation-recovery', 4))['status'])->toBe('complete');
 });
+
+test('source-free compiler preparation requires the verified browser host', function (bool $preparePlatform): void {
+    $input = fopen('php://memory', 'w+b');
+    $output = fopen('php://memory', 'w+b');
+    try {
+        expect(fn () => (new WorkflowRequestPump())->serve($input, $output, '/unused',
+            preparePlatform: $preparePlatform, prepareInstallation: !$preparePlatform))
+            ->toThrow(InvalidArgumentException::class, 'Compiler preparation requires a verified signature cache identity.');
+        expect(fn () => (new WorkflowRequestPump())->serve($input, $output, '/unused',
+            immutableCompiler: true, signatureCacheIdentity: 'sha256:' . str_repeat('a', 64),
+            preparePlatform: $preparePlatform, prepareInstallation: !$preparePlatform))
+            ->toThrow(InvalidArgumentException::class, 'Signature reuse requires the trusted immutable Wasm compiler.');
+        expect(ftell($output))->toBe(0);
+    } finally {
+        fclose($input);
+        fclose($output);
+    }
+})->with(['platform declarations' => true, 'installation only' => false]);

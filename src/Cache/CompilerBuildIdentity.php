@@ -51,7 +51,7 @@ final class CompilerBuildIdentity
             }
 
             if ($file->isFile() && !$file->isLink() && str_ends_with(strtolower($file->getFilename()), '.php')) {
-                $paths[] = str_replace('\\', '/', Path::resolveRelativeTo($file->getPathname(), $root));
+                $paths[] = 'src/' . str_replace('\\', '/', $iterator->getSubPathname());
             }
         }
 
@@ -65,15 +65,15 @@ final class CompilerBuildIdentity
                 throw new \RuntimeException(sprintf('Compiler identity input "%s" is unavailable.', $relativePath));
             }
 
-            $contents = file_get_contents($path);
+            $digest = hash_file('sha256', $path);
 
-            if (!is_string($contents)) {
+            if ($digest === false) {
                 throw new \RuntimeException(sprintf('Compiler identity input "%s" is unreadable.', $relativePath));
             }
 
             $inputs[] = [
                 'path' => $relativePath,
-                'sha256' => hash('sha256', $contents),
+                'sha256' => $digest,
             ];
         }
 

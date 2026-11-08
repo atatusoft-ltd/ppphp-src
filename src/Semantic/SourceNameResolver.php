@@ -8,8 +8,16 @@ use Atatusoft\Ppphp\Frontend\ParsedFile;
 use PhpParser\Node;
 use PhpParser\Node\Stmt;
 
-final readonly class SourceNameResolver
+final class SourceNameResolver
 {
+    /**
+     * @var \WeakMap<ParsedFile, array{
+     *     globalImports: list<Stmt\Use_|Stmt\GroupUse>,
+     *     namespaces: list<array{node: Stmt\Namespace_, imports: list<Stmt\Use_|Stmt\GroupUse>}>
+     * }>|null
+     */
+    private static ?\WeakMap $importsByFile = null;
+
     public function resolve(ParsedFile $file, string $name, int $offset, ?int $useType = null): string
     {
         $name = trim($name);
@@ -25,7 +33,7 @@ final readonly class SourceNameResolver
             return ltrim($name, '\\');
         }
 
-        [$namespace, $statements] = $this->resolveNamespace($file, $offset);
+        [$namespace, $imports] = $this->resolveNamespace($file, $offset);
 
         if (str_starts_with(strtolower($name), 'namespace\\')) {
             return $this->qualify($namespace, substr($name, strlen('namespace\\')));
@@ -34,7 +42,7 @@ final readonly class SourceNameResolver
         $parts = explode('\\', $name);
         $alias = strtolower($parts[0]);
 
-        foreach ($statements as $statement) {
+        foreach ($imports as $statement) {
             if ($statement instanceof Stmt\Use_) {
                 foreach ($statement->uses as $use) {
                     if ($useType !== null && ($use->type ?: $statement->type) !== $useType) {
@@ -72,20 +80,48 @@ final readonly class SourceNameResolver
         return $this->resolveNamespace($file, $offset)[0];
     }
 
-    /** @return array{string, list<Stmt>} */
+    /** @return array{string, list<Stmt\Use_|Stmt\GroupUse>} */
     private function resolveNamespace(ParsedFile $file, int $offset): array
     {
-        foreach ($file->statements as $statement) {
-            if (
-                $statement instanceof Stmt\Namespace_
-                && $offset >= $statement->getStartFilePos()
-                && $offset <= $statement->getEndFilePos() + 1
-            ) {
-                return [$statement->name?->toString() ?? '', array_values($statement->stmts)];
+        self::$importsByFile ??= new \WeakMap();
+        $scope = self::$importsByFile[$file] ??= $this->indexFile($file);
+
+        foreach ($scope['namespaces'] as $namespace) {
+            $node = $namespace['node'];
+            if ($offset >= $node->getStartFilePos() && $offset <= $node->getEndFilePos() + 1) {
+                return [$node->name?->toString() ?? '', $namespace['imports']];
             }
         }
 
-        return ['', $file->statements];
+        return ['', $scope['globalImports']];
+    }
+
+    /**
+     * @return array{
+     *     globalImports: list<Stmt\Use_|Stmt\GroupUse>,
+     *     namespaces: list<array{node: Stmt\Namespace_, imports: list<Stmt\Use_|Stmt\GroupUse>}>
+     * }
+     */
+    private function indexFile(ParsedFile $file): array
+    {
+        $namespaces = [];
+        foreach ($file->statements as $statement) {
+            if ($statement instanceof Stmt\Namespace_) {
+                $namespaces[] = ['node' => $statement, 'imports' => $this->findImports($statement->stmts)];
+            }
+        }
+
+        return ['globalImports' => $this->findImports($file->statements), 'namespaces' => $namespaces];
+    }
+
+    /**
+     * @param array<Stmt> $statements
+     * @return list<Stmt\Use_|Stmt\GroupUse>
+     */
+    private function findImports(array $statements): array
+    {
+        return array_values(array_filter($statements, static fn (Stmt $statement): bool =>
+            $statement instanceof Stmt\Use_ || $statement instanceof Stmt\GroupUse));
     }
 
     private function qualify(string $namespace, string $name): string

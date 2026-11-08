@@ -4,6 +4,16 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 
 ## Unreleased
 
+## 2026.3.2
+
+### Changed
+
+- With a compatible browser editor, edited builds can reuse verified PHP platform signatures and prepare the compiler before Build. The browser skips PHPStan for projects the compiler can verify directly. Other browser projects and native Check and Build still use PHPStan. Browser builds still run PHP lint.
+
+### Fixed
+
+- Browser builds bound how much compiler workspace data they retain. Cached platform syntax that fails integrity checks is reparsed from the installed signature source.
+
 ## 2026.3.1
 
 ### Changed

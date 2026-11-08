@@ -8,6 +8,7 @@ use Atatusoft\Ppphp\Cache\CompilerCache;
 use Atatusoft\Ppphp\Analysis\AnalysisResult;
 use Atatusoft\Ppphp\Analysis\AnalysisWorkspacePreparer;
 use Atatusoft\Ppphp\Analysis\CompilerProjectAnalyzer;
+use Atatusoft\Ppphp\Analysis\CompilerProjectAnalysis;
 use Atatusoft\Ppphp\Analysis\Interfaces\ProjectAnalyzer;
 use Atatusoft\Ppphp\Analysis\PhpStan\PhpStanProjectAnalyzer;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
@@ -118,8 +119,16 @@ final readonly class ProjectChecker
 
     public function prepare(Project $project, SourceSet $selectedSources): SupplementalAnalysisPreparation
     {
-        $compilerAnalysis = $this->compilerAnalyzer->analyze($project, $selectedSources);
+        return $this->prepareCompilerAnalysis($this->compilerAnalyzer->analyze($project, $selectedSources));
+    }
 
+    public function analyzeWithLocalProof(Project $project, SourceSet $selectedSources): ProjectCheckResult|CompilerProjectAnalysis
+    {
+        return $this->compilerAnalyzer->analyzeWithLocalProof($project, $selectedSources);
+    }
+
+    public function prepareCompilerAnalysis(CompilerProjectAnalysis $compilerAnalysis): SupplementalAnalysisPreparation
+    {
         if (!$compilerAnalysis->isSuccessful) {
             return new SupplementalAnalysisPreparation(
                 $compilerAnalysis,

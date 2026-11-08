@@ -6,6 +6,7 @@ namespace Atatusoft\Ppphp\Semantic;
 
 use Atatusoft\Ppphp\Diagnostics\DiagnosticBag;
 use Atatusoft\Ppphp\Project\ProjectParseResult;
+use Atatusoft\Ppphp\Semantic\Generic\GenericDeclarationIndex;
 use Atatusoft\Ppphp\Semantic\Generic\GenericDeclarationIndexer;
 use Atatusoft\Ppphp\Semantic\Binding\BindingTable;
 use Atatusoft\Ppphp\Semantic\Effect\CallableErrorIndex;
@@ -60,6 +61,21 @@ final readonly class SemanticAnalyzer
         $this->errorResolver = $errorResolver ?? new ErrorResolver();
     }
 
+    public function preparePlatformDeclarations(ProjectParseResult $platform): void
+    {
+        $context = new ProjectSemanticContext(
+            $platform,
+            new SymbolTable(),
+            new ResolvedNameTable(),
+            new DiagnosticBag(),
+            new CallableErrorIndex(),
+            [],
+        );
+        $this->resolveNames->preparePlatformNames($platform);
+        $this->resolveNames->execute($context);
+        $this->declareSymbols->preparePlatformDeclarations($context);
+    }
+
     public function analyze(ProjectParseResult $parseResult, ?ProjectParseResult $contextResult = null): SemanticAnalysisResult
     {
         $diagnostics = new DiagnosticBag();
@@ -71,22 +87,10 @@ final readonly class SemanticAnalyzer
         }
 
         $projectParseResult = $this->mergeParseResults($parseResult, $contextResult);
-        $preliminarySymbols = new SymbolTable();
-        $preliminarySymbols->registerKnownClassPrefixes($projectParseResult->knownClassPrefixes);
-        $preliminarySymbols->registerClassAliases($projectParseResult->classAliases);
         $resolvedNames = new ResolvedNameTable();
         $errorContracts = new CallableErrorIndex();
-        $preliminaryContext = new ProjectSemanticContext(
-            $projectParseResult,
-            $preliminarySymbols,
-            $resolvedNames,
-            new DiagnosticBag(),
-            $errorContracts,
-            array_fill_keys(array_keys($parseResult->parsedFiles), true),
-        );
-        $this->resolveNames->execute($preliminaryContext);
-        $this->declareSymbols->execute($preliminaryContext);
-        $preliminaryGenerics = (new GenericDeclarationIndexer())->build($projectParseResult, $preliminarySymbols);
+        $selected = array_fill_keys(array_keys($parseResult->parsedFiles), true);
+        $indexer = new GenericDeclarationIndexer();
 
         $symbols = new SymbolTable();
         $symbols->registerKnownClassPrefixes($projectParseResult->knownClassPrefixes);
@@ -97,12 +101,30 @@ final readonly class SemanticAnalyzer
             $resolvedNames,
             $diagnostics,
             $errorContracts,
-            array_fill_keys(array_keys($parseResult->parsedFiles), true),
+            $selected,
         );
+        $this->resolveNames->execute($projectContext);
+        $hasGenericDeclarations = $indexer->hasCandidates($projectParseResult);
+        $preliminaryGenerics = new GenericDeclarationIndex();
+        if ($hasGenericDeclarations) {
+            $preliminarySymbols = new SymbolTable();
+            $preliminarySymbols->registerKnownClassPrefixes($projectParseResult->knownClassPrefixes);
+            $preliminarySymbols->registerClassAliases($projectParseResult->classAliases);
+            $preliminaryContext = new ProjectSemanticContext(
+                $projectParseResult,
+                $preliminarySymbols,
+                $resolvedNames,
+                new DiagnosticBag(),
+                $errorContracts,
+                $selected,
+            );
+            $this->declareSymbols->execute($preliminaryContext);
+            $preliminaryGenerics = $indexer->build($projectParseResult, $preliminarySymbols);
+        }
         $this->declareSymbols->execute($projectContext, $preliminaryGenerics);
-        // The bootstrap symbol graph is no longer needed once final contracts exist.
+        // Final contracts can outlive the bootstrap symbol graph.
         unset($preliminaryContext, $preliminarySymbols, $preliminaryGenerics);
-        $genericDeclarations = (new GenericDeclarationIndexer())->build($projectParseResult, $symbols);
+        $genericDeclarations = $hasGenericDeclarations ? $indexer->build($projectParseResult, $symbols) : new GenericDeclarationIndex();
         $this->errorResolver->prepare($projectContext);
         foreach ($parseResult->parsedFiles as $parsedFile) {
             if ($parsedFile->sourceFile->kind !== FileKind::Ppphp) {

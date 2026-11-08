@@ -16,7 +16,15 @@ final readonly class PhpSignaturePackageVerifier
 {
     /** Manifests of shipped packages that pass the full structural audit. */
     public const array REVIEWED_MANIFESTS = [
-        '8.4' => 'fc8acea749a472694be41c0d2a61a1778f6f127ecbfcabc0c00efa90a01acec2',
+        '8.4' => 'ecf9a0a52df05f8709ef2360653bb4a92e0c5a0aabd19da1c0b5c66b197f7ba3',
+    ];
+
+    private const array LEGACY_REVIEWED_MANIFESTS = [
+        '8.4' => [
+            'cba33a3fff60a74e6f6b7a40ac7f914ae014a1c9df8fec555be3e522448d87ff',
+            'fc8acea749a472694be41c0d2a61a1778f6f127ecbfcabc0c00efa90a01acec2',
+            'c36db35fbc15be24a03fe88fce73c5fcf9c03bfe9037465a7443c83511e225d3',
+        ],
     ];
 
     public function __construct(private ParserFactory $parsers = new ParserFactory()) {}
@@ -24,17 +32,25 @@ final readonly class PhpSignaturePackageVerifier
     /** @return array<string, mixed> */
     public function verify(string $packageDirectory, string $expectedTarget = '8.4'): array
     {
-        return $this->inspect($packageDirectory, $expectedTarget, null);
+        return $this->inspect($packageDirectory, $expectedTarget, [])->manifest;
     }
 
     /** @return array<string, mixed> */
     public function verifyInstalled(string $packageDirectory, string $expectedTarget): array
     {
-        return $this->inspect($packageDirectory, $expectedTarget, self::REVIEWED_MANIFESTS[$expectedTarget] ?? null);
+        return $this->verifyInstalledPackage($packageDirectory, $expectedTarget)->manifest;
     }
 
-    /** @return array<string, mixed> */
-    private function inspect(string $packageDirectory, string $expectedTarget, ?string $reviewedDigest): array
+    public function verifyInstalledPackage(string $packageDirectory, string $expectedTarget): PhpSignaturePackageVerification
+    {
+        return $this->inspect($packageDirectory, $expectedTarget, [
+            self::REVIEWED_MANIFESTS[$expectedTarget] ?? null,
+            ...(self::LEGACY_REVIEWED_MANIFESTS[$expectedTarget] ?? []),
+        ]);
+    }
+
+    /** @param list<string|null> $reviewedDigests */
+    private function inspect(string $packageDirectory, string $expectedTarget, array $reviewedDigests): PhpSignaturePackageVerification
     {
         $root = realpath($packageDirectory);
 
@@ -46,7 +62,8 @@ final readonly class PhpSignaturePackageVerifier
         $manifestPath = $root . '/manifest.json';
         $manifestBytes = $this->read($manifestPath);
         $manifest = $this->decode($manifestBytes, $manifestPath);
-        $reviewed = $reviewedDigest !== null && hash('sha256', $manifestBytes) === $reviewedDigest;
+        $digests = ['manifest.json' => hash('sha256', $manifestBytes)];
+        $reviewed = in_array($digests['manifest.json'], $reviewedDigests, true);
         $this->requireInteger($manifest, 'formatVersion', PhpSignaturePackageGenerator::FORMAT_VERSION);
         $this->requireString($manifest, 'generatorVersion', PhpSignaturePackageGenerator::GENERATOR_VERSION);
         $this->requireString($manifest, 'packageVersion', PhpSignaturePackageGenerator::PACKAGE_VERSION);
@@ -85,11 +102,13 @@ final readonly class PhpSignaturePackageVerifier
             }
 
             $previousOutput = $path;
-            $contents = file_get_contents($root . '/' . $path);
+            $digest = @hash_file('sha256', $root . '/' . $path);
 
-            if (!is_string($contents) || hash('sha256', $contents) !== ($output['sha256'] ?? null)) {
+            if ($digest === false || $digest !== ($output['sha256'] ?? null)) {
                 throw new \RuntimeException(sprintf('PHP signature output "%s" is missing or has been modified.', $path));
             }
+
+            $digests[$path] = $digest;
 
             if (isset($output['module'])) {
                 if (!is_string($output['module']) || $path !== 'extensions/' . $output['module'] . '.json') {
@@ -103,9 +122,15 @@ final readonly class PhpSignaturePackageVerifier
         // The exact reviewed manifest binds the contents of every output.
         // Runtime loads still check all bytes before using its symbol index.
         if ($reviewed) {
-            return $manifest;
+            return new PhpSignaturePackageVerification($manifest, $digests);
         }
 
+        $hasModuleReferences = isset($digests[PhpSignatureModuleReferences::PATH]);
+        $phpDoc = isset($digests[PhpSignaturePhpDocIndex::PATH]) ? new PhpSignaturePhpDocIndex() : null;
+        $syntax = isset($digests[PhpSignatureSyntaxIndex::PATH]) ? new PhpSignatureSyntaxIndex() : null;
+        $requiresDerivedData = $hasModuleReferences || $phpDoc !== null || $syntax !== null;
+        /** @var array<string, list<array{path: string, source: string}>> $moduleDocuments */
+        $moduleDocuments = [];
         $inputs = $this->inputHashes($manifest['inputs'] ?? null);
         $counts = $this->emptyCounts();
         $directiveAudit = [];
@@ -128,6 +153,9 @@ final readonly class PhpSignaturePackageVerifier
             }
 
             $previousDocument = null;
+            if ($requiresDerivedData) {
+                $moduleDocuments[$module] = [];
+            }
 
             foreach ($documents as $document) {
                 if (!is_array($document)) {
@@ -152,6 +180,9 @@ final readonly class PhpSignaturePackageVerifier
                     throw new \RuntimeException(sprintf('Normalized PHP signature source "%s" is invalid.', $documentPath));
                 }
 
+                if ($requiresDerivedData) {
+                    $moduleDocuments[$module][] = ['path' => $documentPath, 'source' => $source];
+                }
                 try {
                     $statements = $this->parsers
                         ->createForVersion(PhpVersion::fromString($expectedTarget))
@@ -207,6 +238,20 @@ final readonly class PhpSignaturePackageVerifier
         foreach (['classes', 'functions', 'constants'] as $bucket) {
             if (($symbols[$bucket] ?? null) !== $index[$bucket]) {
                 throw new \RuntimeException(sprintf('The PHP signature %s index does not match its shards.', $bucket));
+            }
+        }
+
+        if ($requiresDerivedData) {
+            $expectedReferences = (new PhpSignatureModuleReferences())->build($root, $expectedTarget, $moduleDocuments, $index, $phpDoc, $syntax);
+            if ($hasModuleReferences
+                && hash('sha256', CanonicalJson::encode($expectedReferences)) !== $digests[PhpSignatureModuleReferences::PATH]) {
+                throw new \RuntimeException('The PHP signature module reference index does not match its shards.');
+            }
+            if ($phpDoc !== null && hash('sha256', $phpDoc->encode($expectedTarget)) !== $digests[PhpSignaturePhpDocIndex::PATH]) {
+                throw new \RuntimeException('The platform PHPDoc metadata index does not match its shards.');
+            }
+            if ($syntax !== null && hash('sha256', $syntax->encode($expectedTarget)) !== $digests[PhpSignatureSyntaxIndex::PATH]) {
+                throw new \RuntimeException('The platform syntax fingerprint index does not match its shards.');
             }
         }
 
@@ -270,7 +315,7 @@ final readonly class PhpSignaturePackageVerifier
             }
         }
 
-        return $manifest;
+        return new PhpSignaturePackageVerification($manifest, $digests);
     }
 
     /** @return array<string, mixed> */

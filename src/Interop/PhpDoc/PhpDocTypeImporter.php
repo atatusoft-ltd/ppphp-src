@@ -16,6 +16,12 @@ final readonly class PhpDocTypeImporter
         private CompositeTypeParser $types = new CompositeTypeParser(),
     ) {}
 
+    public function hasTemplates(?Doc $document): bool
+    {
+        return $document !== null && str_contains($document->getText(), '@template')
+            && $this->reader->readMetadata($document)->templates !== [];
+    }
+
     /** @return list<TypeParameter> */
     public function importTemplates(?Doc $document, string $ownerKey, Span $span): array
     {

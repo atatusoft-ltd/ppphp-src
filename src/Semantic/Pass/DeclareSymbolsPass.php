@@ -11,6 +11,7 @@ use Atatusoft\Ppphp\Diagnostics\Enumerations\DiagnosticCode;
 use Atatusoft\Ppphp\Frontend\ParsedFile;
 use Atatusoft\Ppphp\Interop\PhpDoc\PhpDocReader;
 use Atatusoft\Ppphp\Semantic\NodeSpanResolver;
+use Atatusoft\Ppphp\Semantic\Effect\CallableErrorContract;
 use Atatusoft\Ppphp\Semantic\ProjectSemanticContext;
 use Atatusoft\Ppphp\Semantic\SourceNameResolver;
 use Atatusoft\Ppphp\Semantic\Generic\GenericDeclarationIndex;
@@ -42,6 +43,10 @@ use PhpParser\Node\Stmt;
 final class DeclareSymbolsPass
 {
     private ?GenericDeclarationIndex $genericDeclarations = null;
+    /** @var \WeakMap<ParsedFile, list<ClassSymbol|FunctionSymbol|GlobalConstantSymbol>> */
+    private \WeakMap $platformDeclarations;
+    /** @var list<ClassSymbol|FunctionSymbol|GlobalConstantSymbol>|null */
+    private ?array $platformDrafts = null;
 
     public function __construct(
         private NodeSpanResolver $spans = new NodeSpanResolver(),
@@ -51,7 +56,10 @@ final class DeclareSymbolsPass
         private SourceNameResolver $sourceNames = new SourceNameResolver(),
         private NodeFinder $nodes = new NodeFinder(),
         private SourceTypeResolver $sourceTypes = new SourceTypeResolver(),
-    ) {}
+        private bool $reusePlatformDeclarations = false,
+    ) {
+        $this->platformDeclarations = new \WeakMap();
+    }
 
     public function execute(ProjectSemanticContext $context, ?GenericDeclarationIndex $genericDeclarations = null): void
     {
@@ -67,7 +75,14 @@ final class DeclareSymbolsPass
     private function collectProject(ProjectSemanticContext $context): void
     {
         foreach ($context->parseResult->parsedFiles as $parsedFile) {
-            $this->collectStatements($parsedFile->statements, $parsedFile, $context, '');
+            if ($this->reusePlatformDeclarations
+                && isset($this->platformDeclarations[$parsedFile])
+                && $this->genericDeclarations?->entries === []
+                && $parsedFile->extensionSyntax->whenExpressions === []) {
+                $this->replayPlatformDeclarations($parsedFile, $context);
+            } else {
+                $this->collectStatements($parsedFile->statements, $parsedFile, $context, '');
+            }
 
             foreach ($parsedFile->extensionSyntax->whenExpressions as $when) {
                 $namespace = $this->sourceNames->resolveNamespaceAt(
@@ -123,22 +138,7 @@ final class DeclareSymbolsPass
                     $this->spans->resolve($parsedFile, $statement->name),
                     $this->resolveDocumentedReturnType($metadata->returns, $parsedFile, $statement),
                 );
-                $this->reportStubConflict(
-                    $context,
-                    $context->symbols->findFunction($name),
-                    $function,
-                );
-                $this->reportPlatformConflict(
-                    $context,
-                    $context->symbols->findFunction($name),
-                    $function,
-                );
-                $this->reportDuplicateDeclaration(
-                    $context,
-                    $context->symbols->findProjectFunction($name),
-                    $function,
-                );
-                $context->symbols->declareFunction($function);
+                $this->registerDeclaration($context, $function);
                 continue;
             }
 
@@ -157,12 +157,7 @@ final class DeclareSymbolsPass
                         $this->spans->resolve($parsedFile, $constant),
                         $this->spans->resolve($parsedFile, $constant->name),
                     );
-                    $this->reportPlatformConflict(
-                        $context,
-                        $context->symbols->findConstant($name),
-                        $symbol,
-                    );
-                    $context->symbols->declareConstant($symbol);
+                    $this->registerDeclaration($context, $symbol);
                 }
 
                 continue;
@@ -349,22 +344,92 @@ final class DeclareSymbolsPass
                 }
             }
 
-            $this->reportDuplicateDeclaration(
-                $context,
-                $context->symbols->findProjectClass($name),
-                $class,
-            );
-            $this->reportStubConflict(
-                $context,
-                $context->symbols->findClass($name),
-                $class,
-            );
-            $this->reportPlatformConflict(
-                $context,
-                $context->symbols->findClass($name),
-                $class,
-            );
-            $context->symbols->declareClass($class);
+            $this->registerDeclaration($context, $class);
+        }
+    }
+
+    public function preparePlatformDeclarations(ProjectSemanticContext $context): void
+    {
+        if (!$this->reusePlatformDeclarations) {
+            throw new \LogicException('Platform declaration reuse is unavailable.');
+        }
+        $this->genericDeclarations = new GenericDeclarationIndex();
+        try {
+            foreach ($context->parseResult->parsedFiles as $file) {
+                if ($file->sourceFile->declarationOrigin !== DeclarationOrigin::PhpPlatform || $file->extensionSyntax->whenExpressions !== []) {
+                    throw new \LogicException('Only verified PHP platform declarations may be prepared.');
+                }
+                $this->capturePlatformDeclarations($file, $context);
+            }
+        } finally {
+            $this->genericDeclarations = null;
+        }
+    }
+
+    private function capturePlatformDeclarations(ParsedFile $file, ProjectSemanticContext $context): void
+    {
+        if (isset($this->platformDeclarations[$file])) {
+            return;
+        }
+
+        $this->platformDrafts = [];
+        try {
+            $this->collectStatements($file->statements, $file, $context, '');
+            $this->platformDeclarations[$file] = $this->platformDrafts
+                ?? throw new \LogicException('Missing platform declaration draft.');
+        } finally {
+            $this->platformDrafts = null;
+        }
+    }
+
+    private function replayPlatformDeclarations(ParsedFile $file, ProjectSemanticContext $context): void
+    {
+        foreach ($this->platformDeclarations[$file] as $prototype) {
+            // The prototype has never entered a project symbol table. Project
+            // generics and error contracts attach only to these fresh instances.
+            if ($prototype instanceof ClassSymbol) {
+                $declaration = clone $prototype;
+                foreach ($prototype->methods as $method) {
+                    $fresh = clone $method;
+                    $fresh->replaceErrorContract(CallableErrorContract::createEmpty($method->declarationSpan));
+                    $declaration->declareMethod($fresh);
+                }
+            } elseif ($prototype instanceof FunctionSymbol) {
+                $declaration = clone $prototype;
+                $declaration->replaceErrorContract(CallableErrorContract::createEmpty($prototype->declarationSpan));
+            } else {
+                $declaration = $prototype;
+            }
+            $this->registerDeclaration($context, $declaration);
+        }
+    }
+
+    private function registerDeclaration(
+        ProjectSemanticContext $context,
+        ClassSymbol|FunctionSymbol|GlobalConstantSymbol $declaration,
+    ): void {
+        if ($this->platformDrafts !== null) {
+            $this->platformDrafts[] = $declaration;
+
+            return;
+        }
+
+        $name = $declaration->fullyQualifiedName;
+        if ($declaration instanceof FunctionSymbol) {
+            $existing = $context->symbols->findFunction($name);
+            $this->reportStubConflict($context, $existing, $declaration);
+            $this->reportPlatformConflict($context, $existing, $declaration);
+            $this->reportDuplicateDeclaration($context, $context->symbols->findProjectFunction($name), $declaration);
+            $context->symbols->declareFunction($declaration);
+        } elseif ($declaration instanceof ClassSymbol) {
+            $this->reportDuplicateDeclaration($context, $context->symbols->findProjectClass($name), $declaration);
+            $existing = $context->symbols->findClass($name);
+            $this->reportStubConflict($context, $existing, $declaration);
+            $this->reportPlatformConflict($context, $existing, $declaration);
+            $context->symbols->declareClass($declaration);
+        } else {
+            $this->reportPlatformConflict($context, $context->symbols->findConstant($name), $declaration);
+            $context->symbols->declareConstant($declaration);
         }
     }
 

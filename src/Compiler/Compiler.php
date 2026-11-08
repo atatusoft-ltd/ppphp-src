@@ -30,7 +30,7 @@ final readonly class Compiler
 
     public const string COMPOSER_PACKAGE = 'atatusoft/ppphp';
 
-    public const string VERSION = '2026.3.1';
+    public const string VERSION = '2026.3.2';
 
     public const int LOWERING_FORMAT_VERSION = 1;
 
@@ -184,6 +184,7 @@ final readonly class Compiler
         ProjectSelection $selection,
         ProjectCheckResult $check,
         ?ProjectInputSnapshot $snapshot = null,
+        ?CompilerCache $artifactCache = null,
     ): ProductionPreparation {
         if (!$check->isSuccessful) {
             throw new \LogicException('Production preparation requires a completed full check.');
@@ -198,7 +199,7 @@ final readonly class Compiler
         }
 
         $this->addComposerWarnings($project, $diagnostics);
-        $reused = $snapshot === null ? [] : $this->cache->loadReusableArtifacts($project, $snapshot, $check, $plan->plan);
+        $reused = $snapshot === null ? [] : ($artifactCache ?? $this->cache)->loadReusableArtifacts($project, $snapshot, $check, $plan->plan);
 
         return new ProductionPreparation($this->emitter->emit($project, $check, $plan->plan, $reused), $diagnostics);
     }

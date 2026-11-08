@@ -32,6 +32,15 @@ test('rejects duplicate members and file-directory aliases before extraction', (
   assert.throws(() => createTar([file('src/A.php'), file('src/A.php')]), /duplicate/);
   assert.throws(() => createTar([file('src/a'), file('src/a/b')]), /collision/);
 });
+test('rejects a parent file that follows its child in the archive', () => {
+  const original = createTar([file('resources/a/child'), file('resources/b')]);
+  const conflictingParent = headerChange(original.subarray(1024, 2048), b => {
+    b.fill(0, 0, 100); b.write('resources/a', 0);
+  });
+  const conflict = Buffer.concat([original.subarray(0, 1024), conflictingParent, original.subarray(2048)]);
+  assert.throws(() => inspectTar(conflict), /file\/directory collision/);
+});
+
 test('rejects forbidden injected members even in structurally valid tar', () => {
   for (const path of ['.env', 'vendor/pestphp/pest/Test.php', 'tests/Fixture.php']) assert.throws(() => inspectTar(createTar([file(path)])), /Forbidden/);
 });
@@ -51,4 +60,29 @@ test('gzip expansion is bounded while streaming, before tar parsing or writes', 
   await assert.rejects(inspectCompilerArchive(gzipSync(Buffer.alloc(archiveLimits.expanded + 512))), /expansion limit/);
   await assert.rejects(inspectCompilerArchive(createGzip([file('src/Example.php')])), /Incomplete compiler/);
   await assert.rejects(inspectCompilerArchive(new Uint8Array(archiveLimits.compressed + 1)), /compressed size/);
+});
+
+test('visits verified member bytes in archive order without changing metadata', async () => {
+  const files = [
+    file('bin/ppphp', '<?php', 493), file('composer.json', '{}'), file('composer.lock', '{}'),
+    file('src/Compiler/Compiler.php'), file('vendor/autoload.php'), file('vendor/composer/installed.json'),
+    file('vendor/phpstan/phpstan/phpstan.phar', Buffer.from([0, 255, 42])), file('resources/phpstan/ppphp.neon'),
+  ];
+  const compressed = createGzip(files);
+  const expected = await inspectCompilerArchive(compressed);
+  const visited = [];
+  const actual = await inspectCompilerArchive(compressed, (member, contents) => {
+    const original = files.find(file => file.path === member.path);
+    assert.deepEqual(Buffer.from(contents), Buffer.from(original.content));
+    assert.equal(member.mode, original.mode);
+    visited.push(member.path);
+    member.path = 'changed visitor metadata';
+  });
+  assert.deepEqual(visited, expected.members.map(member => member.path));
+  assert.deepEqual(actual, expected);
+  const noVisit = () => assert.fail('Invalid archives must not expose any member');
+  await assert.rejects(inspectCompilerArchive(createGzip(files.slice(1)), noVisit), /Incomplete compiler archive/);
+  const invalid = createTar(files);
+  invalid[invalid.length - 1] = 1;
+  await assert.rejects(inspectCompilerArchive(gzipSync(invalid), noVisit), /Invalid archive end/);
 });

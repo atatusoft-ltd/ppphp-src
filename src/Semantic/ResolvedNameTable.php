@@ -16,6 +16,11 @@ final class ResolvedNameTable
         $this->names[spl_object_id($node)] = ltrim($fullyQualifiedName, '\\');
     }
 
+    public function merge(self $table): void
+    {
+        $this->names = array_replace($this->names, $table->names);
+    }
+
     public function resolve(Node $node): ?string
     {
         return $this->names[spl_object_id($node)] ?? null;
