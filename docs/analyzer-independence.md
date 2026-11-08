@@ -158,6 +158,8 @@ Version 1 Prepare Analysis remains compatible and process-oriented. It can prepa
 
 Version 2 is a one-shot `analyze` action with `operation: check` and `analysis.engine: compiler`. It invokes the compiler core once and returns normal diagnostics plus compiler identity, catalog version, `compilerCore` completeness, `fullParity`, and uncovered required capabilities. An optional `dependencyContext` names a project-contained portable manifest and SHA-256; omission retains prior behavior. It cannot build, fetch an index, return a continuation or command, or invoke a supplemental analyzer. Protocol version 1 is unchanged, and no public human-facing compiler-only mode is exposed.
 
+The isolated version 3 browser experiment can use a smaller verified declaration context for closed checked-error scripts. The compiler resolves the native `Exception` document through the reviewed PHP signature package, checks project declarations against the complete class and function index, and admits output only after the closed-script proof succeeds. If the reduced context cannot establish the proof, analysis retries with the complete declarations and follows the existing supplemental policy. The experiment still uses the version 3 production lint and publication checks.
+
 ## 18. Security And Resource Limits
 
 Version 2 accepts at most 16 KiB per request, 256 project source/stub files, 4 MiB total source bytes, 1,000 diagnostics, and a 2 MiB response. Limit failures return a complete structured `resource-limit-exceeded` error; JSON is never truncated. Request files must be regular files contained by the project root.

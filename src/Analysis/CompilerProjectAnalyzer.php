@@ -6,6 +6,7 @@ namespace Atatusoft\Ppphp\Analysis;
 
 use Atatusoft\Ppphp\Analysis\Capability\AnalysisCapabilityCatalog;
 use Atatusoft\Ppphp\Analysis\Enumerations\AnalysisCompleteness;
+use Atatusoft\Ppphp\Analysis\Experimental\Enumerations\ScriptPlatformScope;
 use Atatusoft\Ppphp\Analysis\Experimental\ScalarScriptProof;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticProcessor;
 use Atatusoft\Ppphp\Interop\Composer\Declaration\DependencyDeclarationProvider;
@@ -49,15 +50,22 @@ final readonly class CompilerProjectAnalyzer
     {
         $parseResult = $this->syntaxChecker->check($project, $selectedSources);
         $proof = new ScalarScriptProof();
-        if ($proof->canAnalyzeLocally($project, $selectedSources, $parseResult)) {
-            $local = $this->analyzeSemantics($project, $selectedSources, $parseResult, $this->emptyContext());
-            $check = $proof->check($local);
-            if ($check !== null) {
-                if ($this->declarationCollector->verifyPlatform($project, $parseResult)) {
-                    return $check;
-                }
+        $scope = $proof->selectPlatformScope($project, $selectedSources, $parseResult);
+        if ($scope !== null) {
+            $context = match ($scope) {
+                ScriptPlatformScope::Empty => $this->emptyContext(),
+                ScriptPlatformScope::CheckedErrors => $this->declarationCollector->selectPlatformDocument($project, 'Exception'),
+            };
+            if ($context !== null) {
+                $local = $this->analyzeSemantics($project, $selectedSources, $parseResult, $context);
+                $check = $proof->check($local);
+                if ($check !== null) {
+                    if ($this->declarationCollector->verifyPlatform($project, $parseResult)) {
+                        return $check;
+                    }
 
-                return $this->analyzeParsed($project, $selectedSources, $parseResult);
+                    return $this->analyzeParsed($project, $selectedSources, $parseResult);
+                }
             }
         }
 

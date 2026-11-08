@@ -47,6 +47,16 @@ final readonly class DeclarationContextCollector
         }
     }
 
+    public function selectPlatformDocument(Project $project, string $class): ?ProjectParseResult
+    {
+        try {
+            return $this->phpSignatures->loadClassDocument($project->configuration->targetPhpVersion, $class);
+        } catch (\Throwable) {
+            // The full collector owns the diagnostic and its source.
+            return null;
+        }
+    }
+
     public function collect(
         Project $project,
         SourceSet $selectedSources,

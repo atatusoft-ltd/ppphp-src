@@ -279,3 +279,27 @@ test('verified platform declarations distinguish class and function collisions a
         ->and($platform->parsedFiles)->not->toBeEmpty()
         ->and($loader->verifyLocalDeclarations('8.4', ['PpphpLessonError'], ['strlen']))->toBeFalse();
 });
+
+test('an authenticated class document leaves complete module loading and integrity checks intact', function (): void {
+    $root = $this->createTemporaryDirectory();
+    \Tests\Support\StageElevenProject::copyTree(dirname(__DIR__, 3) . '/resources/php-signatures/8.4', $root . '/8.4');
+    $loader = new PhpSignaturePackageLoader($root);
+
+    $exception = $loader->loadClassDocument('8.4', 'Exception');
+    expect($exception?->parsedFiles)->toHaveCount(1)
+        ->and($loader->loadClassDocument('8.4', 'exception'))->toBeNull()
+        ->and($loader->loadClassDocument('8.4', 'MissingProofClass'))->toBeNull();
+
+    $full = $loader->load('8.4', []);
+    expect($full->isSuccessful)->toBeTrue()
+        ->and(count($full->parsedFiles))->toBeGreaterThan(1)
+        ->and($loader->loadClassDocument('8.4', 'Exception')?->parsedFiles)->toEqual($exception->parsedFiles);
+
+    $unrelatedShard = $root . '/8.4/extensions/zlib.json';
+    $contents = file_get_contents($unrelatedShard);
+    $this->writeFile($unrelatedShard, $contents . ' ');
+    expect(fn () => $loader->loadClassDocument('8.4', 'Exception'))->toThrow(RuntimeException::class);
+
+    $this->writeFile($unrelatedShard, $contents);
+    expect($loader->loadClassDocument('8.4', 'Exception')?->parsedFiles)->toEqual($exception->parsedFiles);
+});

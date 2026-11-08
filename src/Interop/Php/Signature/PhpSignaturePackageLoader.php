@@ -117,6 +117,37 @@ final class PhpSignaturePackageLoader
         return $this->decodeObject($symbols, 'symbols.json');
     }
 
+    /**
+     * Selects one authenticated declaration document for a bounded analysis proof.
+     * The caller owns the dependency proof. Normal platform loading resolves modules.
+     */
+    public function loadClassDocument(string $target, string $class): ?ProjectParseResult
+    {
+        $verification = $this->verifyPackage($target);
+        $package = $this->packagePath($target);
+        $symbols = $this->symbolIndexes[$target] ??= $this->readSymbolIndex($package, $verification);
+        $classes = $symbols['classes'] ?? null;
+        $entries = is_array($classes) ? ($classes[strtolower($class)] ?? null) : null;
+        if (!is_array($entries) || !array_is_list($entries) || count($entries) !== 1) {
+            return null;
+        }
+
+        $entry = $entries[0];
+        if (!is_array($entry) || ($entry['name'] ?? null) !== $class
+            || !array_key_exists('availability', $entry) || $entry['availability'] !== null
+            || !is_string($entry['module'] ?? null) || !is_string($entry['document'] ?? null)) {
+            return null;
+        }
+        $module = $entry['module'];
+        $document = $entry['document'];
+        $key = Path::buildComparisonKey(PhpSignatureModuleReferences::createSource($package, $target, $document, '')->path);
+        $parsed = $this->parsedModules[$target][$module]['parsedFiles'][$key]
+            ?? $this->parseModule($package, $target, $module, false, $verification, $document)['parsedFiles'][$key]
+            ?? null;
+
+        return $parsed === null ? null : new ProjectParseResult([$key => $parsed], [$key => $parsed->sourceFile], new DiagnosticBag());
+    }
+
     /** @param iterable<ParsedFile> $projectFiles */
     public function load(string $target, iterable $projectFiles): ProjectParseResult
     {
@@ -210,6 +241,7 @@ final class PhpSignaturePackageLoader
         string $module,
         bool $collectReferences,
         PhpSignaturePackageVerification $verification,
+        ?string $onlyDocument = null,
     ): array {
         $path = 'extensions/' . $module . '.json';
         $bytes = $verification->readOptionalOutput($package, $path)
@@ -231,9 +263,13 @@ final class PhpSignaturePackageLoader
                 throw new \RuntimeException(sprintf('PHP signature module "%s" contains an invalid document.', $module));
             }
 
+            if ($onlyDocument !== null && $onlyDocument !== $document['path']) {
+                continue;
+            }
             $sourceFile = PhpSignatureModuleReferences::createSource($package, $target, $document['path'], $document['source']);
             $cacheKey = $module . '/' . $document['path'];
-            $cached = $this->browserCache?->restore($cacheKey, ($this->syntaxIndexes[$target] ?? null)?->find($cacheKey));
+            $cache = $onlyDocument === null ? $this->browserCache : null;
+            $cached = $cache?->restore($cacheKey, ($this->syntaxIndexes[$target] ?? null)?->find($cacheKey));
             if ($cached === null) {
                 $result = $this->parser->parse($sourceFile, ParseMode::Php);
                 if ($result->parsedFile === null || $result->diagnostics->hasErrors) {
@@ -243,7 +279,7 @@ final class PhpSignaturePackageLoader
                     ));
                 }
                 $parsed = $result->parsedFile;
-                $this->browserCache?->remember($cacheKey, $parsed->statements);
+                $cache?->remember($cacheKey, $parsed->statements);
             } else {
                 $parsed = $this->parser->restorePhp($sourceFile, $cached);
             }

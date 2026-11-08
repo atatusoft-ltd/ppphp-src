@@ -45,7 +45,10 @@ test('the browser proof requires a checked error contract and validated paths th
             ->and($result->isSuccessful)->toBeTrue()
             ->and($result->supplementalEvidence)->toBeFalse()
             ->and($result->completeness)->toBe(AnalysisCompleteness::ExperimentalScalarProof)
-            ->and($result->declarationContext?->isSuccessful)->toBeTrue();
+            ->and($result->declarationContext?->isSuccessful)->toBeTrue()
+            ->and($result->declarationContext?->parsedFiles)->toHaveCount(1)
+            ->and(array_values($result->declarationContext->parsedFiles)[0]->sourceFile->displayPath)
+            ->toBe('<PHP 8.4 platform>/Zend/zend_exceptions.stub.php');
     } else {
         expect($result)->toBeInstanceOf(CompilerProjectAnalysis::class);
     }

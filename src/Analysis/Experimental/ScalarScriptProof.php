@@ -7,6 +7,7 @@ namespace Atatusoft\Ppphp\Analysis\Experimental;
 use Atatusoft\Ppphp\Analysis\CompilerProjectAnalysis;
 use Atatusoft\Ppphp\Analysis\Declaration\DeclarationReferenceCollector;
 use Atatusoft\Ppphp\Analysis\Enumerations\AnalysisCompleteness;
+use Atatusoft\Ppphp\Analysis\Experimental\Enumerations\ScriptPlatformScope;
 use Atatusoft\Ppphp\Frontend\ParsedFile;
 use Atatusoft\Ppphp\Project\Project;
 use Atatusoft\Ppphp\Project\ProjectParseResult;
@@ -46,14 +47,16 @@ final readonly class ScalarScriptProof
         );
     }
 
-    public function canAnalyzeLocally(Project $project, SourceSet $selected, ProjectParseResult $parsed): bool
+    public function selectPlatformScope(Project $project, SourceSet $selected, ProjectParseResult $parsed): ?ScriptPlatformScope
     {
         $file = $this->findCandidate($project, $selected, $parsed);
         if ($file === null) {
-            return false;
+            return null;
         }
 
-        $localNames = [];
+        $checked = count($selected) === 1 && $file->extensionSyntax->throwsClauses !== [];
+        $localNames = $checked ? ['exception'] : [];
+        $allowedFunctions = $checked ? [] : ['count'];
         foreach ($parsed->parsedFiles as $candidate) {
             foreach ($candidate->statements as $statement) {
                 if ($statement instanceof Stmt\Nop) {
@@ -64,14 +67,22 @@ final readonly class ScalarScriptProof
                     continue;
                 }
                 if ($candidate !== $file) {
-                    return false;
+                    return null;
+                }
+                if ($checked) {
+                    if ($statement instanceof Stmt\Function_) {
+                        $allowedFunctions[] = strtolower($statement->name->toString());
+                    } elseif (!$statement instanceof Stmt\TryCatch) {
+                        return null;
+                    }
+                    continue;
                 }
                 if ($statement instanceof Stmt\Echo_ || $statement instanceof Stmt\Foreach_) {
                     continue;
                 }
                 if (!$statement instanceof Stmt\Expression || (!$statement->expr instanceof Expr\Assign
                     && (!$statement->expr instanceof Expr\Include_ || count($project->sources) === 1))) {
-                    return false;
+                    return null;
                 }
             }
         }
@@ -84,8 +95,12 @@ final readonly class ScalarScriptProof
             }
         }
 
-        return array_diff(array_map(strtolower(...), $references['classes']), $localNames) === [] && $references['constants'] === []
-            && array_diff(array_map(strtolower(...), $references['functions']), ['count']) === [];
+        if (array_diff(array_map(strtolower(...), $references['classes']), $localNames) !== [] || $references['constants'] !== []
+            || array_diff(array_map(strtolower(...), $references['functions']), $allowedFunctions) !== []) {
+            return null;
+        }
+
+        return $checked ? ScriptPlatformScope::CheckedErrors : ScriptPlatformScope::Empty;
     }
 
     private function findCandidate(Project $project, SourceSet $selected, ProjectParseResult $result): ?ParsedFile
