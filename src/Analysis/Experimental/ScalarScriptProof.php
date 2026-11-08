@@ -8,11 +8,12 @@ use Atatusoft\Ppphp\Analysis\CompilerProjectAnalysis;
 use Atatusoft\Ppphp\Analysis\Enumerations\AnalysisCompleteness;
 use Atatusoft\Ppphp\Project\ProjectCheckResult;
 use Atatusoft\Ppphp\Semantic\Binding\Enumerations\BindingMutability;
+use Atatusoft\Ppphp\Semantic\Type\TypedArrayType;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Scalar;
 use PhpParser\Node\Stmt;
 
-/** Local browser experiment for a closed subset of top-level scalar scripts. */
+/** Local browser experiment for a closed subset of top-level scripts. */
 final readonly class ScalarScriptProof
 {
     private const array AMBIENT_VARIABLES = [
@@ -70,9 +71,14 @@ final readonly class ScalarScriptProof
         }
 
         $assigned = [];
+        $arrays = [];
         $reads = [];
         $printed = false;
+        $appended = false;
         foreach ($parsed->statements as $statement) {
+            if ($statement instanceof Stmt\Nop) {
+                continue;
+            }
             if ($statement instanceof Stmt\Echo_) {
                 foreach ($statement->exprs as $expression) {
                     if ($this->resolveExpression($expression, $assigned, $reads, 32) === null) {
@@ -87,10 +93,12 @@ final readonly class ScalarScriptProof
             }
 
             $assignment = $statement->expr;
-            if (!$assignment->var instanceof Expr\Variable || !is_string($assignment->var->name)) {
+            $append = $assignment->var instanceof Expr\ArrayDimFetch && $assignment->var->dim === null;
+            $destination = $append ? $assignment->var->var : $assignment->var;
+            if (!$destination instanceof Expr\Variable || !is_string($destination->name)) {
                 return false;
             }
-            $name = $assignment->var->name;
+            $name = $destination->name;
             if (in_array($name, self::AMBIENT_VARIABLES, true)) {
                 return false;
             }
@@ -99,6 +107,30 @@ final readonly class ScalarScriptProof
                 return false;
             }
 
+            $type = $binding->type->semanticType;
+            if ($type instanceof TypedArrayType) {
+                if ($append) {
+                    if (!isset($arrays[$name]) || !$type->isList || $binding->mutability !== BindingMutability::Mutable) {
+                        return false;
+                    }
+                    $value = $this->resolveExpression($assignment->expr, $assigned, $reads, 32);
+                    if ($value === null || $type->valueType->canonical !== get_debug_type($value)) {
+                        return false;
+                    }
+                    $appended = true;
+                } else {
+                    if (isset($arrays[$name]) || $binding->initializerExpression !== $assignment->expr
+                        || !$assignment->expr instanceof Expr\Array_ || !$this->qualifiesArrayLiteral($assignment->expr, $type)) {
+                        return false;
+                    }
+                    $arrays[$name] = true;
+                }
+                continue;
+            }
+
+            if ($append) {
+                return false;
+            }
             if (isset($assigned[$name])) {
                 if ($binding->mutability !== BindingMutability::Mutable) {
                     return false;
@@ -112,13 +144,54 @@ final readonly class ScalarScriptProof
                 }
                 $value = $this->resolveLiteral($assignment->expr);
             }
-            if ($value === null || $binding->type->semanticType->canonical !== get_debug_type($value)) {
+            if ($value === null || $type->canonical !== get_debug_type($value)) {
                 return false;
             }
             $assigned[$name] = $value;
         }
 
-        return $printed && count($assigned) === count($declarations) && count($reads) === count($assigned);
+        return ($printed || $appended) && count($assigned) + count($arrays) === count($declarations)
+            && count($reads) === count($assigned);
+    }
+
+    private function qualifiesArrayLiteral(Expr\Array_ $literal, TypedArrayType $type): bool
+    {
+        if ($literal->items === [] || count($literal->items) > 256) {
+            return false;
+        }
+
+        $keys = [];
+        foreach ($literal->items as $item) {
+            if ($item->byRef || $item->unpack) {
+                return false;
+            }
+            $value = $this->resolveLiteral($item->value);
+            if ($value === null || $type->valueType->canonical !== get_debug_type($value)) {
+                return false;
+            }
+            if ($type->isList) {
+                if ($item->key !== null) {
+                    return false;
+                }
+                continue;
+            }
+
+            $key = match (true) {
+                $item->key instanceof Scalar\Int_, $item->key instanceof Scalar\String_ => $item->key->value,
+                default => null,
+            };
+            // PHP normalizes some string keys to integers. Only admit an exact
+            // key type and a map where every literal contributes an entry.
+            $keyType = $type->keyType->canonical;
+            if ($key === null || (is_int($key) ? $keyType !== 'int' : $keyType !== 'string')
+                || (is_string($key) && (string) (int) $key === $key)
+                || isset($keys[$key])) {
+                return false;
+            }
+            $keys[$key] = true;
+        }
+
+        return true;
     }
 
     /**

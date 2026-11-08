@@ -8,7 +8,7 @@ use Atatusoft\Ppphp\Analysis\Experimental\ScalarScriptProof;
 use Atatusoft\Ppphp\Config\ProjectConfigLoader;
 use Atatusoft\Ppphp\Project\ProjectLoader;
 
-test('experimental scalar evidence distinguishes supported reassignments from diagnostic-sensitive cases', function (string $source, bool $admitted): void {
+test('experimental scalar evidence distinguishes supported scripts from diagnostic-sensitive cases', function (string $source, bool $admitted): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root, ['stubs' => []]);
     $this->writeFile($root . '/src/main.ppphp', "<?php\n" . $source);
@@ -30,5 +30,9 @@ test('experimental scalar evidence distinguishes supported reassignments from di
     'typed counter and ordinary comment' => ["int \$count = 0;\n\$count = \$count + 1; // increment\necho \$count;", true],
     'overflow leaves integer domain' => ['int $value = 9223372036854775807; $value = $value + 1; echo $value;', false],
     'unmatched analyzer directive' => ["echo 'hello'; // @phpstan-ignore-line\n", false],
+    'typed list append with trailing comment' => ["array<int> \$ids = [1, 2, 3];\narray<string, int> \$scores = ['Maya' => 92];\n\$ids[] = 4; // fixed\n", true],
+    'invalid typed list append' => ['array<int> $ids = [1]; $ids[] = "x";', false],
+    'numeric string key may change type' => ['array<int> $ids = [1]; array<string, int> $scores = ["1" => 92]; $ids[] = 4;', false],
+    'duplicate map key' => ['array<int> $ids = [1]; array<string, int> $scores = ["Maya" => 92, "Maya" => 1]; $ids[] = 4;', false],
     'readonly update' => ['readonly int $count = 0; $count = $count + 1; echo $count;', false],
 ]);
