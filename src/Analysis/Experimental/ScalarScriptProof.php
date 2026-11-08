@@ -36,7 +36,8 @@ final readonly class ScalarScriptProof
 
     public function check(CompilerProjectAnalysis $analysis): ?ProjectCheckResult
     {
-        if (!$this->qualifies($analysis)) {
+        $omissions = [];
+        if (!$this->qualifies($analysis, $omissions)) {
             return null;
         }
 
@@ -47,6 +48,7 @@ final readonly class ScalarScriptProof
             $analysis->diagnostics,
             completeness: AnalysisCompleteness::ExperimentalScalarProof,
             declarationContext: $analysis->declarationContext,
+            compilerAnnotationOmissions: $omissions,
         );
     }
 
@@ -66,7 +68,8 @@ final readonly class ScalarScriptProof
 
         $references = (new DeclarationReferenceCollector())->collect([$file]);
 
-        return $references['classes'] === [] && $references['functions'] === [] && $references['constants'] === [];
+        return $references['classes'] === [] && $references['constants'] === []
+            && array_diff(array_map(strtolower(...), $references['functions']), ['count']) === [];
     }
 
     private function findCandidate(Project $project, SourceSet $selected, ProjectParseResult $result): ?ParsedFile
@@ -82,15 +85,17 @@ final readonly class ScalarScriptProof
         return $file !== null && strlen($file->sourceFile->contents) <= 16_384 && count($file->statements) <= 64 ? $file : null;
     }
 
-    private function qualifies(CompilerProjectAnalysis $analysis): bool
+    /** @param array<string, array<int, list<string>>> $omissions */
+    private function qualifies(CompilerProjectAnalysis $analysis, array &$omissions): bool
     {
         if (!$analysis->isSuccessful || $analysis->uncoveredRequiredCapabilities !== []) {
             return false;
         }
 
         $parsed = $this->findCandidate($analysis->project, $analysis->selectedSources, $analysis->parseResult);
-        $model = $parsed === null ? null : $analysis->semanticResult?->findModel($parsed->sourceFile->path);
-        if ($parsed === null || $model === null) {
+        $semantic = $analysis->semanticResult;
+        $model = $parsed === null ? null : $semantic?->findModel($parsed->sourceFile->path);
+        if ($parsed === null || $semantic === null || $model === null) {
             return false;
         }
 
@@ -118,6 +123,7 @@ final readonly class ScalarScriptProof
             $loopBindings[$declaration->variableSpan->start->offset] = $binding;
         }
 
+        $countOwners = null;
         $assigned = [];
         $arrays = [];
         $steps = 8192;
@@ -202,6 +208,16 @@ final readonly class ScalarScriptProof
                     return false;
                 }
                 $value = $this->resolveLiteral($assignment->expr);
+                if ($assignment->expr instanceof Expr\FuncCall) {
+                    $countOwners ??= (new CountAnnotationProof())->collect($semantic, $model);
+                    $owner = $binding->declarationSpan->start->offset;
+                    $count = $countOwners[$owner] ?? null;
+                    if ($count === null || !isset($arrays[$count['array']])) {
+                        return false;
+                    }
+                    $value = count($arrays[$count['array']]);
+                    $omissions[$parsed->sourceFile->path][$owner][] = $count['name'];
+                }
             }
             if ($value === null || $type->canonical !== $this->resolveType($value)) {
                 return false;
