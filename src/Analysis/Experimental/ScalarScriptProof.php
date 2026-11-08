@@ -7,7 +7,6 @@ namespace Atatusoft\Ppphp\Analysis\Experimental;
 use Atatusoft\Ppphp\Analysis\CompilerProjectAnalysis;
 use Atatusoft\Ppphp\Analysis\Declaration\DeclarationReferenceCollector;
 use Atatusoft\Ppphp\Analysis\Enumerations\AnalysisCompleteness;
-use Atatusoft\Ppphp\Analysis\Experimental\Enumerations\UntrackedString;
 use Atatusoft\Ppphp\Frontend\ParsedFile;
 use Atatusoft\Ppphp\Project\Project;
 use Atatusoft\Ppphp\Project\ProjectParseResult;
@@ -23,17 +22,12 @@ use PhpParser\Node\Stmt;
 /**
  * Local browser experiment for a closed subset of top-level scripts.
  *
- * @phpstan-type ScalarValue bool|float|int|string|UntrackedString
- * @phpstan-type Locals array<string, ScalarValue>
- * @phpstan-type Collections array<string, non-empty-array<int|string, ScalarValue>>
+ * @phpstan-import-type Locals from ScriptExpressionProof
+ * @phpstan-import-type ScalarValue from ScriptExpressionProof
+ * @phpstan-import-type Collections from ScriptExpressionProof
  */
 final readonly class ScalarScriptProof
 {
-    private const array AMBIENT_VARIABLES = [
-        'GLOBALS', '_SERVER', '_GET', '_POST', '_FILES', '_COOKIE', '_SESSION', '_REQUEST', '_ENV',
-        'this', 'argc', 'argv', 'http_response_header', 'php_errormsg',
-    ];
-
     public function check(CompilerProjectAnalysis $analysis): ?ProjectCheckResult
     {
         $omissions = [];
@@ -99,14 +93,20 @@ final readonly class ScalarScriptProof
             return false;
         }
 
-        foreach (\PhpToken::tokenize($parsed->normalizedSource->contents) as $token) {
+        foreach (\PhpToken::tokenize($parsed->sourceFile->contents) as $token) {
             if ($token->id === T_DOC_COMMENT || ($token->id === T_COMMENT && str_contains($token->text, '@'))) {
                 return false;
             }
         }
 
         $declarations = [];
+        $whenExpressions = $model->whenExpressions->expressions;
         foreach ($parsed->extensionSyntax->typedLocals as $local) {
+            $offset = $local->variableSpan->start->offset;
+            if (array_any($whenExpressions, static fn ($when): bool =>
+                $offset >= $when->syntax->span->start->offset && $offset < $when->syntax->span->end->offset)) {
+                continue;
+            }
             $binding = $model->bindings->find($local->id);
             if ($binding === null || $binding->initializerExpression === null || isset($declarations[$binding->name])) {
                 return false;
@@ -124,6 +124,8 @@ final readonly class ScalarScriptProof
         }
 
         $countOwners = null;
+        $pristine = [];
+        $provedWhen = 0;
         $assigned = [];
         $arrays = [];
         $steps = 8192;
@@ -159,7 +161,7 @@ final readonly class ScalarScriptProof
                 return false;
             }
             $name = $destination->name;
-            if (in_array($name, self::AMBIENT_VARIABLES, true)) {
+            if (in_array($name, ScriptExpressionProof::AMBIENT_VARIABLES, true)) {
                 return false;
             }
             $binding = $declarations['$' . $name] ?? null;
@@ -173,11 +175,12 @@ final readonly class ScalarScriptProof
                     if (!isset($arrays[$name]) || !$type->isList || $binding->mutability !== BindingMutability::Mutable) {
                         return false;
                     }
-                    $value = $this->resolveExpression($assignment->expr, $assigned, $arrays, $reads, $steps, 32);
-                    if ($value === null || $type->valueType->canonical !== $this->resolveType($value)) {
+                    $value = ScriptExpressionProof::resolve($assignment->expr, $assigned, $arrays, $reads, $steps, 32);
+                    if ($value === null || $type->valueType->canonical !== ScriptExpressionProof::resolveType($value)) {
                         return false;
                     }
                     $arrays[$name][] = $value;
+                    unset($pristine[$name]);
                     $appended = true;
                 } else {
                     if (isset($arrays[$name]) || $binding->initializerExpression !== $assignment->expr
@@ -189,6 +192,7 @@ final readonly class ScalarScriptProof
                         return false;
                     }
                     $arrays[$name] = $values;
+                    $pristine[$name] = true;
                 }
                 continue;
             }
@@ -200,15 +204,24 @@ final readonly class ScalarScriptProof
                 if ($binding->mutability !== BindingMutability::Mutable) {
                     return false;
                 }
-                $value = $this->resolveExpression($assignment->expr, $assigned, $arrays, $reads, $steps, 32);
+                $value = ScriptExpressionProof::resolve($assignment->expr, $assigned, $arrays, $reads, $steps, 32);
+                unset($pristine[$name]);
             } else {
                 // Initializers also determine the generated @var annotation.
                 // Only the already verified exact literal cases are admitted.
                 if ($binding->initializerExpression !== $assignment->expr) {
                     return false;
                 }
-                $value = $this->resolveLiteral($assignment->expr);
-                if ($assignment->expr instanceof Expr\FuncCall) {
+                $when = $model->whenExpressions->findPlaceholder($assignment->expr);
+                $value = ScriptExpressionProof::resolveLiteral($assignment->expr);
+                if ($when !== null) {
+                    $countOwners ??= (new CountAnnotationProof())->collect($semantic, $model);
+                    $fileOmissions = $omissions[$parsed->sourceFile->path] ?? [];
+                    $branchProof = new WhenIntegerProof($model, $assigned, $arrays, $pristine, $countOwners);
+                    $value = $branchProof->resolve($when, $reads, $fileOmissions, $steps);
+                    $omissions[$parsed->sourceFile->path] = $fileOmissions;
+                    ++$provedWhen;
+                } elseif ($assignment->expr instanceof Expr\FuncCall) {
                     $countOwners ??= (new CountAnnotationProof())->collect($semantic, $model);
                     $owner = $binding->declarationSpan->start->offset;
                     $count = $countOwners[$owner] ?? null;
@@ -217,16 +230,18 @@ final readonly class ScalarScriptProof
                     }
                     $value = count($arrays[$count['array']]);
                     $omissions[$parsed->sourceFile->path][$owner][] = $count['name'];
+                } elseif ($value !== null) {
+                    $pristine[$name] = true;
                 }
             }
-            if ($value === null || $type->canonical !== $this->resolveType($value)) {
+            if ($value === null || $type->canonical !== ScriptExpressionProof::resolveType($value)) {
                 return false;
             }
             $assigned[$name] = $value;
         }
 
         return ($printed || $appended) && count($assigned) + count($arrays) === count($declarations)
-            && count($reads) === count($assigned);
+            && count($reads) === count($assigned) && $provedWhen === count($whenExpressions);
     }
 
     /**
@@ -247,7 +262,7 @@ final readonly class ScalarScriptProof
             $binding = $bindings[$target->getStartFilePos()] ?? null;
             if (!$target instanceof Expr\Variable || !is_string($target->name) || $binding?->name !== '$' . $target->name
                 || isset($assigned[$target->name]) || isset($arrays[$target->name])
-                || in_array($target->name, self::AMBIENT_VARIABLES, true)) {
+                || in_array($target->name, ScriptExpressionProof::AMBIENT_VARIABLES, true)) {
                 return false;
             }
             $targets[] = $target->name;
@@ -300,7 +315,7 @@ final readonly class ScalarScriptProof
     private function checkEcho(Stmt\Echo_ $echo, array $assigned, array $arrays, array &$reads, int &$steps): bool
     {
         foreach ($echo->exprs as $expression) {
-            if ($this->resolveExpression($expression, $assigned, $arrays, $reads, $steps, 32) === null) {
+            if (ScriptExpressionProof::resolve($expression, $assigned, $arrays, $reads, $steps, 32) === null) {
                 return false;
             }
         }
@@ -320,7 +335,7 @@ final readonly class ScalarScriptProof
             if ($item->byRef || $item->unpack) {
                 return null;
             }
-            $value = $this->resolveLiteral($item->value);
+            $value = ScriptExpressionProof::resolveLiteral($item->value);
             if ($value === null || $type->valueType->canonical !== get_debug_type($value)) {
                 return null;
             }
@@ -350,75 +365,4 @@ final readonly class ScalarScriptProof
         return $values;
     }
 
-    /**
-     * @param Locals $assigned
-     * @param Collections $arrays
-     * @param array<string, true> $reads
-     */
-    private function resolveExpression(
-        Expr $expression,
-        array $assigned,
-        array $arrays,
-        array &$reads,
-        int &$steps,
-        int $depth,
-    ): bool|float|int|string|UntrackedString|null {
-        if ($depth === 0 || --$steps < 0) {
-            return null;
-        }
-        if ($expression instanceof Expr\Variable && is_string($expression->name) && isset($assigned[$expression->name])) {
-            $reads[$expression->name] = true;
-            return $assigned[$expression->name];
-        }
-        if ($expression instanceof Expr\ArrayDimFetch && $expression->var instanceof Expr\Variable
-            && is_string($expression->var->name) && $expression->dim !== null && isset($arrays[$expression->var->name])) {
-            $key = $this->resolveExpression($expression->dim, $assigned, $arrays, $reads, $steps, $depth - 1);
-
-            return is_int($key) || is_string($key) ? ($arrays[$expression->var->name][$key] ?? null) : null;
-        }
-        if (!$expression instanceof Expr\BinaryOp) {
-            return $this->resolveLiteral($expression);
-        }
-
-        $left = $this->resolveExpression($expression->left, $assigned, $arrays, $reads, $steps, $depth - 1);
-        $right = $this->resolveExpression($expression->right, $assigned, $arrays, $reads, $steps, $depth - 1);
-        if ($expression instanceof Expr\BinaryOp\Concat) {
-            // Do not materialize strings that could grow exponentially. The
-            // result still has a known type but cannot prove an exact key.
-            return (is_string($left) || is_int($left) || $left instanceof UntrackedString)
-                && (is_string($right) || is_int($right) || $right instanceof UntrackedString)
-                ? UntrackedString::Value : null;
-        }
-        if (!is_int($left) || !is_int($right)) {
-            return null;
-        }
-
-        $result = match (true) {
-            $expression instanceof Expr\BinaryOp\Plus => $left + $right,
-            $expression instanceof Expr\BinaryOp\Minus => $left - $right,
-            $expression instanceof Expr\BinaryOp\Mul => $left * $right,
-            default => null,
-        };
-
-        // PHP promotes an overflowing integer operation to a float.
-        return is_int($result) ? $result : null;
-    }
-
-    private function resolveType(bool|float|int|string|UntrackedString $value): string
-    {
-        return $value instanceof UntrackedString ? 'string' : get_debug_type($value);
-    }
-
-    private function resolveLiteral(Expr $expression): bool|float|int|string|null
-    {
-        return match (true) {
-            $expression instanceof Scalar\String_ => $expression->value,
-            $expression instanceof Scalar\Int_ => $expression->value,
-            $expression instanceof Scalar\Float_ && is_finite($expression->value) => $expression->value,
-            $expression instanceof Expr\ConstFetch && $expression->name->isUnqualified()
-                && in_array(strtolower($expression->name->toString()), ['true', 'false'], true) =>
-                    strtolower($expression->name->toString()) === 'true',
-            default => null,
-        };
-    }
 }
