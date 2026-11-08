@@ -36,6 +36,7 @@ final readonly class WorkflowRequestPump
         ?string $signatureCacheIdentity = null,
         ?string $verifiedAnalyzerIdentity = null,
         bool $preparePlatform = false,
+        bool $prepareInstallation = false,
     ): void {
         if ($verifiedAnalyzerIdentity !== null && (!$immutableCompiler || PHP_SAPI !== 'wasm' || $this->protocol !== null)) {
             throw new \InvalidArgumentException('An analyzer fingerprint requires the trusted immutable Wasm compiler.');
@@ -48,9 +49,6 @@ final readonly class WorkflowRequestPump
             $cache = new BrowserPhpSignatureCache($signatureCacheIdentity);
         }
         $signatures = $cache === null ? null : new PhpSignaturePackageLoader(browserCache: $cache);
-        if ($preparePlatform && $signatures === null) {
-            throw new \InvalidArgumentException('Platform preparation requires a verified signature cache identity.');
-        }
         $semanticAnalyzer = new SemanticAnalyzer(
             declareSymbols: new DeclareSymbolsPass(reusePlatformDeclarations: $preparePlatform),
             resolveNames: new ResolveNamesPass(reusePlatformNames: $preparePlatform),
@@ -70,8 +68,14 @@ final readonly class WorkflowRequestPump
         );
         $progress = new WorkflowProgress();
         $deadline = hrtime(true) + 360_000_000_000;
-        if ($preparePlatform) {
-            (new WorkflowPlatformPreparation())->prepare($signatures, $protocol, $semanticAnalyzer);
+        if ($preparePlatform || $prepareInstallation) {
+            if ($signatures === null) {
+                throw new \InvalidArgumentException('Compiler preparation requires a verified signature cache identity.');
+            }
+            (new WorkflowInstallationPreparation())->prepare($signatures, $protocol);
+            if ($preparePlatform) {
+                (new WorkflowPlatformPreparation())->prepare($signatures, $semanticAnalyzer);
+            }
             $this->writeResponse($output, ['prepared' => true]);
         }
 
