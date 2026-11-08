@@ -5,7 +5,12 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Analysis\Experimental;
 
 use Atatusoft\Ppphp\Analysis\CompilerProjectAnalysis;
+use Atatusoft\Ppphp\Analysis\Declaration\DeclarationReferenceCollector;
 use Atatusoft\Ppphp\Analysis\Enumerations\AnalysisCompleteness;
+use Atatusoft\Ppphp\Frontend\ParsedFile;
+use Atatusoft\Ppphp\Project\Project;
+use Atatusoft\Ppphp\Project\ProjectParseResult;
+use Atatusoft\Ppphp\Project\SourceSet;
 use Atatusoft\Ppphp\Project\ProjectCheckResult;
 use Atatusoft\Ppphp\Semantic\Binding\Enumerations\BindingMutability;
 use Atatusoft\Ppphp\Semantic\Type\TypedArrayType;
@@ -37,21 +42,47 @@ final readonly class ScalarScriptProof
         );
     }
 
-    private function qualifies(CompilerProjectAnalysis $analysis): bool
+    public function canAnalyzeLocally(Project $project, SourceSet $selected, ProjectParseResult $parsed): bool
     {
-        $project = $analysis->project;
-        if (!$analysis->isSuccessful || $analysis->uncoveredRequiredCapabilities !== []
-            || count($project->sources) !== 1 || count($analysis->selectedSources->ppphpFiles) !== 1
-            || $project->configuration->targetPhpVersion !== '8.4'
-            || count($project->stubs) !== 0 || $project->composer->dependencies !== []) {
+        $file = $this->findCandidate($project, $selected, $parsed);
+        if ($file === null) {
             return false;
         }
 
-        $source = $analysis->selectedSources->ppphpFiles->files[0];
-        $parsed = $analysis->parseResult->findParsedFile($source->path);
-        $model = $analysis->semanticResult?->findModel($source->path);
-        if ($parsed === null || $model === null || strlen($parsed->sourceFile->contents) > 16_384
-            || count($parsed->statements) > 64) {
+        foreach ($file->statements as $statement) {
+            if (!$statement instanceof Stmt\Nop && !$statement instanceof Stmt\Echo_
+                && (!$statement instanceof Stmt\Expression || !$statement->expr instanceof Expr\Assign)) {
+                return false;
+            }
+        }
+
+        $references = (new DeclarationReferenceCollector())->collect([$file]);
+
+        return $references['classes'] === [] && $references['functions'] === [] && $references['constants'] === [];
+    }
+
+    private function findCandidate(Project $project, SourceSet $selected, ProjectParseResult $result): ?ParsedFile
+    {
+        if (!$result->isSuccessful || count($project->sources) !== 1 || count($selected->ppphpFiles) !== 1
+            || $project->configuration->targetPhpVersion !== '8.4'
+            || count($project->stubs) !== 0 || $project->composer->dependencies !== []) {
+            return null;
+        }
+
+        $file = $result->findParsedFile($selected->ppphpFiles->files[0]->path);
+
+        return $file !== null && strlen($file->sourceFile->contents) <= 16_384 && count($file->statements) <= 64 ? $file : null;
+    }
+
+    private function qualifies(CompilerProjectAnalysis $analysis): bool
+    {
+        if (!$analysis->isSuccessful || $analysis->uncoveredRequiredCapabilities !== []) {
+            return false;
+        }
+
+        $parsed = $this->findCandidate($analysis->project, $analysis->selectedSources, $analysis->parseResult);
+        $model = $parsed === null ? null : $analysis->semanticResult?->findModel($parsed->sourceFile->path);
+        if ($parsed === null || $model === null) {
             return false;
         }
 

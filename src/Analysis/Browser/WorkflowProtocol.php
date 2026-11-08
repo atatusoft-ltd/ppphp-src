@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Analysis\Browser;
 
 use Atatusoft\Ppphp\Analysis\AnalysisResult;
-use Atatusoft\Ppphp\Analysis\Experimental\ScalarScriptProof;
 use Atatusoft\Ppphp\Analysis\AnalysisProject;
 use Atatusoft\Ppphp\Analysis\AnalysisWorkspacePreparer;
 use Atatusoft\Ppphp\Analysis\PhpStan\PhpStanProcessResult;
@@ -147,10 +146,11 @@ final readonly class WorkflowProtocol
             $preparation = $progress?->preparation;
             $scalarCheck = $progress?->scalarCheck;
             if ($this->immutableCompiler && $progress !== null && $request->action === 'start') {
-                $core = $this->checker->analyzeProject($project, $selection->selection->analysisSources);
-                $scalarCheck = (new ScalarScriptProof())->check($core);
-                if ($scalarCheck === null) {
-                    $preparation = $this->checker->prepareCompilerAnalysis($core);
+                $analysis = $this->checker->analyzeWithLocalProof($project, $selection->selection->analysisSources);
+                if ($analysis instanceof ProjectCheckResult) {
+                    $scalarCheck = $analysis;
+                } else {
+                    $preparation = $this->checker->prepareCompilerAnalysis($analysis);
                 }
             }
             if ($scalarCheck !== null && $progress !== null) {

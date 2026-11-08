@@ -62,6 +62,25 @@ final class PhpSignaturePackageLoader
             ?? throw new \LogicException('Platform verification must complete before it can be retained.');
     }
 
+    public function verifyPackage(string $target): PhpSignaturePackageVerification
+    {
+        $verification = $this->verifiedPackages[$target] ?? null;
+        if ($verification !== null && ($verification === $this->immutableVerification || $verification->matches($this->packagePath($target)))) {
+            return $verification;
+        }
+
+        unset(
+            $this->verifiedPackages[$target],
+            $this->parsedModules[$target],
+            $this->phpDocIndexes[$target],
+            $this->syntaxIndexes[$target],
+            $this->symbolIndexes[$target],
+            $this->moduleGraphs[$target],
+        );
+
+        return $this->verifiedPackages[$target] = $this->verifier->verifyInstalledPackage($this->packagePath($target), $target);
+    }
+
     /** @param iterable<ParsedFile> $projectFiles */
     public function load(string $target, iterable $projectFiles): ProjectParseResult
     {
@@ -69,17 +88,8 @@ final class PhpSignaturePackageLoader
         $package = $this->packagePath($target);
 
         try {
-            $verification = $this->verifiedPackages[$target] ?? null;
-            if ($verification === null || ($verification !== $this->immutableVerification && !$verification->matches($package))) {
-                unset(
-                    $this->verifiedPackages[$target],
-                    $this->parsedModules[$target],
-                    $this->phpDocIndexes[$target],
-                    $this->syntaxIndexes[$target],
-                    $this->symbolIndexes[$target],
-                    $this->moduleGraphs[$target],
-                );
-                $verification = $this->verifier->verifyInstalledPackage($package, $target);
+            $verification = $this->verifyPackage($target);
+            if (!isset($this->symbolIndexes[$target])) {
                 $phpDoc = $verification->readOptionalOutput($package, PhpSignaturePhpDocIndex::PATH);
                 $index = $phpDoc === null ? null : PhpSignaturePhpDocIndex::decode($phpDoc, $target);
                 if ($index !== null) {
@@ -94,7 +104,7 @@ final class PhpSignaturePackageLoader
                 }
                 $symbols = $verification->readOptionalOutput($package, 'symbols.json')
                     ?? throw new \RuntimeException('The PHP signature symbol index is unavailable.');
-                $this->symbolIndexes[$target] = $this->decodeObject($symbols, 'symbols.json');
+                $symbolIndex = $this->decodeObject($symbols, 'symbols.json');
                 $this->moduleGraphs[$target] = null;
                 $graphBytes = $verification->readOptionalOutput($package, PhpSignatureModuleReferences::PATH);
                 if ($graphBytes !== null) {
@@ -104,7 +114,7 @@ final class PhpSignaturePackageLoader
                     }
                     $this->moduleGraphs[$target] = $index['modules'];
                 }
-                $this->verifiedPackages[$target] = $verification;
+                $this->symbolIndexes[$target] = $symbolIndex;
             }
             $this->browserCache?->useVerifiedPackage($target, $verification->identity);
             $symbols = $this->symbolIndexes[$target];

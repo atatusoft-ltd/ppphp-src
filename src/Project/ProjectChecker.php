@@ -119,12 +119,12 @@ final readonly class ProjectChecker
 
     public function prepare(Project $project, SourceSet $selectedSources): SupplementalAnalysisPreparation
     {
-        return $this->prepareCompilerAnalysis($this->analyzeProject($project, $selectedSources));
+        return $this->prepareCompilerAnalysis($this->compilerAnalyzer->analyze($project, $selectedSources));
     }
 
-    public function analyzeProject(Project $project, SourceSet $selectedSources): CompilerProjectAnalysis
+    public function analyzeWithLocalProof(Project $project, SourceSet $selectedSources): ProjectCheckResult|CompilerProjectAnalysis
     {
-        return $this->compilerAnalyzer->analyze($project, $selectedSources);
+        return $this->compilerAnalyzer->analyzeWithLocalProof($project, $selectedSources);
     }
 
     public function prepareCompilerAnalysis(CompilerProjectAnalysis $compilerAnalysis): SupplementalAnalysisPreparation
