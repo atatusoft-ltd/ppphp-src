@@ -7,6 +7,7 @@ namespace Atatusoft\Ppphp\Analysis\Experimental;
 use Atatusoft\Ppphp\Analysis\CompilerProjectAnalysis;
 use Atatusoft\Ppphp\Analysis\Enumerations\AnalysisCompleteness;
 use Atatusoft\Ppphp\Project\ProjectCheckResult;
+use Atatusoft\Ppphp\Semantic\Binding\Enumerations\BindingMutability;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Scalar;
 use PhpParser\Node\Stmt;
@@ -54,7 +55,7 @@ final readonly class ScalarScriptProof
         }
 
         foreach (\PhpToken::tokenize($parsed->normalizedSource->contents) as $token) {
-            if (in_array($token->id, [T_COMMENT, T_DOC_COMMENT], true)) {
+            if ($token->id === T_DOC_COMMENT || ($token->id === T_COMMENT && str_contains($token->text, '@'))) {
                 return false;
             }
         }
@@ -74,7 +75,7 @@ final readonly class ScalarScriptProof
         foreach ($parsed->statements as $statement) {
             if ($statement instanceof Stmt\Echo_) {
                 foreach ($statement->exprs as $expression) {
-                    if ($this->resolveEchoType($expression, $assigned, $reads, 32) === null) {
+                    if ($this->resolveExpression($expression, $assigned, $reads, 32) === null) {
                         return false;
                     }
                 }
@@ -94,22 +95,37 @@ final readonly class ScalarScriptProof
                 return false;
             }
             $binding = $declarations['$' . $name] ?? null;
-            $literal = $this->resolveLiteralType($assignment->expr);
-            if (isset($assigned[$name]) || $binding === null || $literal === null
-                || $binding->initializerExpression !== $assignment->expr || $binding->type->semanticType->canonical !== $literal) {
+            if ($binding === null) {
                 return false;
             }
-            $assigned[$name] = $literal;
+
+            if (isset($assigned[$name])) {
+                if ($binding->mutability !== BindingMutability::Mutable) {
+                    return false;
+                }
+                $value = $this->resolveExpression($assignment->expr, $assigned, $reads, 32);
+            } else {
+                // Initializers also determine the generated @var annotation.
+                // Only the already verified exact literal cases are admitted.
+                if ($binding->initializerExpression !== $assignment->expr) {
+                    return false;
+                }
+                $value = $this->resolveLiteral($assignment->expr);
+            }
+            if ($value === null || $binding->type->semanticType->canonical !== get_debug_type($value)) {
+                return false;
+            }
+            $assigned[$name] = $value;
         }
 
         return $printed && count($assigned) === count($declarations) && count($reads) === count($assigned);
     }
 
     /**
-     * @param array<string, string> $assigned
+     * @param array<string, bool|float|int|string> $assigned
      * @param array<string, true> $reads
      */
-    private function resolveEchoType(Expr $expression, array $assigned, array &$reads, int $depth): ?string
+    private function resolveExpression(Expr $expression, array $assigned, array &$reads, int $depth): bool|float|int|string|null
     {
         if ($depth === 0) {
             return null;
@@ -118,21 +134,41 @@ final readonly class ScalarScriptProof
             $reads[$expression->name] = true;
             return $assigned[$expression->name];
         }
-        if ($expression instanceof Expr\BinaryOp\Concat) {
-            return $this->resolveEchoType($expression->left, $assigned, $reads, $depth - 1) === 'string'
-                && $this->resolveEchoType($expression->right, $assigned, $reads, $depth - 1) === 'string' ? 'string' : null;
+        if (!$expression instanceof Expr\BinaryOp) {
+            return $this->resolveLiteral($expression);
         }
-        return $this->resolveLiteralType($expression);
+
+        $left = $this->resolveExpression($expression->left, $assigned, $reads, $depth - 1);
+        $right = $this->resolveExpression($expression->right, $assigned, $reads, $depth - 1);
+        if ($expression instanceof Expr\BinaryOp\Concat) {
+            // String contents are irrelevant to the proof and can grow
+            // exponentially with reassignment. Retain their type only.
+            return is_string($left) && is_string($right) ? '' : null;
+        }
+        if (!is_int($left) || !is_int($right)) {
+            return null;
+        }
+
+        $result = match (true) {
+            $expression instanceof Expr\BinaryOp\Plus => $left + $right,
+            $expression instanceof Expr\BinaryOp\Minus => $left - $right,
+            $expression instanceof Expr\BinaryOp\Mul => $left * $right,
+            default => null,
+        };
+
+        // PHP promotes an overflowing integer operation to a float.
+        return is_int($result) ? $result : null;
     }
 
-    private function resolveLiteralType(Expr $expression): ?string
+    private function resolveLiteral(Expr $expression): bool|float|int|string|null
     {
         return match (true) {
-            $expression instanceof Scalar\String_ => 'string',
-            $expression instanceof Scalar\Int_ => 'int',
-            $expression instanceof Scalar\Float_ && is_finite($expression->value) => 'float',
+            $expression instanceof Scalar\String_ => '',
+            $expression instanceof Scalar\Int_ => $expression->value,
+            $expression instanceof Scalar\Float_ && is_finite($expression->value) => $expression->value,
             $expression instanceof Expr\ConstFetch && $expression->name->isUnqualified()
-                && in_array(strtolower($expression->name->toString()), ['true', 'false'], true) => 'bool',
+                && in_array(strtolower($expression->name->toString()), ['true', 'false'], true) =>
+                    strtolower($expression->name->toString()) === 'true',
             default => null,
         };
     }
