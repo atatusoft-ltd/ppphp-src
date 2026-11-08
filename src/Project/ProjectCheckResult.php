@@ -35,7 +35,7 @@ final class ProjectCheckResult
 
     public bool $isSuccessful {
         get => $this->compilerEvidence
-            && $this->supplementalEvidence
+            && ($this->supplementalEvidence || $this->completeness === AnalysisCompleteness::ExperimentalScalarProof)
             && !$this->diagnostics->hasErrors;
     }
 }

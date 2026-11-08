@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Atatusoft\Ppphp\Analysis\Browser;
 
 use Atatusoft\Ppphp\Analysis\AnalysisResult;
+use Atatusoft\Ppphp\Analysis\Experimental\ScalarScriptProof;
 use Atatusoft\Ppphp\Analysis\AnalysisProject;
 use Atatusoft\Ppphp\Analysis\AnalysisWorkspacePreparer;
 use Atatusoft\Ppphp\Analysis\PhpStan\PhpStanProcessResult;
@@ -50,7 +51,7 @@ final readonly class WorkflowProtocol
         private BrowserDiagnosticRenderer $renderer = new BrowserDiagnosticRenderer(),
         ?CompilerCache $cache = null,
         private bool $embeddedCompiler = false,
-        bool $immutableCompiler = false,
+        private bool $immutableCompiler = false,
         ?string $verifiedAnalyzerIdentity = null,
     ) {
         if ($immutableCompiler && (!$embeddedCompiler || PHP_SAPI !== 'wasm')) {
@@ -143,7 +144,28 @@ final readonly class WorkflowProtocol
                 $this->validateFreshness($session, $project);
                 return $this->finishDiagnostics($control, $project, $session, $selection->diagnostics, 2);
             }
-            $preparation = $progress->preparation ?? $this->checker->prepare($project, $selection->selection->analysisSources);
+            $preparation = $progress?->preparation;
+            $scalarCheck = $progress?->scalarCheck;
+            if ($this->immutableCompiler && $progress !== null && $request->action === 'start') {
+                $core = $this->checker->analyzeProject($project, $selection->selection->analysisSources);
+                $scalarCheck = (new ScalarScriptProof())->check($core);
+                if ($scalarCheck === null) {
+                    $preparation = $this->checker->prepareCompilerAnalysis($core);
+                }
+            }
+            if ($scalarCheck !== null && $progress !== null) {
+                if ($session->start->operation === 'check') {
+                    $this->validateFreshness($session, $project);
+                    return $this->finishDiagnostics($control, $project, $session, $scalarCheck->diagnostics, 0);
+                }
+                $response = $this->build($request, $session, $project, $selection->selection, $scalarCheck, $control, $progress);
+                if ($response['status'] === 'pending-validation') {
+                    $progress->retainScalarCheck($session, $scalarCheck);
+                    $retainProgress = true;
+                }
+                return $response;
+            }
+            $preparation ??= $this->checker->prepare($project, $selection->selection->analysisSources);
             if (!$preparation->isSuccessful || $preparation->analysisProject === null) {
                 $this->validateFreshness($session, $project);
                 return $this->finishDiagnostics($control, $project, $session, $preparation->diagnostics, 1);

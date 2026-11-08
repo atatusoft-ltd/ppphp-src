@@ -6,6 +6,7 @@ namespace Atatusoft\Ppphp\Analysis\Browser;
 
 use Atatusoft\Ppphp\Cache\ProjectInputSnapshot;
 use Atatusoft\Ppphp\Compiler\ProductionPreparation;
+use Atatusoft\Ppphp\Project\ProjectCheckResult;
 use Atatusoft\Ppphp\Project\SupplementalAnalysisPreparation;
 use Atatusoft\Ppphp\Project\SupplementalAnalysisRun;
 
@@ -16,6 +17,7 @@ final class WorkflowProgress
     public private(set) ?SupplementalAnalysisPreparation $preparation = null;
     public private(set) ?SupplementalAnalysisRun $analysis = null;
     public private(set) ?ProductionPreparation $production = null;
+    public private(set) ?ProjectCheckResult $scalarCheck = null;
     public private(set) ?ProjectInputSnapshot $cacheSnapshot = null;
 
     public function retain(WorkflowSession $session, SupplementalAnalysisPreparation $preparation, ?SupplementalAnalysisRun $analysis): void
@@ -23,6 +25,12 @@ final class WorkflowProgress
         $this->continuation = $session->continuation;
         $this->preparation = $preparation;
         $this->analysis = $analysis;
+    }
+
+    public function retainScalarCheck(WorkflowSession $session, ProjectCheckResult $check): void
+    {
+        $this->continuation = $session->continuation;
+        $this->scalarCheck = $check;
     }
 
     public function retainProduction(ProductionPreparation $production, ?ProjectInputSnapshot $cacheSnapshot): void
@@ -37,6 +45,7 @@ final class WorkflowProgress
         $this->preparation = null;
         $this->analysis = null;
         $this->production = null;
+        $this->scalarCheck = null;
         $this->cacheSnapshot = null;
     }
 }
