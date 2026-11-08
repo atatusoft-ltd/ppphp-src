@@ -287,6 +287,7 @@ test('an authenticated class document leaves complete module loading and integri
 
     $exception = $loader->loadClassDocument('8.4', 'Exception');
     expect($exception?->parsedFiles)->toHaveCount(1)
+        ->and($loader->loadClassDocument('8.4', 'Exception')?->parsedFiles)->toBe($exception->parsedFiles)
         ->and($loader->loadClassDocument('8.4', 'exception'))->toBeNull()
         ->and($loader->loadClassDocument('8.4', 'MissingProofClass'))->toBeNull();
 
@@ -301,5 +302,7 @@ test('an authenticated class document leaves complete module loading and integri
     expect(fn () => $loader->loadClassDocument('8.4', 'Exception'))->toThrow(RuntimeException::class);
 
     $this->writeFile($unrelatedShard, $contents);
-    expect($loader->loadClassDocument('8.4', 'Exception')?->parsedFiles)->toEqual($exception->parsedFiles);
+    expect($loader->loadClassDocument('8.4', 'Exception')?->parsedFiles)
+        ->toEqual($exception->parsedFiles)
+        ->not->toBe($exception->parsedFiles);
 });

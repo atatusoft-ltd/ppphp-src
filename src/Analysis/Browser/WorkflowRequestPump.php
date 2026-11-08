@@ -49,9 +49,10 @@ final readonly class WorkflowRequestPump
             $cache = new BrowserPhpSignatureCache($signatureCacheIdentity);
         }
         $signatures = $cache === null ? null : new PhpSignaturePackageLoader(browserCache: $cache);
+        $prepare = $preparePlatform || $prepareInstallation;
         $semanticAnalyzer = new SemanticAnalyzer(
-            declareSymbols: new DeclareSymbolsPass(reusePlatformDeclarations: $preparePlatform),
-            resolveNames: new ResolveNamesPass(reusePlatformNames: $preparePlatform),
+            declareSymbols: new DeclareSymbolsPass(reusePlatformDeclarations: $prepare),
+            resolveNames: new ResolveNamesPass(reusePlatformNames: $prepare),
         );
         $protocol = $this->protocol ?? new WorkflowProtocol(
             checker: $signatures === null ? new ProjectChecker() : new ProjectChecker(
@@ -68,13 +69,16 @@ final readonly class WorkflowRequestPump
         );
         $progress = new WorkflowProgress();
         $deadline = hrtime(true) + 360_000_000_000;
-        if ($preparePlatform || $prepareInstallation) {
+        if ($prepare) {
             if ($signatures === null) {
                 throw new \InvalidArgumentException('Compiler preparation requires a verified signature cache identity.');
             }
             (new WorkflowInstallationPreparation())->prepare($signatures, $protocol);
+            $platformPreparation = new WorkflowPlatformPreparation();
             if ($preparePlatform) {
-                (new WorkflowPlatformPreparation())->prepare($signatures, $semanticAnalyzer);
+                $platformPreparation->prepare($signatures, $semanticAnalyzer);
+            } else {
+                $platformPreparation->prepareProofDeclarations($signatures, $semanticAnalyzer);
             }
             $this->writeResponse($output, ['prepared' => true]);
         }

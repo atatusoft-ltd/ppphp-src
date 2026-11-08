@@ -6,7 +6,6 @@ namespace Atatusoft\Ppphp\Analysis;
 
 use Atatusoft\Ppphp\Analysis\Capability\AnalysisCapabilityCatalog;
 use Atatusoft\Ppphp\Analysis\Enumerations\AnalysisCompleteness;
-use Atatusoft\Ppphp\Analysis\Experimental\Enumerations\ScriptPlatformScope;
 use Atatusoft\Ppphp\Analysis\Experimental\ScalarScriptProof;
 use Atatusoft\Ppphp\Diagnostics\DiagnosticProcessor;
 use Atatusoft\Ppphp\Interop\Composer\Declaration\DependencyDeclarationProvider;
@@ -52,10 +51,10 @@ final readonly class CompilerProjectAnalyzer
         $proof = new ScalarScriptProof();
         $scope = $proof->selectPlatformScope($project, $selectedSources, $parseResult);
         if ($scope !== null) {
-            $context = match ($scope) {
-                ScriptPlatformScope::Empty => $this->emptyContext(),
-                ScriptPlatformScope::CheckedErrors => $this->declarationCollector->selectPlatformDocument($project, 'Exception'),
-            };
+            $requiredClass = $scope->selectPlatformClass();
+            $context = $requiredClass === null
+                ? $this->emptyContext()
+                : $this->declarationCollector->selectPlatformDocument($project, $requiredClass);
             if ($context !== null) {
                 $local = $this->analyzeSemantics($project, $selectedSources, $parseResult, $context);
                 $check = $proof->check($local);

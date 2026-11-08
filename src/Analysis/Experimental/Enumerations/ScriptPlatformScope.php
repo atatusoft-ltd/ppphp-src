@@ -8,4 +8,12 @@ enum ScriptPlatformScope
 {
     case Empty;
     case CheckedErrors;
+
+    public function selectPlatformClass(): ?string
+    {
+        return match ($this) {
+            self::Empty => null,
+            self::CheckedErrors => 'Exception',
+        };
+    }
 }

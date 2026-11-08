@@ -34,6 +34,9 @@ final class PhpSignaturePackageLoader
     /** @var array<string, array<array-key, mixed>|null> */
     private array $moduleGraphs = [];
 
+    /** @var array<string, array<string, ParsedFile>> */
+    private array $parsedProofDocuments = [];
+
     /**
      * @var array<string, array<string, array{
      *     parsedFiles: array<string, ParsedFile>,
@@ -72,6 +75,7 @@ final class PhpSignaturePackageLoader
         unset(
             $this->verifiedPackages[$target],
             $this->parsedModules[$target],
+            $this->parsedProofDocuments[$target],
             $this->phpDocIndexes[$target],
             $this->syntaxIndexes[$target],
             $this->symbolIndexes[$target],
@@ -142,10 +146,16 @@ final class PhpSignaturePackageLoader
         $document = $entry['document'];
         $key = Path::buildComparisonKey(PhpSignatureModuleReferences::createSource($package, $target, $document, '')->path);
         $parsed = $this->parsedModules[$target][$module]['parsedFiles'][$key]
+            ?? $this->parsedProofDocuments[$target][$key]
             ?? $this->parseModule($package, $target, $module, false, $verification, $document)['parsedFiles'][$key]
             ?? null;
+        if ($parsed === null) {
+            return null;
+        }
 
-        return $parsed === null ? null : new ProjectParseResult([$key => $parsed], [$key => $parsed->sourceFile], new DiagnosticBag());
+        $this->parsedProofDocuments[$target][$key] = $parsed;
+
+        return new ProjectParseResult([$key => $parsed], [$key => $parsed->sourceFile], new DiagnosticBag());
     }
 
     /** @param iterable<ParsedFile> $projectFiles */
