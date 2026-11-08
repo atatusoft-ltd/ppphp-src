@@ -21,5 +21,6 @@ final class WorkflowPlatformPreparation
 
         $semanticAnalyzer->preparePlatformDeclarations($result);
         $protocol->prepareInstallationIdentity();
+        $signatures->retainImmutableVerification(PhpTarget::DEFAULT);
     }
 }

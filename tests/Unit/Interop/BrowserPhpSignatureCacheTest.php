@@ -103,3 +103,12 @@ test('a platform fingerprint rejects a different valid cache entry with the same
     expect($open()->restore($key))->toEqual($substitute)
         ->and($open()->restore($key, $digest))->toBeNull();
 });
+
+test('native loaders cannot retain immutable platform verification', function (): void {
+    $cache = new BrowserPhpSignatureCache('sha256:' . str_repeat('a', 64), $this->createTemporaryDirectory() . '/platform.cache');
+    $loader = new PhpSignaturePackageLoader(browserCache: $cache);
+
+    expect($loader->load('8.4', [])->isSuccessful)->toBeTrue();
+    expect(fn () => $loader->retainImmutableVerification('8.4'))
+        ->toThrow(LogicException::class, 'Retaining platform verification requires the immutable Wasm compiler installation.');
+});

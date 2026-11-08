@@ -20,6 +20,8 @@ final class PhpSignaturePackageLoader
 {
     /** @var array<string, PhpSignaturePackageVerification> */
     private array $verifiedPackages = [];
+
+    private ?PhpSignaturePackageVerification $immutableVerification = null;
     /** @var array<string, PhpSignaturePhpDocIndex> */
     private array $phpDocIndexes = [];
 
@@ -49,6 +51,17 @@ final class PhpSignaturePackageLoader
         private readonly ?BrowserPhpSignatureCache $browserCache = null,
     ) {}
 
+    /** Retains the result of the full initial check on the browser's read-only compiler mount. */
+    public function retainImmutableVerification(string $target): void
+    {
+        if (PHP_SAPI !== 'wasm' || $this->browserCache === null || $this->resourceRoot !== null) {
+            throw new \LogicException('Retaining platform verification requires the immutable Wasm compiler installation.');
+        }
+
+        $this->immutableVerification = $this->verifiedPackages[$target]
+            ?? throw new \LogicException('Platform verification must complete before it can be retained.');
+    }
+
     /** @param iterable<ParsedFile> $projectFiles */
     public function load(string $target, iterable $projectFiles): ProjectParseResult
     {
@@ -57,7 +70,7 @@ final class PhpSignaturePackageLoader
 
         try {
             $verification = $this->verifiedPackages[$target] ?? null;
-            if ($verification === null || !$verification->matches($package)) {
+            if ($verification === null || ($verification !== $this->immutableVerification && !$verification->matches($package))) {
                 unset(
                     $this->verifiedPackages[$target],
                     $this->parsedModules[$target],
@@ -109,7 +122,7 @@ final class PhpSignaturePackageLoader
                 foreach ($pending as $module) {
                     $loadedModules[$module] = true;
                     $parsedModule = $this->parsedModules[$target][$module]
-                        ??= $this->parseModule($package, $target, $module, $graph === null);
+                        ??= $this->parseModule($package, $target, $module, $graph === null, $verification);
                     $parsedFiles = array_replace($parsedFiles, $parsedModule['parsedFiles']);
                     $sourceFiles = array_replace($sourceFiles, $parsedModule['sourceFiles']);
                     if ($graph === null) {
@@ -148,9 +161,17 @@ final class PhpSignaturePackageLoader
     /**
      * @return array{parsedFiles: array<string, ParsedFile>, sourceFiles: array<string, SourceFile>, references: array{classes: list<string>, functions: list<string>, constants: list<string>}}
      */
-    private function parseModule(string $package, string $target, string $module, bool $collectReferences): array
-    {
-        $shard = $this->json($package . '/extensions/' . $module . '.json');
+    private function parseModule(
+        string $package,
+        string $target,
+        string $module,
+        bool $collectReferences,
+        PhpSignaturePackageVerification $verification,
+    ): array {
+        $path = 'extensions/' . $module . '.json';
+        $bytes = $verification->readOptionalOutput($package, $path)
+            ?? throw new \RuntimeException(sprintf('Required PHP signature resource "%s" is unavailable.', $path));
+        $shard = $this->decodeObject($bytes, $path);
         $documents = $shard['documents'] ?? null;
 
         if (!is_array($documents) || !array_is_list($documents)) {
@@ -202,18 +223,6 @@ final class PhpSignaturePackageLoader
         $root = $this->resourceRoot ?? dirname(__DIR__, 4) . '/resources/php-signatures';
 
         return rtrim(str_replace('\\', '/', $root), '/') . '/' . $target;
-    }
-
-    /** @return array<string, mixed> */
-    private function json(string $path): array
-    {
-        $contents = file_get_contents($path);
-
-        if (!is_string($contents)) {
-            throw new \RuntimeException(sprintf('Required PHP signature resource "%s" is unavailable.', basename($path)));
-        }
-
-        return $this->decodeObject($contents, basename($path));
     }
 
     /** @return array<string, mixed> */
