@@ -54,7 +54,7 @@ final readonly class ScalarScriptProof
         }
 
         foreach (\PhpToken::tokenize($parsed->normalizedSource->contents) as $token) {
-            if ($token->id === T_DOC_COMMENT) {
+            if (in_array($token->id, [T_COMMENT, T_DOC_COMMENT], true)) {
                 return false;
             }
         }
