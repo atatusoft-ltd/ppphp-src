@@ -30,7 +30,7 @@ final readonly class Compiler
 
     public const string COMPOSER_PACKAGE = 'atatusoft/ppphp';
 
-    public const string VERSION = '2026.3.1';
+    public const string VERSION = '2026.3.2';
 
     public const int LOWERING_FORMAT_VERSION = 1;
 

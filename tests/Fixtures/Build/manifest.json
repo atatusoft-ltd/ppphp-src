@@ -3,7 +3,7 @@
     "compiler": {
         "buildIdentity": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "name": "ppphp",
-        "version": "2026.3.1"
+        "version": "2026.3.2"
     },
     "loweringFormatVersion": 1,
     "targetPhpVersion": "8.4",

@@ -46,7 +46,7 @@
     "producer": {
         "buildIdentity": "sha256:afcd63a84103ae36ac1161e4787b70ded3d4b8c4f7cf764fc03f40a43d5d7916",
         "identity": "atatusoft-ltd/ppphp-src",
-        "version": "2026.3.1"
+        "version": "2026.3.2"
     },
     "targetPhpVersion": "8.4"
 }

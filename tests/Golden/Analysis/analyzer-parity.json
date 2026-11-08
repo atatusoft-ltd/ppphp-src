@@ -4,7 +4,7 @@
     "scenarioSchemaVersion": 3,
     "compiler": {
         "name": "ppphp",
-        "version": "2026.3.1",
+        "version": "2026.3.2",
         "loweringFormatVersion": 1
     },
     "scenarioCount": 72,
