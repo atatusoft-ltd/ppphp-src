@@ -7,18 +7,26 @@ namespace Atatusoft\Ppphp\Analysis\Experimental;
 use Atatusoft\Ppphp\Analysis\CompilerProjectAnalysis;
 use Atatusoft\Ppphp\Analysis\Declaration\DeclarationReferenceCollector;
 use Atatusoft\Ppphp\Analysis\Enumerations\AnalysisCompleteness;
+use Atatusoft\Ppphp\Analysis\Experimental\Enumerations\UntrackedString;
 use Atatusoft\Ppphp\Frontend\ParsedFile;
 use Atatusoft\Ppphp\Project\Project;
 use Atatusoft\Ppphp\Project\ProjectParseResult;
 use Atatusoft\Ppphp\Project\SourceSet;
 use Atatusoft\Ppphp\Project\ProjectCheckResult;
 use Atatusoft\Ppphp\Semantic\Binding\Enumerations\BindingMutability;
+use Atatusoft\Ppphp\Semantic\Binding\LocalBinding;
 use Atatusoft\Ppphp\Semantic\Type\TypedArrayType;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Scalar;
 use PhpParser\Node\Stmt;
 
-/** Local browser experiment for a closed subset of top-level scripts. */
+/**
+ * Local browser experiment for a closed subset of top-level scripts.
+ *
+ * @phpstan-type ScalarValue bool|float|int|string|UntrackedString
+ * @phpstan-type Locals array<string, ScalarValue>
+ * @phpstan-type Collections array<string, non-empty-array<int|string, ScalarValue>>
+ */
 final readonly class ScalarScriptProof
 {
     private const array AMBIENT_VARIABLES = [
@@ -50,7 +58,7 @@ final readonly class ScalarScriptProof
         }
 
         foreach ($file->statements as $statement) {
-            if (!$statement instanceof Stmt\Nop && !$statement instanceof Stmt\Echo_
+            if (!$statement instanceof Stmt\Nop && !$statement instanceof Stmt\Echo_ && !$statement instanceof Stmt\Foreach_
                 && (!$statement instanceof Stmt\Expression || !$statement->expr instanceof Expr\Assign)) {
                 return false;
             }
@@ -101,8 +109,18 @@ final readonly class ScalarScriptProof
             $declarations[$binding->name] = $binding;
         }
 
+        $loopBindings = [];
+        foreach ($parsed->extensionSyntax->typedForeachBindings as $declaration) {
+            $binding = $model->bindings->find($declaration->id);
+            if ($binding === null) {
+                return false;
+            }
+            $loopBindings[$declaration->variableSpan->start->offset] = $binding;
+        }
+
         $assigned = [];
         $arrays = [];
+        $steps = 8192;
         $reads = [];
         $printed = false;
         $appended = false;
@@ -111,10 +129,15 @@ final readonly class ScalarScriptProof
                 continue;
             }
             if ($statement instanceof Stmt\Echo_) {
-                foreach ($statement->exprs as $expression) {
-                    if ($this->resolveExpression($expression, $assigned, $reads, 32) === null) {
-                        return false;
-                    }
+                if (!$this->checkEcho($statement, $assigned, $arrays, $reads, $steps)) {
+                    return false;
+                }
+                $printed = true;
+                continue;
+            }
+            if ($statement instanceof Stmt\Foreach_) {
+                if (!$this->checkLoop($statement, $loopBindings, $assigned, $arrays, $reads, $steps)) {
+                    return false;
                 }
                 $printed = true;
                 continue;
@@ -144,17 +167,22 @@ final readonly class ScalarScriptProof
                     if (!isset($arrays[$name]) || !$type->isList || $binding->mutability !== BindingMutability::Mutable) {
                         return false;
                     }
-                    $value = $this->resolveExpression($assignment->expr, $assigned, $reads, 32);
-                    if ($value === null || $type->valueType->canonical !== get_debug_type($value)) {
+                    $value = $this->resolveExpression($assignment->expr, $assigned, $arrays, $reads, $steps, 32);
+                    if ($value === null || $type->valueType->canonical !== $this->resolveType($value)) {
                         return false;
                     }
+                    $arrays[$name][] = $value;
                     $appended = true;
                 } else {
                     if (isset($arrays[$name]) || $binding->initializerExpression !== $assignment->expr
-                        || !$assignment->expr instanceof Expr\Array_ || !$this->qualifiesArrayLiteral($assignment->expr, $type)) {
+                        || !$assignment->expr instanceof Expr\Array_) {
                         return false;
                     }
-                    $arrays[$name] = true;
+                    $values = $this->resolveArrayLiteral($assignment->expr, $type);
+                    if ($values === null) {
+                        return false;
+                    }
+                    $arrays[$name] = $values;
                 }
                 continue;
             }
@@ -166,7 +194,7 @@ final readonly class ScalarScriptProof
                 if ($binding->mutability !== BindingMutability::Mutable) {
                     return false;
                 }
-                $value = $this->resolveExpression($assignment->expr, $assigned, $reads, 32);
+                $value = $this->resolveExpression($assignment->expr, $assigned, $arrays, $reads, $steps, 32);
             } else {
                 // Initializers also determine the generated @var annotation.
                 // Only the already verified exact literal cases are admitted.
@@ -175,7 +203,7 @@ final readonly class ScalarScriptProof
                 }
                 $value = $this->resolveLiteral($assignment->expr);
             }
-            if ($value === null || $type->canonical !== get_debug_type($value)) {
+            if ($value === null || $type->canonical !== $this->resolveType($value)) {
                 return false;
             }
             $assigned[$name] = $value;
@@ -185,25 +213,106 @@ final readonly class ScalarScriptProof
             && count($reads) === count($assigned);
     }
 
-    private function qualifiesArrayLiteral(Expr\Array_ $literal, TypedArrayType $type): bool
+    /**
+     * @param array<int, LocalBinding> $bindings
+     * @param Locals $assigned
+     * @param Collections $arrays
+     * @param array<string, true> $reads
+     */
+    private function checkLoop(Stmt\Foreach_ $loop, array $bindings, array $assigned, array $arrays, array &$reads, int &$steps): bool
     {
-        if ($literal->items === [] || count($literal->items) > 256) {
+        if ($loop->byRef || !$loop->expr instanceof Expr\Variable || !is_string($loop->expr->name)
+            || !isset($arrays[$loop->expr->name])) {
             return false;
         }
 
-        $keys = [];
+        $targets = [];
+        foreach ([$loop->valueVar, ...($loop->keyVar === null ? [] : [$loop->keyVar])] as $target) {
+            $binding = $bindings[$target->getStartFilePos()] ?? null;
+            if (!$target instanceof Expr\Variable || !is_string($target->name) || $binding?->name !== '$' . $target->name
+                || isset($assigned[$target->name]) || isset($arrays[$target->name])
+                || in_array($target->name, self::AMBIENT_VARIABLES, true)) {
+                return false;
+            }
+            $targets[] = $target->name;
+        }
+
+        $body = [];
+        foreach ($loop->stmts as $statement) {
+            if ($statement instanceof Stmt\Nop) {
+                continue;
+            }
+            if (!$statement instanceof Stmt\Echo_) {
+                return false;
+            }
+            $body[] = $statement;
+        }
+        if ($body === []) {
+            return false;
+        }
+
+        $loopReads = [];
+        $scope = $assigned;
+        foreach ($arrays[$loop->expr->name] as $key => $value) {
+            $scope[$targets[0]] = $value;
+            if (isset($targets[1])) {
+                $scope[$targets[1]] = $key;
+            }
+            foreach ($body as $statement) {
+                if (!$this->checkEcho($statement, $scope, $arrays, $loopReads, $steps)) {
+                    return false;
+                }
+            }
+        }
+
+        foreach ($targets as $name) {
+            if (!isset($loopReads[$name])) {
+                return false;
+            }
+            unset($loopReads[$name]);
+        }
+        $reads += $loopReads;
+
+        return true;
+    }
+
+    /**
+     * @param Locals $assigned
+     * @param Collections $arrays
+     * @param array<string, true> $reads
+     */
+    private function checkEcho(Stmt\Echo_ $echo, array $assigned, array $arrays, array &$reads, int &$steps): bool
+    {
+        foreach ($echo->exprs as $expression) {
+            if ($this->resolveExpression($expression, $assigned, $arrays, $reads, $steps, 32) === null) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @return non-empty-array<int|string, ScalarValue>|null */
+    private function resolveArrayLiteral(Expr\Array_ $literal, TypedArrayType $type): ?array
+    {
+        if ($literal->items === [] || count($literal->items) > 256) {
+            return null;
+        }
+
+        $values = [];
         foreach ($literal->items as $item) {
             if ($item->byRef || $item->unpack) {
-                return false;
+                return null;
             }
             $value = $this->resolveLiteral($item->value);
             if ($value === null || $type->valueType->canonical !== get_debug_type($value)) {
-                return false;
+                return null;
             }
             if ($type->isList) {
                 if ($item->key !== null) {
-                    return false;
+                    return null;
                 }
+                $values[] = $value;
                 continue;
             }
 
@@ -216,38 +325,53 @@ final readonly class ScalarScriptProof
             $keyType = $type->keyType->canonical;
             if ($key === null || (is_int($key) ? $keyType !== 'int' : $keyType !== 'string')
                 || (is_string($key) && (string) (int) $key === $key)
-                || isset($keys[$key])) {
-                return false;
+                || isset($values[$key])) {
+                return null;
             }
-            $keys[$key] = true;
+            $values[$key] = $value;
         }
 
-        return true;
+        return $values;
     }
 
     /**
-     * @param array<string, bool|float|int|string> $assigned
+     * @param Locals $assigned
+     * @param Collections $arrays
      * @param array<string, true> $reads
      */
-    private function resolveExpression(Expr $expression, array $assigned, array &$reads, int $depth): bool|float|int|string|null
-    {
-        if ($depth === 0) {
+    private function resolveExpression(
+        Expr $expression,
+        array $assigned,
+        array $arrays,
+        array &$reads,
+        int &$steps,
+        int $depth,
+    ): bool|float|int|string|UntrackedString|null {
+        if ($depth === 0 || --$steps < 0) {
             return null;
         }
         if ($expression instanceof Expr\Variable && is_string($expression->name) && isset($assigned[$expression->name])) {
             $reads[$expression->name] = true;
             return $assigned[$expression->name];
         }
+        if ($expression instanceof Expr\ArrayDimFetch && $expression->var instanceof Expr\Variable
+            && is_string($expression->var->name) && $expression->dim !== null && isset($arrays[$expression->var->name])) {
+            $key = $this->resolveExpression($expression->dim, $assigned, $arrays, $reads, $steps, $depth - 1);
+
+            return is_int($key) || is_string($key) ? ($arrays[$expression->var->name][$key] ?? null) : null;
+        }
         if (!$expression instanceof Expr\BinaryOp) {
             return $this->resolveLiteral($expression);
         }
 
-        $left = $this->resolveExpression($expression->left, $assigned, $reads, $depth - 1);
-        $right = $this->resolveExpression($expression->right, $assigned, $reads, $depth - 1);
+        $left = $this->resolveExpression($expression->left, $assigned, $arrays, $reads, $steps, $depth - 1);
+        $right = $this->resolveExpression($expression->right, $assigned, $arrays, $reads, $steps, $depth - 1);
         if ($expression instanceof Expr\BinaryOp\Concat) {
-            // String contents are irrelevant to the proof and can grow
-            // exponentially with reassignment. Retain their type only.
-            return is_string($left) && is_string($right) ? '' : null;
+            // Do not materialize strings that could grow exponentially. The
+            // result still has a known type but cannot prove an exact key.
+            return (is_string($left) || is_int($left) || $left instanceof UntrackedString)
+                && (is_string($right) || is_int($right) || $right instanceof UntrackedString)
+                ? UntrackedString::Value : null;
         }
         if (!is_int($left) || !is_int($right)) {
             return null;
@@ -264,10 +388,15 @@ final readonly class ScalarScriptProof
         return is_int($result) ? $result : null;
     }
 
+    private function resolveType(bool|float|int|string|UntrackedString $value): string
+    {
+        return $value instanceof UntrackedString ? 'string' : get_debug_type($value);
+    }
+
     private function resolveLiteral(Expr $expression): bool|float|int|string|null
     {
         return match (true) {
-            $expression instanceof Scalar\String_ => '',
+            $expression instanceof Scalar\String_ => $expression->value,
             $expression instanceof Scalar\Int_ => $expression->value,
             $expression instanceof Scalar\Float_ && is_finite($expression->value) => $expression->value,
             $expression instanceof Expr\ConstFetch && $expression->name->isUnqualified()
