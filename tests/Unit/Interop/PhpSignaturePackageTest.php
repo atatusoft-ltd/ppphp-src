@@ -22,7 +22,7 @@ test('the committed PHP 8.4 signature package has immutable verified provenance'
     expect(hash_file('sha256', $root . '/manifest.json'))->toBe(PhpSignaturePackageVerifier::REVIEWED_MANIFESTS['8.4'])
         ->and($verifier->verifyInstalled($root, '8.4'))->toBe($manifest)
         ->and($installed->manifest)->toBe($manifest)
-        ->and($installed->identity)->toBe('aff1bbf57692a3c618840b4e16545477d9e7d538690bd38a5496319bbc117b86');
+        ->and($installed->identity)->toBe('26fa87733966e337726d85647e1671a26453406d9a0783537d674251231e4c91');
 
     expect($manifest['formatVersion'])->toBe(1)
         ->and($manifest['generatorVersion'])->toBe('2')

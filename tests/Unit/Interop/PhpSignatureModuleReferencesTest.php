@@ -8,6 +8,7 @@ use Atatusoft\Ppphp\Interop\Php\Signature\PhpSignatureModuleReferences;
 use Atatusoft\Ppphp\Interop\Php\Signature\PhpSignaturePackageLoader;
 use Atatusoft\Ppphp\Interop\Php\Signature\PhpSignaturePackageVerifier;
 use Atatusoft\Ppphp\Interop\Php\Signature\PhpSignaturePhpDocIndex;
+use Atatusoft\Ppphp\Interop\Php\Signature\PhpSignatureSyntaxIndex;
 use Atatusoft\Ppphp\Source\Enumerations\FileKind;
 use Atatusoft\Ppphp\Source\SourceFile;
 use Atatusoft\Ppphp\Support\CanonicalJson;
@@ -21,7 +22,11 @@ test('indexed module selection agrees with the legacy path across project edits'
     $manifest = CanonicalJson::decode(file_get_contents($manifestPath));
     $manifest['outputs'] = array_values(array_filter(
         $manifest['outputs'],
-        static fn (array $output): bool => !in_array($output['path'], [PhpSignatureModuleReferences::PATH, PhpSignaturePhpDocIndex::PATH], true),
+        static fn (array $output): bool => !in_array($output['path'], [
+            PhpSignatureModuleReferences::PATH,
+            PhpSignaturePhpDocIndex::PATH,
+            PhpSignatureSyntaxIndex::PATH,
+        ], true),
     ));
     file_put_contents($manifestPath, CanonicalJson::encode($manifest));
     expect(hash_file('sha256', $manifestPath))->toBe('fc8acea749a472694be41c0d2a61a1778f6f127ecbfcabc0c00efa90a01acec2');
