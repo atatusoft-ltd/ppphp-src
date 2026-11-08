@@ -160,6 +160,8 @@ Version 2 is a one-shot `analyze` action with `operation: check` and `analysis.e
 
 The isolated version 3 browser experiment can use a smaller verified declaration context for closed checked-error scripts. The compiler resolves the native `Exception` document through the reviewed PHP signature package, checks project declarations against the complete class and function index, and admits output only after the closed-script proof succeeds. If the reduced context cannot establish the proof, analysis retries with the complete declarations and follows the existing supplemental policy. An idle browser compiler may prepare the verified declaration document and its symbols before project input arrives. The prepared declarations stay in that worker under the existing immutable installation identity. The experiment still uses the version 3 production lint and publication checks.
 
+The experimental proof of a bounded integer-valued `when` expression requires independent inputs for its conditions. When a later condition tests a variable already narrowed by an earlier condition, the full analyzer retains responsibility for unreachable and redundant branch diagnostics.
+
 ## 18. Security And Resource Limits
 
 Version 2 accepts at most 16 KiB per request, 256 project source/stub files, 4 MiB total source bytes, 1,000 diagnostics, and a 2 MiB response. Limit failures return a complete structured `resource-limit-exceeded` error; JSON is never truncated. Request files must be regular files contained by the project root.

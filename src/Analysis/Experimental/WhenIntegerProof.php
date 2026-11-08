@@ -55,9 +55,20 @@ final readonly class WhenIntegerProof
         }
 
         $value = null;
+        $tested = [];
         foreach ($when->branches as $branch) {
-            $taken = $branch->condition === null ? true : $this->resolveCondition($branch->condition, $reads);
-            if ($taken === null || $branch->canComplete || $branch->resultType->semanticType->canonical !== 'int') {
+            $taken = true;
+            if ($branch->condition !== null) {
+                $condition = $this->resolveCondition($branch->condition, $reads);
+                // The false edge of an earlier branch narrows its input.
+                // The supplemental analyzer owns findings about such branches.
+                if ($condition === null || isset($tested[$condition['variable']])) {
+                    return null;
+                }
+                $tested[$condition['variable']] = true;
+                $taken = $condition['value'];
+            }
+            if ($branch->canComplete || $branch->resultType->semanticType->canonical !== 'int') {
                 return null;
             }
 
@@ -75,14 +86,17 @@ final readonly class WhenIntegerProof
         return $value;
     }
 
-    /** @param array<string, true> $reads */
-    private function resolveCondition(Expr $condition, array &$reads): ?bool
+    /**
+     * @param array<string, true> $reads
+     * @return array{variable: string, value: bool}|null
+     */
+    private function resolveCondition(Expr $condition, array &$reads): ?array
     {
         if ($condition instanceof Expr\BinaryOp\NotIdentical && $condition->left instanceof Expr\Variable
             && is_string($condition->left->name) && isset($this->pristine[$condition->left->name], $this->arrays[$condition->left->name])
             && $condition->right instanceof Expr\Array_ && $condition->right->items === []) {
             // The input is a proved nonempty array with its original typed declaration.
-            return true;
+            return ['variable' => $condition->left->name, 'value' => true];
         }
 
         $operand = $condition instanceof Expr\BooleanNot ? $condition->expr : $condition;
@@ -95,7 +109,7 @@ final readonly class WhenIntegerProof
         }
         $reads[$operand->name] = true;
 
-        return $condition instanceof Expr\BooleanNot ? !$value : $value;
+        return ['variable' => $operand->name, 'value' => $condition instanceof Expr\BooleanNot ? !$value : $value];
     }
 
     /**
