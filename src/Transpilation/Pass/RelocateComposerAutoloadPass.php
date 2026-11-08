@@ -51,7 +51,7 @@ final readonly class RelocateComposerAutoloadPass implements TranspilationPass
     {
         if (
             $node instanceof Expr\Include_
-            && $this->referencesComposerAutoload($node->expr, $context)
+            && $this->referencesComposerAutoload($node->expr, $context->parsedFile->sourceFile->path)
         ) {
             $context->replace(
                 $this->spans->resolve($context->parsedFile, $node->expr),
@@ -76,11 +76,9 @@ final readonly class RelocateComposerAutoloadPass implements TranspilationPass
         }
     }
 
-    private function referencesComposerAutoload(
-        Expr $expression,
-        TranspilationContext $context,
-    ): bool {
-        $sourcePath = $this->resolveSourcePath($expression, $context);
+    public function referencesComposerAutoload(Expr $expression, string $sourceFile): bool
+    {
+        $sourcePath = $this->resolveSourcePath($expression, $sourceFile);
 
         if (
             $sourcePath !== null
@@ -103,14 +101,12 @@ final readonly class RelocateComposerAutoloadPass implements TranspilationPass
         return Path::buildComparisonKey($projectTail) === Path::buildComparisonKey($autoloadRelative);
     }
 
-    private function resolveSourcePath(
-        Expr $expression,
-        TranspilationContext $context,
-    ): ?string {
+    private function resolveSourcePath(Expr $expression, string $sourceFile): ?string
+    {
         $value = $this->evaluateStaticExpression(
             $expression,
-            dirname($context->parsedFile->sourceFile->path),
-            $context->parsedFile->sourceFile->path,
+            dirname($sourceFile),
+            $sourceFile,
         );
 
         if ($value === null) {

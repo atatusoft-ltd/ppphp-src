@@ -54,18 +54,29 @@ final readonly class ScalarScriptProof
         }
 
         $localNames = [];
-        foreach ($file->statements as $statement) {
-            if ($statement instanceof Stmt\Class_ && $statement->name !== null) {
-                $localNames[] = strtolower($statement->name->toString());
-                continue;
-            }
-            if (!$statement instanceof Stmt\Nop && !$statement instanceof Stmt\Echo_ && !$statement instanceof Stmt\Foreach_
-                && (!$statement instanceof Stmt\Expression || !$statement->expr instanceof Expr\Assign)) {
-                return false;
+        foreach ($parsed->parsedFiles as $candidate) {
+            foreach ($candidate->statements as $statement) {
+                if ($statement instanceof Stmt\Nop) {
+                    continue;
+                }
+                if ($statement instanceof Stmt\Class_ && $statement->name !== null) {
+                    $localNames[] = strtolower($statement->name->toString());
+                    continue;
+                }
+                if ($candidate !== $file) {
+                    return false;
+                }
+                if ($statement instanceof Stmt\Echo_ || $statement instanceof Stmt\Foreach_) {
+                    continue;
+                }
+                if (!$statement instanceof Stmt\Expression || (!$statement->expr instanceof Expr\Assign
+                    && (!$statement->expr instanceof Expr\Include_ || count($project->sources) === 1))) {
+                    return false;
+                }
             }
         }
 
-        $references = (new DeclarationReferenceCollector())->collect([$file]);
+        $references = (new DeclarationReferenceCollector())->collect($parsed->parsedFiles);
 
         foreach ($file->extensionSyntax->genericDeclarations as $declaration) {
             foreach ($declaration->parameters as $parameter) {
@@ -79,7 +90,8 @@ final readonly class ScalarScriptProof
 
     private function findCandidate(Project $project, SourceSet $selected, ProjectParseResult $result): ?ParsedFile
     {
-        if (!$result->isSuccessful || count($project->sources) !== 1 || count($selected->ppphpFiles) !== 1
+        if (!$result->isSuccessful || count($project->sources) > 12 || count($selected) !== count($project->sources)
+            || count($result->parsedFiles) !== count($selected) || count($selected->ppphpFiles) !== 1
             || $project->configuration->targetPhpVersion !== '8.4'
             || count($project->stubs) !== 0 || $project->composer->dependencies !== []) {
             return null;
@@ -87,7 +99,14 @@ final readonly class ScalarScriptProof
 
         $file = $result->findParsedFile($selected->ppphpFiles->files[0]->path);
 
-        return $file !== null && strlen($file->sourceFile->contents) <= 16_384 && count($file->statements) <= 64 ? $file : null;
+        $bytes = 0;
+        $statements = 0;
+        foreach ($result->parsedFiles as $candidate) {
+            $bytes += strlen($candidate->sourceFile->contents);
+            $statements += count($candidate->statements);
+        }
+
+        return $bytes <= 16_384 && $statements <= 64 ? $file : null;
     }
 
     /** @param array<string, array<int, list<string>>> $omissions */
@@ -104,14 +123,17 @@ final readonly class ScalarScriptProof
             return false;
         }
 
-        foreach (\PhpToken::tokenize($parsed->sourceFile->contents) as $token) {
-            if ($token->id === T_DOC_COMMENT || ($token->id === T_COMMENT && str_contains($token->text, '@'))) {
-                return false;
+        foreach ($analysis->parseResult->parsedFiles as $candidate) {
+            foreach (\PhpToken::tokenize($candidate->sourceFile->contents) as $token) {
+                if ($token->id === T_DOC_COMMENT || ($token->id === T_COMMENT && str_contains($token->text, '@'))) {
+                    return false;
+                }
             }
         }
 
-        if (array_any($parsed->statements, static fn (Stmt $node): bool => $node instanceof Stmt\Class_)) {
-            return (new RecordScriptProof())->check($semantic, $model);
+        if (count($analysis->selectedSources) > 1
+            || array_any($parsed->statements, static fn (Stmt $node): bool => $node instanceof Stmt\Class_)) {
+            return (new RecordScriptProof())->check($analysis, $model);
         }
 
         $declarations = [];

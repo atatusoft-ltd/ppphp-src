@@ -100,3 +100,37 @@ test('a closed script requires the verified platform package even when it does n
     $this->writeFile($shard, $contents);
     expect($analyzer->analyzeWithLocalProof($project, $project->sources))->toBeInstanceOf(ProjectCheckResult::class);
 });
+
+test('mixed local proof requires a closed published include and harmless PHP declarations', function (
+    string $path, string $body, string $between, bool $focused, bool $admitted,
+): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root, ['stubs' => []]);
+    $entry = $root . '/src/main.ppphp';
+    $include = '<?php require_once __DIR__ . ' . var_export('/' . $path, true) . '; ';
+    $this->writeFile($entry, $include . 'LegacyUser $user = new LegacyUser("Maya"); ' . $between
+        . 'readonly string $greeting = $user->name; echo "Hello, " . $greeting;');
+    $this->writeFile($root . '/src/' . $path, '<?php final class LegacyUser { public function __construct(public string $name) {'
+        . $body . '} }');
+    $configuration = (new ProjectConfigLoader())->load($root, requireSourceDirectories: true)->configuration;
+    expect($configuration)->not->toBeNull();
+    $project = (new ProjectLoader())->load($configuration)->project;
+    expect($project)->not->toBeNull();
+    $selected = $focused ? $project->sources->ppphpFiles : $project->sources;
+
+    $outcome = (new CompilerProjectAnalyzer())->analyzeWithLocalProof($project, $selected);
+    if ($admitted) {
+        expect($outcome)->toBeInstanceOf(ProjectCheckResult::class)
+            ->and($outcome->completeness)->toBe(AnalysisCompleteness::ExperimentalScalarProof)
+            ->and($outcome->declarationContext?->parsedFiles)->toBe([]);
+    } else {
+        expect($outcome)->toBeInstanceOf(CompilerProjectAnalysis::class);
+    }
+})->with([
+    'same layout and read only' => ['LegacyUser.php', '', '', false, true],
+    'nested same layout' => ['models/LegacyUser.php', '', '', false, true],
+    'Composer rewrite' => ['vendor/autoload.php', '', '', false, false],
+    'ordinary PHP constructor body' => ['LegacyUser.php', '$this->name = [];', '', false, false],
+    'write to the mutable record' => ['LegacyUser.php', '', '$user->name = "Changed"; ', false, false],
+    'focused selection omits the PHP file' => ['LegacyUser.php', '', '', true, false],
+]);
