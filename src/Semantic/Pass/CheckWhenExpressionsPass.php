@@ -314,6 +314,11 @@ final class CheckWhenExpressionsPass implements SemanticPass
             return WhenExpressionSite::Assignment;
         }
 
+        if ($parent instanceof Expr\AssignOp\Concat && $parent->expr === $placeholder
+            && $this->supportsConcatTarget($parent->var)) {
+            return WhenExpressionSite::Assignment;
+        }
+
         if ($parent instanceof Stmt\Return_ && $parent->expr === $placeholder) {
             return WhenExpressionSite::ReturnOperand;
         }
@@ -332,6 +337,19 @@ final class CheckWhenExpressionsPass implements SemanticPass
         }
 
         return WhenExpressionSite::Unsupported;
+    }
+
+    private function supportsConcatTarget(Expr $target): bool
+    {
+        return match (true) {
+            $target instanceof Expr\Variable => true,
+            $target instanceof Expr\ArrayDimFetch => $target->dim !== null && $this->supportsConcatTarget($target->var),
+            $target instanceof Expr\PropertyFetch => !($target->var instanceof Expr\ArrayDimFetch
+                || $target->var instanceof Expr\PropertyFetch || $target->var instanceof Expr\StaticPropertyFetch)
+                || $this->supportsConcatTarget($target->var),
+            $target instanceof Expr\StaticPropertyFetch => $target->class instanceof Node\Name,
+            default => false,
+        };
     }
 
     /** @param list<Node> $ancestors */
@@ -755,7 +773,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
             );
         }
 
-        if ($expression instanceof Expr\Assign) {
+        if ($expression instanceof Expr\Assign || $expression instanceof Expr\AssignOp\Concat) {
             $this->inspectExpression($expression->expr, $scope);
             $this->inspectAssignment($expression, $scope);
 
@@ -864,7 +882,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
         }
     }
 
-    private function inspectAssignment(Expr\Assign $assignment, Scope $scope): void
+    private function inspectAssignment(Expr\Assign|Expr\AssignOp\Concat $assignment, Scope $scope): void
     {
         if (!$assignment->var instanceof Expr\Variable || !is_string($assignment->var->name)) {
             $this->inspectNode($assignment->var, $scope, false);
@@ -875,7 +893,7 @@ final class CheckWhenExpressionsPass implements SemanticPass
         $name = '$' . $assignment->var->name;
         $offset = $this->span($assignment->var)->start->offset;
         $declaration = $this->typedLocals[$offset] ?? $this->typedForInitializers[$offset] ?? null;
-        $actual = $this->resolveExpressionType($assignment->expr, $scope);
+        $actual = $this->resolveExpressionType($assignment instanceof Expr\Assign ? $assignment->expr : $assignment, $scope);
 
         if ($declaration !== null) {
             $existing = $scope->resolve($name);
@@ -946,6 +964,9 @@ final class CheckWhenExpressionsPass implements SemanticPass
                 sprintf('Value of type %s is not assignable to %s of type %s.', $actual->text, $name, $symbol->type->text),
                 $this->span($assignment->expr),
             );
+        }
+        if ($assignment instanceof Expr\AssignOp\Concat) {
+            $symbol->binding?->recordRead($this->span($assignment->var));
         }
         $symbol->binding?->recordWrite($this->span($assignment->var));
         $this->context->model->bindings->recordWriteContract($symbol, $this->span($assignment->var));

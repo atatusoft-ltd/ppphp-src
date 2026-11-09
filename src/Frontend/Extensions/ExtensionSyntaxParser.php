@@ -948,35 +948,49 @@ final class ExtensionSyntaxParser
             $cursor = $bodyCloseIndex + 1;
             $elseBranch = null;
 
-            while (isset($this->tokens[$cursor]) && $this->tokens[$cursor]->lexicalId === T_ELSE) {
+            while (isset($this->tokens[$cursor])) {
                 $elseToken = $this->tokens[$cursor];
+                $joined = $elseToken->lexicalId === T_STRING && strcasecmp($elseToken->text, 'elsewhen') === 0;
+                if (!$joined && $elseToken->lexicalId !== T_ELSE) {
+                    break;
+                }
                 $next = $this->tokens[$cursor + 1] ?? null;
 
-                if ($next !== null && strtolower($next->text) === 'when') {
-                    $nextConditionOpen = $this->tokens[$cursor + 2] ?? null;
+                if (!$joined && $next?->lexicalId === T_IF) {
+                    $this->addMalformed(
+                        'Use `else when` to add another condition to a `when` expression.',
+                        $this->sourceFile->createSpan($elseToken->start, $next->end),
+                    );
+                    break 2;
+                }
+
+                $keyword = $joined ? $elseToken : $next;
+                if ($keyword !== null && ($joined || strcasecmp($keyword->text, 'when') === 0)) {
+                    $nextConditionIndex = $cursor + ($joined ? 1 : 2);
+                    $nextConditionOpen = $this->tokens[$nextConditionIndex] ?? null;
 
                     if ($nextConditionOpen?->text !== '(') {
-                        $this->addMalformed('An `else when` branch requires a parenthesized condition.', $next->span);
+                        $this->addMalformed('A conditional `when` branch requires a parenthesized condition.', $keyword->span);
                         break 2;
                     }
 
-                    $nextConditionClose = $this->resolveMatching($cursor + 2, '(', ')');
+                    $nextConditionClose = $this->resolveMatching($nextConditionIndex, '(', ')');
                     if ($nextConditionClose === null) {
-                        $this->addMalformed('Every `else when` branch requires a braced body.', $next->span);
+                        $this->addMalformed('A conditional `when` branch condition must end with `)`.', $nextConditionOpen->span);
                         break 2;
                     }
 
                     $nextBodyOpen = $nextConditionClose + 1;
 
                     if (!isset($this->tokens[$nextBodyOpen]) || $this->tokens[$nextBodyOpen]->text !== '{') {
-                        $this->addMalformed('Every `else when` branch requires a braced body.', $next->span);
+                        $this->addMalformed('A conditional `when` branch requires a braced body.', $keyword->span);
                         break 2;
                     }
 
                     $nextBodyClose = $this->resolveMatching($nextBodyOpen, '{', '}');
 
                     if ($nextBodyClose === null) {
-                        $this->addMalformed('An `else when` body must end with `}`.', $this->tokens[$nextBodyOpen]->span);
+                        $this->addMalformed('A conditional `when` branch body must end with `}`.', $this->tokens[$nextBodyOpen]->span);
                         break 2;
                     }
 
@@ -984,10 +998,10 @@ final class ExtensionSyntaxParser
                     $branches[] = new WhenBranch(
                         NodeId::create('when-branch', $nextSpan),
                         $nextSpan,
-                        $next->span,
+                        $joined ? $this->sourceFile->createSpan($keyword->start + 4, $keyword->end) : $keyword->span,
                         $this->sourceFile->createSpan($nextConditionOpen->end, $this->tokens[$nextConditionClose]->start),
                         $this->sourceFile->createSpan($this->tokens[$nextBodyOpen]->start, $this->tokens[$nextBodyClose]->end),
-                        $elseToken->span,
+                        $joined ? $this->sourceFile->createSpan($elseToken->start, $elseToken->start + 4) : $elseToken->span,
                     );
                     $cursor = $nextBodyClose + 1;
                     continue;
@@ -1017,7 +1031,15 @@ final class ExtensionSyntaxParser
             }
 
             if ($elseBranch === null) {
-                $this->addMalformed('A `when` expression requires a final `else` branch.', $token->span);
+                $nextBranch = $this->tokens[$cursor] ?? null;
+                if ($nextBranch?->lexicalId === T_ELSEIF) {
+                    $this->addMalformed(
+                        'Use `else when` to add another condition to a `when` expression.',
+                        $nextBranch->span,
+                    );
+                } else {
+                    $this->addMalformed('A `when` expression requires a final `else` branch.', $token->span);
+                }
                 continue;
             }
 
@@ -1390,7 +1412,7 @@ final class ExtensionSyntaxParser
         }
 
         $positionMatches = $previous->lexicalId === T_RETURN
-            || in_array($previous->text, ['=', '(', '[', ',', '=>'], true);
+            || in_array($previous->text, ['=', '.=', '(', '[', ',', '=>'], true);
 
         if (!$positionMatches) {
             return false;

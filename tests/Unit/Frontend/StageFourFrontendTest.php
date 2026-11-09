@@ -400,39 +400,57 @@ PPP;
         ->not->toContain(DiagnosticCode::InvalidPhpSyntax->value);
 });
 
-test('when expressions retain conditional and final branches with nested bodies', function (): void {
+test('when expressions retain conditional and final branches with nested bodies', function (string $keyword): void {
     $contents = <<<'PPP'
 <?php
 function label(int $score): string
 {
     return when ($score >= 80) {
         return nested([fn () => ['value' => 1]]);
-    } else when ($score >= 50) {
+    } KEYWORD ($score >= 50) {
         return 'Pass';
     } else {
         return 'Fail';
     };
 }
 PPP;
-    $result = (new PpphpParser())->parse(createStageFourSource($contents));
+    $result = (new PpphpParser())->parse(createStageFourSource(str_replace('KEYWORD', $keyword, $contents)));
     $when = $result->parsedFile?->extensionSyntax->whenExpressions[0] ?? null;
 
     expect($when)->not->toBeNull()
         ->and($when?->branches)->toHaveCount(2)
         ->and($when?->branches[0]->conditionSpan->text)->toBe('$score >= 80')
+        ->and($when?->branches[1]->conditionSpan->text)->toBe('$score >= 50')
+        ->and($when?->branches[1]->elseKeywordSpan?->text)->toBe('else')
+        ->and($when?->branches[1]->whenKeywordSpan->text)->toBe('when')
         ->and($when?->elseBranch->bodySpan->text)->toContain("return 'Fail';")
         ->and($result->parsedFile?->normalizedSource->contents)->toContain('return null')
         ->and(resolveStageFourCodes($result))->not->toContain(DiagnosticCode::WhenSyntaxNotActive->value)
         ->not->toContain(DiagnosticCode::InvalidPhpSyntax->value);
-});
+})->with(['else when', 'elsewhen']);
 
 test('a callable named when remains ordinary PHP', function (): void {
-    $contents = '<?php function when(int $value): int { return $value; } function f(): int { return when(1); }';
+    $contents = '<?php function when(int $value): int { return $value; } function elsewhen(int $value): int { return $value; } function f(): int { return when(elsewhen(1)); }';
     $result = (new PpphpParser())->parse(createStageFourSource($contents));
 
     expect($result->isSuccessful)->toBeTrue()
         ->and($result->parsedFile?->extensionSyntax->whenExpressions)->toBe([]);
 });
+
+test('when syntax diagnostics identify an incorrect conditional branch and suggest else when', function (string $keyword): void {
+    $source = '<?php function choose(string $message, bool $first, bool $second): string {
+        $message .= when ($first) { return " first"; } KEYWORD ($second) { return " second"; } else { return " last"; };
+        return $message;
+    }';
+    $parser = new PpphpParser();
+    $result = $parser->parse(createStageFourSource(str_replace('KEYWORD', $keyword, $source)));
+
+    expect($result->diagnostics->errors)->toHaveCount(1)
+        ->and($result->diagnostics->errors[0]->code)->toBe(DiagnosticCode::InvalidExtensionSyntax)
+        ->and($result->diagnostics->errors[0]->primary?->span->text)->toBe($keyword)
+        ->and($result->diagnostics->errors[0]->message)->toBe('Use `else when` to add another condition to a `when` expression.')
+        ->and($parser->parse(createStageFourSource(str_replace('KEYWORD', 'else when', $source)))->isSuccessful)->toBeTrue();
+})->with(['elseif', 'else if']);
 
 test('nested when expressions retain their hierarchy and one effective outer normalization edit', function (): void {
     $contents = <<<'PPP'

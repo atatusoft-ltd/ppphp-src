@@ -16,6 +16,53 @@ function runWhenPositionCommand(string $root, string $command): ApplicationTeste
     return $tester;
 }
 
+test('when can append a branch result directly with concatenating assignment', function (string $keyword): void {
+    $root = $this->createTemporaryDirectory();
+    $this->writeConfiguration($root);
+    $source = <<<'PPP'
+<?php
+class Person
+{
+    public function __construct(private(set) string $name, private(set) int $age = 0)
+    {
+    }
+
+    public function greet(): void
+    {
+        string $greeting = "Hello, my name is {$this->name}";
+        $greeting .= when ($this->age > 60) {
+            string $hobby = 'takeing naps';
+            return " and I am a senior citizen who likes {$hobby}.";
+        } KEYWORD ($this->age > 19) {
+            string $pasttime = 'playing video games';
+            return ". I am a young buck who likes {$pasttime}!";
+        } else {
+            return " and I'm a {$this->age} year old kid!";
+        };
+        echo $greeting;
+    }
+}
+Person $person = new Person("++PHP");
+$person->greet();
+echo "\n";
+(new Person("Ada", 25))->greet();
+echo "\n";
+(new Person("Lin", 70))->greet();
+PPP;
+    $this->writeFile($root . '/src/main.ppphp', str_replace('KEYWORD', $keyword, $source));
+    foreach (['check', 'build'] as $command) {
+        $result = runWhenPositionCommand($root, $command);
+        expect($result->getStatusCode())->toBe(0, $result->getDisplay());
+    }
+    $runtime = new Process([PHP_BINARY, $root . '/build/ppphp/main.php'], timeout: 5);
+    $runtime->mustRun();
+    expect($runtime->getOutput())->toBe(
+        "Hello, my name is ++PHP and I'm a 0 year old kid!\n"
+        . "Hello, my name is Ada. I am a young buck who likes playing video games!\n"
+        . "Hello, my name is Lin and I am a senior citizen who likes takeing naps.",
+    )->and($runtime->getErrorOutput())->toBe('');
+})->with(['else when', 'elsewhen']);
+
 test('unsupported when statement owners fail with the source cause before output', function (string $statement): void {
     $root = $this->createTemporaryDirectory();
     $this->writeConfiguration($root);

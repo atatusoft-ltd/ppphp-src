@@ -4,6 +4,16 @@ All notable changes to ++PHP are recorded here. Release dates are added only whe
 
 ## Unreleased
 
+## 2026.3.3
+
+### Added
+
+- Use a `when` expression directly as the right-hand side of `.=`. Use either `else when` or `elsewhen` for intermediate branches.
+
+### Fixed
+
+- A `when` expression containing `elseif` or `else if` now highlights that keyword and suggests `else when`.
+
 ## 2026.3.2
 
 ### Changed

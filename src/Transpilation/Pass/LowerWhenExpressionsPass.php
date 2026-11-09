@@ -589,6 +589,17 @@ final class LowerWhenExpressionsPass implements TranspilationPass
             return $this->lowerBinaryExpression($expression);
         }
 
+        if ($expression instanceof Expr\AssignOp\Concat
+            && $this->context->semanticModel->whenExpressions->findPlaceholder($expression->expr) !== null) {
+            [$prelude, $value] = $this->lowerExpression($expression->expr);
+            if ($prelude !== []) {
+                $prelude = [...$this->prepareConcatTarget($expression->var), ...$prelude];
+            }
+            $expression->expr = $value;
+
+            return [$prelude, $expression];
+        }
+
         if ($expression instanceof Expr\Assign) {
             [$prelude, $value] = $this->lowerExpression($expression->expr);
             if ($prelude !== []) {
@@ -1761,6 +1772,47 @@ final class LowerWhenExpressionsPass implements TranspilationPass
         }
 
         return [[], $target];
+    }
+
+    /**
+     * Compute the operands of a writable path before the RHS. Keep PHP's
+     * native compound assignment responsible for the actual read and write.
+     *
+     * @return list<Stmt>
+     */
+    private function prepareConcatTarget(Expr $target): array
+    {
+        $prelude = [];
+        foreach ($target->getSubNodeNames() as $name) {
+            $operand = $target->{$name};
+            if (!$operand instanceof Expr) {
+                continue;
+            }
+            if ($name === 'var' && ($operand instanceof Expr\Variable || $operand instanceof Expr\PropertyFetch
+                || $operand instanceof Expr\StaticPropertyFetch || $operand instanceof Expr\ArrayDimFetch)) {
+                array_push($prelude, ...$this->prepareConcatTarget($operand));
+                continue;
+            }
+            // PHP resolves a plain variable operand at the write. Computed
+            // operands must run before the RHS even when it throws.
+            if (($operand instanceof Expr\Variable && is_string($operand->name))
+                || $this->canDelayOperand($operand, [])) {
+                continue;
+            }
+            [$setup, $operand] = $this->lowerExpression($operand);
+            [$setup, $operand] = $this->captureConsumer($setup, $operand);
+            [$assignment, $temporary] = $this->hoist($operand);
+            if (is_string($temporary->name)) {
+                $this->tailResultNames[$temporary->name] = true;
+                if ($name === 'var') {
+                    $this->receiverNames[$temporary->name] = true;
+                }
+            }
+            $prelude = [...$prelude, ...$setup, $assignment];
+            $target->{$name} = $temporary;
+        }
+
+        return $prelude;
     }
 
     /** @return array{Stmt\Expression, Expr\Variable} */
