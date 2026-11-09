@@ -14,6 +14,8 @@ string $label = when ($score >= 80) {
 };
 ~~~
 
+Write an intermediate condition as either `else when` or `elsewhen`. Both spellings require the final `else`.
+
 Inside the lexical body of a branch, `return expression;` produces the value of the `when`; it does not return from the enclosing callable. Returns inside nested functions, methods, closures, and arrow functions keep their ordinary PHP meaning. `return;` is invalid. Every reachable branch path must produce a value, throw, exit, or end in a resolved `never` expression. A possibly empty loop does not establish a result. A guaranteed-entry loop needs no fallback if no reachable break or condition can let it finish without a result. Breaks and continues consumed by inner loops do not create an exit from an outer loop.
 
 A nested `declare { … }` body is still part of the branch: its returns produce
@@ -40,11 +42,16 @@ The compiler supports `when` as:
 
 - an executable file-, function-, or method-scope typed-local initializer;
 - the right-hand side of assignment to a mutable local, property, array offset, or other ordinary assignable target;
+- the right-hand side of concatenating assignment (`.=`) to a mutable variable, object property, named-class static property, or an array offset rooted in one of those targets;
 - a return operand;
 - a direct function, method, nullsafe method, static method, or constructor argument, including named arguments; and
 - a direct keyed or unkeyed array value.
 
 It rejects standalone expressions, defaults, constants, attributes, match arms, arrow-function bodies, array keys or unpack operands, call unpack operands, known by-reference arguments, arbitrary unary or binary operands, ternary arms, coalesce operands, and use as another `when` condition. `when(...)` calls without the braced expression grammar, including methods and static methods named `when`, remain ordinary PHP.
+
+A concatenating assignment applies PHP's `.=` operator to the selected branch
+result. For example, `$message .= when ($ready) { return ' ready'; } else { return ' waiting'; };`
+appends the selected suffix. If the branch throws, the append does not occur.
 
 The containing statement matters too. An assignment or call containing `when`
 is not supported in a `for` initializer, condition or step, a `while` or

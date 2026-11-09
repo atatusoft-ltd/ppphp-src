@@ -70,6 +70,33 @@ function resolveStageNineCodes(SemanticAnalysisResult $analysis): array
     );
 }
 
+test('when concatenation preserves target evaluation and leaves the target unwritten on a throw', function (): void {
+    $generated = lowerStageNineSource(<<<'PPP'
+<?php
+class MessageBox {
+    public array $messages = ['left' => 'L', 'right' => 'R'];
+}
+function receiver(MessageBox $box): MessageBox { echo 'receiver|'; return $box; }
+function keyForMessage(): string { echo 'key|'; return 'left'; }
+function suffix(string &$key): string { echo 'rhs|'; $key = 'right'; return 'S'; }
+function append(MessageBox $box, bool $fail): void {
+    string $key = 'left';
+    $box->messages[$key] .= when ($fail) { return 'other'; } else { return suffix($key); };
+    try {
+        receiver($box)->messages[keyForMessage()] .= when ($fail) { return 'S'; } else { throw new RuntimeException(); };
+    } catch (RuntimeException $error) {
+        echo 'caught|';
+    }
+    echo $box->messages['left'], '|', $box->messages['right'];
+}
+append(new MessageBox(), false);
+PPP);
+    $run = new Process([PHP_BINARY, '-r', substr($generated->contents, 5)], timeout: 5);
+    $run->mustRun();
+    expect($run->getOutput())->toBe('rhs|receiver|key|caught|L|RS')
+        ->and($run->getErrorOutput())->toBe('');
+});
+
 test('a declare body retains when result ownership and completion', function (string $body, bool $complete): void {
     $source = '<?php function choose(bool $ready, bool $select): int {
         int $value = when ($ready) { ' . $body . ' } else { return 0; };
