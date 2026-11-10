@@ -36,9 +36,7 @@ final readonly class DocumentationPolicy
     private const array MAINTAINER_DOCUMENTS = [
         'AGENTS.md',
         'CONTRIBUTING.md',
-        'docs/ppphp-mvp-end-to-end-plan.md',
         'docs/releasing.md',
-        'docs/analyzer-promotion-readiness.md',
     ];
 
     /** @var array<string, string> */
@@ -68,6 +66,14 @@ final readonly class DocumentationPolicy
     ];
 
     private const string UNAVAILABLE_CONTEXT_PATTERN = '/\b(?:future|planned|roadmap|post-MVP|unavailable|not yet|not (?:part of|included in|available in|implemented in|supported by)|does not (?:include|support))\b/i';
+
+    public function isInternalPath(string $relativePath): bool
+    {
+        return preg_match(
+            '~\Adocs/(?:spikes/|experiments/|ppphp-|analyzer-promotion-readiness\.md\z|browser/(?:bp[0-9]|baseline\.md\z|runtime-fiber-repair\.md\z))~D',
+            $relativePath,
+        ) === 1;
+    }
 
     public function classify(string $relativePath): DocumentationAudience
     {

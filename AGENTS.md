@@ -1,12 +1,8 @@
 # ++PHP Agent Guide
 
-Read [the MVP end-to-end plan](docs/ppphp-mvp-end-to-end-plan.md) before implementation work. It is the authoritative execution plan.
+Use the language RFCs and architecture decisions in `docs/` for public contracts. Obtain internal work orders and planning material from the project's private workspace when a task depends on them.
 
-For post-MVP framework and PHP-platform work, also read the approved [2026.4 Framework Integration Programme Amendment](docs/ppphp-framework-integration-plan-amendment.md). It supplements the canonical plan and governs FI-0 through FI-4 without replacing accepted language RFCs or changing completed MVP behavior. The initial PHP baseline is not an architectural ceiling: compiler host, source/dependency parsing, platform signatures, emission target and complete-application runtime are separate dimensions. PHP 8.5 support belongs to the shared FI-1 foundation, not an optional Tempest-only adapter task. AssegaiPHP and Laravel remain the two required 2026.4.x integrations. No support claim is established by planning text or an unexecuted compatibility row.
-
-Use the [repository-local FI-0 prompt](docs/ppphp-framework-integration-fi0-codex-prompt.md) for the framework evidence spike. It contains the full work order and supersedes the attachment-only FI-0 and alternate Stage 17A handoffs. No chat attachment or conversation history is required. Before handing work to another agent, commit every required input or embed its requirements in the prompt, verify repository paths and links, and distinguish pre-existing inputs from outputs to create. Report PASS, FAIL and NOT RUN honestly. Local feature branches may isolate work, but consolidate to local `develop` before pushing; push only `develop`, never a remote feature branch, and never force-push to bypass concurrent work.
-
-The project owner may revise the grouping, order and identifiers of unimplemented work. Explicit owner-approved changes supersede earlier schedules; reconcile the canonical plan, RFC index, affected cross-references and planning tests together. Do not treat historical stage numbers as immutable or infer permission to weaken accepted semantics, rewrite completed-stage history or claim implementation. Without such approval, follow the current recorded schedule.
+Keep internal plans, agent prompts, chat excerpts, handovers and spike evidence outside this repository. Every tracked file is public, regardless of the intended audience. Share private material only through an approved private location. Put durable language contracts and reproducible, public-safe technical documentation in `docs/`.
 
 - Work one stage at a time. Do not implement a later stage to make an earlier stage appear complete.
 - ++PHP compiles to ordinary PHP that runs on the official PHP runtime. Its semantics are defined by its own language contract.

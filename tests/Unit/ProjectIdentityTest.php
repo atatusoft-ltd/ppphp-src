@@ -33,7 +33,6 @@ test('the canonical project identity is complete', function (): void {
         ->and($application->getVersion())->toBe(Compiler::VERSION)
         ->and(file_exists($root . '/resources/schema/ppphp.schema.json'))->toBeTrue()
         ->and(file_exists($root . '/resources/phpstan/ppphp.neon'))->toBeTrue()
-        ->and(file_exists($root . '/docs/ppphp-mvp-end-to-end-plan.md'))->toBeTrue()
         ->and($configuration['cache'])->toBe('.ppphp-cache')
         ->and($configuration['output'])->toBe('build/ppphp');
 
@@ -63,47 +62,7 @@ test('the configuration loader does not fall back to the retired filename', func
         ->and($result->diagnostics->errors[0]->message)->toContain('ppphp.json');
 });
 
-test('the post-MVP roadmap records the bounded Stage 15 contracts', function (): void {
-    $plan = file_get_contents(dirname(__DIR__, 2) . '/docs/ppphp-mvp-end-to-end-plan.md');
-
-    expect($plan)->not->toBeFalse();
-
-    if (!is_string($plan)) {
-        throw new RuntimeException('The end-to-end plan could not be read.');
-    }
-
-    $start = strpos($plan, '## Stage 15 — Immutable Records, Native Type Ergonomics, And Declarative Framework Metadata');
-    $end = strpos($plan, '## 14. Dependency Policy', is_int($start) ? $start : 0);
-
-    expect($start)->toBeInt()
-        ->and($end)->toBeInt();
-
-    if (!is_int($start) || !is_int($end)) {
-        throw new RuntimeException('The bounded Stage 15 roadmap section is missing.');
-    }
-
-    $stage = substr($plan, $start, $end - $start);
-
-    expect($stage)->toContain(
-        'Stage 15A — Immutable Records',
-        'Stage 15B — Postfix List Types',
-        'Stage 15C — Scalar Objects',
-        'Stage 15D — List And Map Objects',
-        'Stage 15E — Attribute Factory Expressions',
-        'length',
-        'toLower',
-        'count',
-        'first',
-        'firstKey',
-        'find',
-        'findKey',
-        'filter',
-        'map',
-        'reduce',
-        'CollectionQueryException',
-        'remains a draft',
-    );
-
+test('the language RFC index agrees with the individual RFC statuses', function (): void {
     $index = (string) file_get_contents(dirname(__DIR__, 2) . '/docs/rfcs/README.md');
 
     foreach ([
@@ -118,50 +77,42 @@ test('the post-MVP roadmap records the bounded Stage 15 contracts', function ():
 
         expect($rfc)->toContain('Status: ' . $status, 'Implementation: ' . $schedule . ' For Stage ' . $identifier)
             ->and($index)->toContain('](' . $name . '.md) | ' . $status . ' | ' . $schedule . ' For Stage ' . $identifier . ' |');
-
-        $section = explode('### Stage ' . $identifier . ' — ', $stage, 2)[1];
-        expect(explode('### Stage ', $section, 2)[0])->toContain('(rfcs/' . $name . '.md)');
     }
 });
 
-test('the accepted Records RFC and roadmap preserve the complete Stage 15A contract', function (): void {
+test('the accepted Records RFC preserves the complete Stage 15A contract', function (): void {
     $root = dirname(__DIR__, 2);
     $rfc = file_get_contents($root . '/docs/rfcs/0001-immutable-records.md');
-    $plan = file_get_contents($root . '/docs/ppphp-mvp-end-to-end-plan.md');
 
-    expect($rfc)->toBeString()
-        ->and($plan)->toBeString();
+    expect($rfc)->toBeString();
 
-    if (!is_string($rfc) || !is_string($plan)) {
+    if (!is_string($rfc)) {
         throw new RuntimeException('The Records documentation could not be read.');
     }
 
-    foreach ([$rfc, $plan] as $document) {
-        expect($document)->toContain(
-            'contextual class-like declaration keyword',
-            'implicitly final',
-            'public readonly',
-            'compiler-generated constructor',
-            'generic',
-            'implement interfaces',
-            'virtual get-only computed properties',
-            'set hooks',
-            'additional backed instance state',
-            'custom constructor',
-            'extend a class',
-            'shallow',
-            'ordinary PHP object identity',
-            'final class',
-            'synthesized equality',
-        );
-    }
+    expect($rfc)->toContain(
+        'contextual class-like declaration keyword',
+        'implicitly final',
+        'public readonly',
+        'compiler-generated constructor',
+        'generic',
+        'implement interfaces',
+        'virtual get-only computed properties',
+        'set hooks',
+        'additional backed instance state',
+        'custom constructor',
+        'extend a class',
+        'shallow',
+        'ordinary PHP object identity',
+        'final class',
+        'synthesized equality',
+    );
 });
 
 test('maintainer release status and the native analyzer contract agree', function (): void {
     $root = dirname(__DIR__, 2);
     $maintainerDocuments = [
         $root . '/AGENTS.md',
-        $root . '/docs/ppphp-mvp-end-to-end-plan.md',
         $root . '/docs/releasing.md',
     ];
 
