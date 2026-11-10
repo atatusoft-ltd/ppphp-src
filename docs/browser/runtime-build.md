@@ -28,4 +28,4 @@ The output directory must not already exist. Downloads, upstream changes, report
 
 The scripts' local unit tests validate transformation and result contracts, not C compilation or runtime correctness. The experimental workflow performs the actual builds and browser tests. Read its reports and status before claiming any runtime fix.
 
-Upstream references: the pinned `packages/php-wasm/compile/php/Dockerfile`, its base-image Dockerfile and agent guide; PHP's pinned `Zend/zend_fibers.c`; Emscripten 4.0.19's `system/include/emscripten/fiber.h`.
+Upstream references: the pinned `packages/php-wasm/compile/php/Dockerfile`, its base-image Dockerfile and contributor guidance; PHP's pinned `Zend/zend_fibers.c`; Emscripten 4.0.19's `system/include/emscripten/fiber.h`.

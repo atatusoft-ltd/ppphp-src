@@ -78,7 +78,7 @@ The earlier drain-aware adapter proved that nested process streams must be drain
 
 ## Real Chromium Evidence
 
-The recorded Stage 13A run used Codex in-app Chromium on macOS on 2026-09-01:
+The recorded Stage 13A run used Chromium on macOS on 2026-09-01:
 
 ```text
 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)

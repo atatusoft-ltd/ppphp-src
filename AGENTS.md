@@ -1,8 +1,8 @@
-# ++PHP Agent Guide
+# ++PHP Repository Guide
 
 Use the language RFCs and architecture decisions in `docs/` for public contracts. Obtain internal work orders and planning material from the project's private workspace when a task depends on them.
 
-Keep internal plans, agent prompts, chat excerpts, handovers and spike evidence outside this repository. Every tracked file is public, regardless of the intended audience. Share private material only through an approved private location. Put durable language contracts and reproducible, public-safe technical documentation in `docs/`.
+Keep internal plans, internal instructions, chat excerpts, handovers and spike evidence outside this repository. Every tracked file is public, regardless of the intended audience. Share private material only through an approved private location. Put durable language contracts and reproducible, public-safe technical documentation in `docs/`.
 
 - Work one stage at a time. Do not implement a later stage to make an earlier stage appear complete.
 - ++PHP compiles to ordinary PHP that runs on the official PHP runtime. Its semantics are defined by its own language contract.
@@ -32,8 +32,8 @@ Keep internal plans, agent prompts, chat excerpts, handovers and spike evidence 
 - Keep normal diagnostics compiler-oriented and preserve the most specific known actionable cause. Missing source syntax, unreadable cache directories, time/output limits, and other safe failure conditions must remain visible in the message; do not bury them behind a wrapper error or `--debug`. Backend identifiers, parser internals, raw subprocess output, workspace paths/layout, generated-analysis details, and stack traces belong behind `--debug`. Diagnostic sanitization must not rewrite user identifiers or quoted values.
 - Add or update Pest tests and public documentation for behavior changes.
 - In Pest tests, assert each forbidden value separately. `not->toContain($a, $b)` negates the combined assertion and does not prove that both values are absent.
-- Never create agent-generated log files, command transcripts, or raw profiling/benchmark captures anywhere in user workspaces, including parent directories, sibling repositories, caches, and build directories. Keep output in tool sessions; if persistence is necessary, use an OS temporary directory outside every workspace. Do not disguise output captures with another filename or extension. Preserve intentional source, documentation, and requested build artifacts, and never remove existing user files during cleanup.
-- Keep public release documentation focused on shipped user-visible behavior, not the internal stage, prompt, agent, merge, or acceptance process that produced it. Stage terminology belongs in maintainer plans, decisions, RFCs, and release runbooks; README files, changelogs, release notes, getting-started and migration guides, security policies, package metadata, website copy, and marketplace copy remain release-oriented.
+- Never create ad hoc log files, command transcripts, or raw profiling/benchmark captures anywhere in user workspaces, including parent directories, sibling repositories, caches, and build directories. Keep output in tool sessions; if persistence is necessary, use an OS temporary directory outside every workspace. Do not disguise output captures with another filename or extension. Preserve intentional source, documentation, and requested build artifacts, and never remove existing user files during cleanup.
+- Keep public release documentation focused on shipped user-visible behavior, not the internal planning, development, review, or acceptance process that produced it. Stage terminology belongs in maintainer plans, decisions, RFCs, and release runbooks; README files, changelogs, release notes, getting-started and migration guides, security policies, package metadata, website copy, and marketplace copy remain release-oriented.
 - Explain the tradeoff before adding a dependency.
 - Do not add empty future scaffolds without an immediate need.
 - Before reporting completion, run composer validate --strict, composer verify:version, composer analyse, and composer test.
