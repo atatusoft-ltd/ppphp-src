@@ -1,6 +1,6 @@
 # Contributing to ++PHP
 
-Read the [MVP end-to-end plan](docs/ppphp-mvp-end-to-end-plan.md) before making implementation changes, and target the develop branch.
+Consult the [language RFCs](docs/rfcs/README.md) and [architecture decisions](docs/decisions/README.md) for the relevant contracts. Target the develop branch.
 
 - Keep each change focused on the current development stage.
 - Follow the repository's module layout, declaration-directory conventions, and <Verb><Object>Pass naming.

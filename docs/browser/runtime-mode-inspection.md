@@ -1,6 +1,6 @@
 # Explicit Runtime-Mode Inspection
 
-This diagnostic extends the [baseline harness](baseline.md). It does not repair PHP or declare BP-0 complete.
+This diagnostic extends the [browser baseline harness](../../tools/web-spike/scripts/run-baseline.mjs).
 
 From the repository root, after the existing locked dependency installation:
 

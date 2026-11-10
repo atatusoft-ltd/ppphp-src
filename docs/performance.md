@@ -10,12 +10,10 @@
 php -d memory_limit=768M tools/benchmark-compiler.php \
   --profile=full \
   --iterations=3 \
-  --format=json \
-  --output=/private/tmp/ppphp-benchmark.json \
-  --markdown-output=/private/tmp/ppphp-benchmark.md
+  --format=json
 ~~~
 
-The JSON and Markdown were rendered from the same measured report. Each scenario records wall-clock duration, PHP allocated peak memory, output/cache bytes, cache hits and misses, files normalized/tokenized/reparsed/lowered, semantic analyses, and PHPStan/lint process launches. The generated fixtures contain one feature-heavy ++PHP source that consumes a deterministic Composer dependency declaration plus independent small functions; every fifth module is ordinary PHP.
+Each scenario records wall-clock duration, PHP allocated peak memory, output/cache bytes, cache hits and misses, files normalized/tokenized/reparsed/lowered, semantic analyses, and PHPStan/lint process launches. The generated fixtures contain one feature-heavy ++PHP source that consumes a deterministic Composer dependency declaration plus independent small functions; every fifth module is ordinary PHP.
 
 Environment:
 

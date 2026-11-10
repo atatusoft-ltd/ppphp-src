@@ -11,9 +11,22 @@ test('documentation paths have explicit audience classifications', function (str
     ['README.md', DocumentationAudience::Public],
     ['docs/releases/2026.3.1-rc-1.md', DocumentationAudience::Public],
     ['docs/releases/2026.3.1-rc-2.md', DocumentationAudience::Public],
-    ['docs/ppphp-mvp-end-to-end-plan.md', DocumentationAudience::Maintainer],
+    ['docs/releasing.md', DocumentationAudience::Maintainer],
     ['docs/rfcs/0001-immutable-records.md', DocumentationAudience::Maintainer],
     ['docs/compiler-architecture.md', DocumentationAudience::Technical],
+]);
+
+test('internal document paths are excluded from the public repository', function (string $path, bool $internal): void {
+    expect((new DocumentationPolicy())->isInternalPath($path))->toBe($internal);
+})->with([
+    ['docs/spikes/framework-feasibility.md', true],
+    ['docs/experiments/compiler-behavior.md', true],
+    ['docs/ppphp-internal-work-order.md', true],
+    ['docs/browser/bp4-evidence.md', true],
+    ['docs/browser/runtime-fiber-repair.md', true],
+    ['docs/browser/runtime-build.md', false],
+    ['docs/rfcs/0001-immutable-records.md', false],
+    ['docs/releases/2026.3.3.md', false],
 ]);
 
 test('public documentation rejects bounded process language', function (string $contents): void {
@@ -29,7 +42,7 @@ test('public documentation rejects bounded process language', function (string $
 test('maintainer and technical documents retain their appropriate vocabulary', function (string $path, string $contents): void {
     expect((new DocumentationPolicy())->validatePublic($path, $contents))->toBe([]);
 })->with([
-    ['docs/ppphp-mvp-end-to-end-plan.md', 'Stage 14A is complete.'],
+    ['docs/releasing.md', 'Stage 14A is complete.'],
     ['docs/rfcs/0001-immutable-records.md', 'Stage 15A defines the record contract.'],
     ['docs/compiler-architecture.md', 'The compiler uses a structured semantic model.'],
 ]);

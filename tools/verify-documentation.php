@@ -68,6 +68,11 @@ $audienceCounts = array_fill_keys(array_column(DocumentationAudience::cases(), '
 
 foreach ($documents as $path => $contents) {
     $relativePath = Path::resolveRelativeTo($path, $root);
+    if ($policy->isInternalPath($relativePath)) {
+        $failures[] = sprintf('%s is an internal document and belongs outside the public repository', $relativePath);
+        continue;
+    }
+
     $audience = $policy->classify($relativePath);
     ++$audienceCounts[$audience->value];
 
@@ -107,7 +112,6 @@ if (!is_string($composerContents)) {
 $readme = $documents[Path::join($root, 'README.md')] ?? '';
 $releaseNotes = $documents[Path::join($root, $metadata->releaseNotes)] ?? '';
 $changelog = $documents[Path::join($root, 'CHANGELOG.md')] ?? '';
-$plan = $documents[Path::join($root, 'docs/ppphp-mvp-end-to-end-plan.md')] ?? '';
 $decision = $documents[Path::join($root, 'docs/decisions/0004-mvp-native-analysis-retains-phpstan.md')] ?? '';
 
 $expectations = [
@@ -116,8 +120,6 @@ $expectations = [
     [str_contains($readme, '.ppphp'), 'README does not state the canonical source extension'],
     [str_contains($readme, 'supplemental PHPStan analysis'), 'README does not disclose supplemental PHPStan analysis'],
     [str_contains($changelog, '## Unreleased') && str_contains($changelog, '### Known limitations'), 'changelog does not retain release-oriented sections'],
-    [str_contains($plan, 'Stage 14A') && str_contains($plan, 'Stage 14B') && str_contains($plan, 'Stage 14C'), 'MVP plan does not preserve the Stage 14 release split'],
-    [str_contains($plan, 'Stage 15') && str_contains($plan, 'post-MVP'), 'MVP plan does not classify Stage 15 as post-MVP'],
     [str_contains($decision, 'PHPStan') && stripos($decision, 'retain') !== false, 'analyzer decision does not record the retained PHPStan backend'],
 ];
 

@@ -1,6 +1,6 @@
 # Architectural and Language Decisions
 
-This directory holds focused decision records for architectural and language choices that need durable context beyond the [++PHP MVP end-to-end plan](../ppphp-mvp-end-to-end-plan.md).
+This directory holds focused decision records for architectural and language choices.
 
 | Record | Status | Decision |
 | --- | --- | --- |
@@ -10,4 +10,4 @@ This directory holds focused decision records for architectural and language cho
 | [0004](0004-mvp-native-analysis-retains-phpstan.md) | Accepted | Retain compiler-owned analysis plus the PHPStan supplemental phase for the `2026.3.1` MVP release line. |
 | [0005](0005-composer-php-constraint-parser.md) | Accepted | Reuse Composer's constraint grammar for project PHP requirements, with explicit correctness, packaging, security, and maintenance tradeoffs. |
 
-Decision records state context, alternatives, consequences, and status without replacing the authoritative execution plan.
+Decision records state context, alternatives, consequences, and status.
